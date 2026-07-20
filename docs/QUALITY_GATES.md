@@ -40,10 +40,11 @@ The dated local result and its environment limitations are recorded in
 
 `.github/workflows/security.yml` provides CodeQL `security-extended` analysis
 for TypeScript/JavaScript and Python, Gitleaks history scanning, Trivy filesystem
-scanning that fails on high/critical findings, SARIF upload, and pull-request
-dependency review. Its write permission is scoped only to jobs that upload
-security results. Dependabot covers npm, both uv projects, the tile Dockerfile,
-Terraform providers, and GitHub Actions.
+scanning that fails on fixed high/critical findings, retained SARIF evidence,
+and pull-request dependency review. The private competition repository retains
+CodeQL and Trivy SARIF as workflow artifacts without requiring GitHub Advanced
+Security write access. Dependabot covers npm, both uv projects, the tile
+Dockerfile, Terraform providers, and GitHub Actions.
 
 ## Checks that remain manual or environment-specific
 

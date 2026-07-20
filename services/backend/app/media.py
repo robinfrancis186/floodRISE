@@ -131,7 +131,7 @@ def _image_error(code: str, detail: str) -> AppError:
 
 def _perceptual_hash(image: Image.Image) -> str:
     grayscale = image.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-    pixels = list(grayscale.getdata())
+    pixels = list(grayscale.get_flattened_data())
     value = 0
     for row in range(8):
         offset = row * 9

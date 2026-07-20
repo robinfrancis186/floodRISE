@@ -19,6 +19,7 @@ of an AWS deployment or an authority-approved production flood system.
 | Deterministic replay | Three consecutive fourth-report corroboration runs passed in 247 ms, 185 ms, and 192 ms. Each result retained the explicitly unofficial message, requested route recalculation, and preserved a valid audit chain. |
 | Static release files | GitHub workflow YAML, shell syntax, JSON dashboards, fixture hashes, and executable demo scripts passed available local checks. |
 | JavaScript dependency audit | `pnpm audit --prod` reported no known vulnerabilities. |
+| Tracked-tree vulnerability scan | Trivy 0.70.0 reported no fixed high/critical vulnerabilities or secrets after upgrading backend Pillow from 11.3.0 to 12.3.0. |
 
 The browser sweep found and closed one contract defect before release: the field
 alerts view had treated authoritative snake_case alert records as the UI model.
