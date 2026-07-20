@@ -79,9 +79,11 @@ including reset controls, reporting, corroboration, routing, approvals, audit,
 offline behavior, and media failure handling. They are development evidence,
 not a signed judging rehearsal record.
 
-The mandatory three consecutive clean resets, one degraded-network rehearsal,
-sub-two-minute reset timing, eight-minute presentation timing, full numerical
-fixture tolerances, performance percentiles, VoiceOver review, ZAP/k6 gates, and
+Three consecutive clean automated resets/corroboration runs and the degraded
+network field journey passed locally on 2026-07-20; the exact timings and scope
+are recorded in `docs/RELEASE_VERIFICATION_2026-07-20.md`. The sub-two-minute
+full reset rehearsal, eight-minute presentation timing, full numerical fixture
+tolerances, performance percentiles, VoiceOver review, ZAP/k6 gates, and
 zero-destination environment observation must still be run and recorded on the
-actual judging machine. Until then the numerical and timing thresholds in the
-submission plan remain acceptance targets rather than verified results.
+actual judging machine. Until then those environment-dependent thresholds in
+the submission plan remain acceptance targets rather than production claims.

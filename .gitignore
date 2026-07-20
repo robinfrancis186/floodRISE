@@ -19,6 +19,7 @@ __pycache__/
 playwright-report/
 test-results/
 blob-report/
+graphify-out/
 .DS_Store
 ._*
 artifacts/runtime/

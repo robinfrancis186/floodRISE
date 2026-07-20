@@ -13,12 +13,15 @@ merge-blocking; repository files alone cannot enforce that setting.
 | `pnpm format:check` | Ruff formatting for both Python services | No |
 | `pnpm typecheck` | Every TypeScript workspace package | No |
 | `pnpm build` | Production builds for both React applications and shared packages | No |
-| `pnpm test:e2e` | Deterministic API replay, operations journey, offline field journey, and axe smoke scans | Chromium |
+| `pnpm test:e2e` | Deterministic API replay, all-route desktop/mobile sweep, operations journey, offline field journey, and axe smoke scans | Chromium |
 | `pnpm test:a11y` | axe smoke scans for the operations console and 360 px field workflow | Chromium |
 
 `pnpm test:e2e` starts isolated services on ports 8787, 55173, and 55174 and
 uses a disposable ignored SQLite database. It does not contact production alert
 destinations or require upstream disaster-data providers.
+
+The dated local result and its environment limitations are recorded in
+`docs/RELEASE_VERIFICATION_2026-07-20.md`.
 
 ## CI workflow
 

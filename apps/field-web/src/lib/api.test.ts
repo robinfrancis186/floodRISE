@@ -259,4 +259,36 @@ describe("deterministic field freshness", () => {
     expect(alerts).toHaveLength(demoAlerts.length);
     expect(alerts.every((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME))).toBe(true);
   });
+
+  it("normalizes authoritative API alerts before rendering the field feed", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "caution-signal-1-v1",
+        title: "Community-corroborated flooding nearby",
+        body: "Corroborated by 4 independent recent reports; not an official confirmation.",
+        audience: "Opted-in users inside the hazard footprint plus 1 km",
+        caution_only: true,
+        official: false,
+        created_at: "2023-12-04T14:10:00.000Z",
+        dispatched_at: "2023-12-04T14:10:01.000Z",
+        expires_at: "2023-12-04T14:40:00.000Z",
+        is_demo: true
+      }],
+      next_cursor: null
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const alerts = await fetchAlerts();
+
+    expect(alerts).toEqual([{
+      id: "caution-signal-1-v1",
+      kind: "COMMUNITY_CAUTION",
+      title: "Community-corroborated flooding nearby",
+      description: "Corroborated by 4 independent recent reports; not an official confirmation.",
+      area: "Opted-in users inside the hazard footprint plus 1 km",
+      issuedAt: "2023-12-04T14:10:01.000Z",
+      validUntil: "2023-12-04T14:40:00.000Z",
+      severity: "CAUTION",
+      isSimulated: true
+    }]);
+  });
 });

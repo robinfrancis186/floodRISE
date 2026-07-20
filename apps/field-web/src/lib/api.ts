@@ -338,11 +338,48 @@ export async function fetchAlerts(): Promise<FieldAlert[]> {
       headers: apiHeaders()
     });
     if (!response.ok) throw new Error("Alerts unavailable");
-    const payload = (await response.json()) as { items?: FieldAlert[] } | FieldAlert[];
-    return Array.isArray(payload) ? payload : (payload.items ?? demoAlerts);
+    const payload = AlertListResponse.parse(await response.json());
+    return payload.items.map(normalizeFieldAlert);
   } catch {
     return demoAlerts.filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME));
   }
+}
+
+const AlertListResponse = z.object({
+  items: z.array(z.object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    body: z.string().min(1),
+    audience: z.string().min(1),
+    caution_only: z.boolean(),
+    official: z.boolean(),
+    created_at: z.string().datetime(),
+    dispatched_at: z.string().datetime().nullable().optional(),
+    expires_at: z.string().datetime(),
+    is_demo: z.boolean()
+  })),
+  next_cursor: z.string().nullable().optional()
+});
+
+type AuthoritativeAlert = z.infer<typeof AlertListResponse>["items"][number];
+
+function normalizeFieldAlert(alert: AuthoritativeAlert): FieldAlert {
+  const kind: FieldAlert["kind"] = alert.official
+    ? "OFFICIAL"
+    : alert.caution_only
+      ? "COMMUNITY_CAUTION"
+      : "SYSTEM";
+  return {
+    id: alert.id,
+    kind,
+    title: alert.title,
+    description: alert.body,
+    area: alert.audience,
+    issuedAt: alert.dispatched_at ?? alert.created_at,
+    validUntil: alert.expires_at,
+    severity: kind === "OFFICIAL" ? "DANGER" : kind === "COMMUNITY_CAUTION" ? "CAUTION" : "INFO",
+    isSimulated: alert.is_demo
+  };
 }
 
 function parseTime(value: string) {

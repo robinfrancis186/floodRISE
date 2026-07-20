@@ -11,6 +11,7 @@ test("operations console renders and completes an evidence review", async ({ pag
   const impactMap = page.getByRole("region", { name: "Flood impact map" });
   await expect(impactMap.getByText("Rapid impact estimate", { exact: true })).toBeVisible();
   await expect(impactMap).toBeVisible();
+  await expect(impactMap.getByText("Loading the offline Chennai map…")).toBeHidden();
   await page.screenshot({ path: "artifacts/screenshots/ops-live.png", fullPage: true });
 
   await page.getByRole("button", { name: "FloodSignal" }).click();
