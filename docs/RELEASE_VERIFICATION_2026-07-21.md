@@ -62,7 +62,9 @@ Current reference captures:
   self-hosted or contract-backed OSM-derived tile service that follows the
   [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
 - Trivy was unavailable on this workstation. The repository's hosted security
-  workflow remains the independent Trivy, CodeQL, dependency, and secret gate.
+  workflow remains the independent Trivy, CodeQL, portable dependency-audit,
+  and secret gate. GitHub's diff-specific dependency-review action runs only on
+  repositories where that GitHub feature is available.
 - Live-provider activation, AWS apply, VoiceOver device review, ZAP/k6 runs,
   backup restoration, RPO/RTO drills, and hydraulic certification remain outside
   this local evidence record.

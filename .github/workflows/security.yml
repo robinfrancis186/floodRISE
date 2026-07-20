@@ -49,6 +49,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -73,8 +74,26 @@ jobs:
           path: trivy-results.sarif
           retention-days: 14
 
+  dependency-audit:
+    name: Portable dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm audit --prod --audit-level high
+
   dependency-review:
-    if: github.event_name == 'pull_request'
+    # GitHub's dependency-review API requires repository features that are not
+    # available to every private repository. Trivy and the portable audit above
+    # remain enforced everywhere; this diff-specific gate runs when supported.
+    if: github.event_name == 'pull_request' && github.event.repository.private == false
     name: Dependency review
     runs-on: ubuntu-latest
     permissions:
