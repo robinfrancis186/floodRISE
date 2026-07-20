@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.14-slim
 WORKDIR /app
 COPY services/tile-api/pyproject.toml ./
 RUN pip install --no-cache-dir fastapi "uvicorn[standard]" pillow
