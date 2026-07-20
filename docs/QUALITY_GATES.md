@@ -8,7 +8,7 @@ merge-blocking; repository files alone cannot enforce that setting.
 
 | Command | Scope | Browser required |
 | --- | --- | --- |
-| `pnpm test` | Vitest, backend pytest, tile pytest, fixture checksums/safety flags, FastAPI snapshot drift, generated OpenAPI client drift | No |
+| `pnpm test` | Vitest, backend pytest, tile pytest, bounded OSM importer tests, fixture checksums/safety flags, FastAPI snapshot drift, generated OpenAPI client drift | No |
 | `pnpm lint` | TypeScript package checks and Ruff for both Python services | No |
 | `pnpm format:check` | Ruff formatting for both Python services | No |
 | `pnpm typecheck` | Every TypeScript workspace package | No |

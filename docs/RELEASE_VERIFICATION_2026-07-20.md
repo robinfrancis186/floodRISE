@@ -11,7 +11,7 @@ of an AWS deployment or an authority-approved production flood system.
 | --- | --- |
 | Lint and formatting | Passed for every TypeScript workspace and both Python services. |
 | Type checking | Passed for the applications, generated API client, contracts, shared map, and shared UI. |
-| Unit and service tests | 124 passed: field web 23, operations web 21, backend 73, and restricted tile API 7. |
+| Unit, importer, and service tests | 128 passed: field web 23, operations web 21, backend 73, restricted tile API 7, and bounded OpenStreetMap importer 4. |
 | Contracts and fixtures | Six fixture files, two raster artifacts, and 291 packaged OpenStreetMap road segments validated; the 33-path OpenAPI snapshot and generated TypeScript client matched the FastAPI source. |
 | Production builds | Both Vite applications built; the field PWA generated a 23-entry, 2,134.02 KiB precache. |
 | Browser journeys | 10 Playwright tests passed, including WCAG 2.2 AA axe smoke checks, offline queue and route restrictions, private photo sanitization, FloodSignal review, two-person approval, and the direct-URL route sweep. |
