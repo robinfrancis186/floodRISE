@@ -1,0 +1,72 @@
+groups:
+  - name: floodrise-safety
+    rules:
+      - alert: FloodRiseApiUnavailable
+        expr: up{job="floodrise-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: floodRISE API is unavailable
+          runbook: docs/OBSERVABILITY_RUNBOOK.md#api-or-sse-unavailable
+
+      - alert: ExternalNotificationAttemptedInDemo
+        expr: increase(floodrise_notification_external_attempt_total{environment="demo"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          safety: stop-demo
+        annotations:
+          summary: A demo process attempted external notification delivery
+          runbook: docs/INCIDENT_RESPONSE.md#external-notification-attempt
+
+      - alert: AuditOutboxBacklog
+        expr: floodrise_audit_outbox_oldest_age_seconds > 30
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Audit or outbox events are not being persisted promptly
+          runbook: docs/INCIDENT_RESPONSE.md#audit-integrity-or-outbox-failure
+
+  - name: floodrise-slo
+    rules:
+      - alert: ReportSubmissionLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(floodrise_report_submit_seconds_bucket[5m]))) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Report submission p95 exceeds two seconds
+
+      - alert: CorroborationLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(floodrise_corroboration_seconds_bucket[5m]))) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Fourth report to corroboration/reroute p95 exceeds five seconds
+
+      - alert: SimulationLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(floodrise_simulation_seconds_bucket[15m]))) > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Full simulation publication p95 exceeds sixty seconds
+
+      - alert: RouteLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(floodrise_route_seconds_bucket[5m]))) > 0.75
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Lower-risk route query p95 exceeds 750 milliseconds
+
+      - alert: SourceFreshnessBreached
+        expr: floodrise_source_age_seconds > floodrise_source_max_age_seconds
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A source has exceeded its declared freshness window

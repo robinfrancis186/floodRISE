@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web, fixtures, and API contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [[ -f pnpm-lock.yaml ]]; then
+            pnpm install --frozen-lockfile
+          else
+            pnpm install --no-frozen-lockfile
+          fi
+      - name: Fixture and OpenAPI drift
+        run: pnpm test:contracts
+      - run: pnpm typecheck
+      - run: pnpm test:web
+      - run: pnpm build
+
+  backend:
+    name: Backend lint and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.13"
+          enable-cache: true
+          cache-dependency-glob: services/backend/uv.lock
+      - name: Install locked environment
+        working-directory: services/backend
+        run: uv sync --frozen
+      - name: Ruff
+        working-directory: services/backend
+        run: uv run ruff check .
+      - name: Ruff formatting
+        working-directory: services/backend
+        run: uv run ruff format --check .
+      - name: FastAPI OpenAPI snapshot drift
+        working-directory: services/backend
+        run: uv run python ../../scripts/export_openapi.py --check
+      - name: Tests
+        working-directory: services/backend
+        run: uv run pytest --cov=app --cov-report=term-missing
+
+  tile-api:
+    name: Restricted tile API lint and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.13"
+          enable-cache: true
+          cache-dependency-glob: services/tile-api/uv.lock
+      - name: Install locked environment
+        working-directory: services/tile-api
+        run: uv sync --frozen
+      - name: Ruff
+        working-directory: services/tile-api
+        run: uv run ruff check .
+      - name: Ruff formatting
+        working-directory: services/tile-api
+        run: uv run ruff format --check .
+      - name: Tests
+        working-directory: services/tile-api
+        run: uv run pytest
+
+  browser:
+    name: Playwright journeys and axe accessibility
+    needs: [web, backend, tile-api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.13"
+          enable-cache: true
+          cache-dependency-glob: services/backend/uv.lock
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install backend environment
+        run: uv sync --project services/backend --frozen
+      - name: Install Chromium runtime
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser journeys and accessibility scans
+        run: pnpm test:e2e
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-evidence
+          path: |
+            artifacts/playwright/
+            artifacts/playwright-report/
+            artifacts/screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  infrastructure:
+    name: Infrastructure validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+      - name: Compose model
+        run: docker compose -f infra/compose.yaml config --quiet
+      - name: Terraform formatting
+        run: terraform -chdir=infra/terraform fmt -check -recursive
+      - name: Terraform provider initialization
+        run: terraform -chdir=infra/terraform init -backend=false -input=false
+      - name: Terraform validation
+        run: terraform -chdir=infra/terraform validate
+      - name: Prometheus rules
+        run: |
+          docker run --rm \
+            -v "${PWD}/ops/prometheus:/work:ro" \
+            --entrypoint /bin/promtool \
+            prom/prometheus:v3.4.1 \
+            check rules /work/alerts.yml
+      - name: Operations JSON
+        run: jq empty ops/grafana/dashboards/*.json
+      - name: Shell scripts
+        run: shellcheck ops/scripts/*.sh infra/localstack/init/*.sh
+      - name: Demo isolation check
+        run: ops/scripts/demo-preflight.sh

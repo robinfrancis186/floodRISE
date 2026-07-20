@@ -1,0 +1,17 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "shelter-velachery-school",
+      "geometry": { "type": "Point", "coordinates": [80.2182, 12.9786] },
+      "properties": { "name": "Velachery School Shelter", "activation_status": "OPEN", "capacity_total": 420, "capacity_remaining": 186, "access_status": "REACHABLE", "verified_at": "2023-12-04T14:00:00Z", "is_simulated": true }
+    },
+    {
+      "type": "Feature",
+      "id": "shelter-pallikaranai-hall",
+      "geometry": { "type": "Point", "coordinates": [80.2146, 12.9683] },
+      "properties": { "name": "Pallikaranai Community Hall", "activation_status": "OPEN", "capacity_total": 300, "capacity_remaining": 0, "access_status": "FULL", "verified_at": "2023-12-04T13:55:00Z", "is_simulated": true }
+    }
+  ]
+}

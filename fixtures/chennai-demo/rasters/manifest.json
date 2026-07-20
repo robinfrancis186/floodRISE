@@ -1,0 +1,88 @@
+{
+  "schema_version": "floodrise-packaged-raster/v1",
+  "scenario_id": "demo-michaung-chennai-v1",
+  "incident_id": "inc-demo-michaung-2023",
+  "model_version": "model-demo-20231204-001",
+  "generated_at": "2023-12-04T14:10:00Z",
+  "is_simulated": true,
+  "data_label": "DEMO DATA",
+  "representation": "PACKAGED_PGM",
+  "description": "Checksummed offline demonstration rasters. These are rapid impact estimates, not COGs, certified flood depths, or live observations.",
+  "provenance": {
+    "provider": "floodRISE deterministic fixture generator",
+    "source_url_or_id": "fixture://demo-michaung-chennai-v1",
+    "observed_at": "2023-12-04T14:10:00Z",
+    "acquired_at": "2023-12-04T14:10:00Z",
+    "issued_at": "2023-12-04T14:10:00Z",
+    "ingested_at": "2023-12-04T14:10:00Z",
+    "licence": "Synthetic demonstration fixture; see fixtures/chennai-demo/LICENSES.md",
+    "attribution": "floodRISE DEMO DATA",
+    "quality_flags": [
+      "SYNTHETIC",
+      "DETERMINISTIC",
+      "NOT_HYDRAULICALLY_CERTIFIED"
+    ],
+    "input_artifact_checksums": {
+      "timeline.json": "e49d9d92a89b11b39b06aff1c834fe56722f62d2cbe457f08bf552878b603d7a",
+      "reports.json": "69f93f677bc35001876ca855538211d9e92108286bce6479e33f05bf24233f33",
+      "shelters.geojson": "b60996ebd0d20d924fa615ce0dddf66424d710da05c02e6f7b887517cc7f0207",
+      "roads.geojson": "845081b92c6a0dbf6ba0eb049b9645f073e72d03df27432edd771be037fc7b76"
+    }
+  },
+  "rendering": {
+    "interpretation": "rapid_impact_estimate_depth",
+    "sample_unit": "centimetres",
+    "scale_to_metres": 0.01,
+    "dry_value": 0,
+    "resampling": "nearest",
+    "colour_breaks_centimetres": [1, 15, 30, 60]
+  },
+  "artifacts": [
+    {
+      "id": "depth-p50-now",
+      "version": "raster-demo-20231204-p50-now-v1",
+      "title": "Demo median rapid impact depth — now",
+      "path": "depth-p50-now.pgm",
+      "content_sha256": "318d675624ec47706124bd6596849012b214363d74bb3b9d19fafc6c9f4adc8c",
+      "format": "image/x-portable-graymap; variant=P2",
+      "crs": "EPSG:4326",
+      "bounds": [80.12, 12.88, 80.32, 13.08],
+      "width": 24,
+      "height": 24,
+      "row_order": "north_to_south",
+      "quantile": "p50",
+      "horizon": "now",
+      "valid_at": "2023-12-04T14:10:00Z",
+      "valid_until": "2023-12-04T14:30:00Z",
+      "confidence": 0.78,
+      "statistics": {
+        "minimum_metres": 0.0,
+        "maximum_metres": 0.64,
+        "non_dry_cells": 221
+      }
+    },
+    {
+      "id": "depth-p90-3h",
+      "version": "raster-demo-20231204-p90-3h-v1",
+      "title": "Demo upper scenario rapid impact depth — +3h",
+      "path": "depth-p90-3h.pgm",
+      "content_sha256": "3241e3de2b1eceb163b9c2ac23595659ddc2b16312d0bfaaecfe916bcfc048d1",
+      "format": "image/x-portable-graymap; variant=P2",
+      "crs": "EPSG:4326",
+      "bounds": [80.12, 12.88, 80.32, 13.08],
+      "width": 24,
+      "height": 24,
+      "row_order": "north_to_south",
+      "quantile": "p90",
+      "horizon": "+3h",
+      "valid_at": "2023-12-04T17:10:00Z",
+      "valid_until": "2023-12-04T17:30:00Z",
+      "confidence": 0.62,
+      "statistics": {
+        "minimum_metres": 0.0,
+        "maximum_metres": 1.01,
+        "non_dry_cells": 225
+      }
+    }
+  ]
+}

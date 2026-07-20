@@ -1,0 +1,10 @@
+.coverage
+.migration-test.*
+.uv-cache/
+.venv/
+*.db
+*.sqlite3
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+._*

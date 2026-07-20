@@ -1,0 +1,195 @@
+name: floodrise
+
+# Local-only infrastructure for the deterministic competition replay. The
+# internal network deliberately has no route to the public internet, preventing
+# demo notification traffic from reaching a real provider.
+x-demo-safety: &demo-safety
+  FLOODRISE_ENV: demo
+  FLOODRISE_DEMO_MODE: "true"
+  FLOODRISE_IS_SIMULATED: "true"
+  FLOODRISE_LIVE_INTEGRATIONS_ENABLED: "false"
+  FLOODRISE_DEMO_ALERT_SINK: fake://notification-sink
+  FLOODRISE_NOTIFICATION_DRIVER: demo_log
+  FLOODRISE_EXTERNAL_NOTIFICATIONS_ENABLED: "false"
+  FLOODRISE_NOTIFICATION_BASE_URL: http://demo-alert-sink:1080
+  FLOODRISE_NOTIFICATION_ALLOWED_HOSTS: demo-alert-sink,localhost,127.0.0.1
+
+services:
+  postgis:
+    image: pgrouting/pgrouting:16-3.5-4.0.1
+    environment:
+      POSTGRES_DB: floodrise
+      POSTGRES_USER: floodrise
+      POSTGRES_PASSWORD: floodrise_demo_only
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgis-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U floodrise -d floodrise"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: floodrise_demo
+      MINIO_ROOT_PASSWORD: floodrise_demo_only
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  minio-bootstrap:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    depends_on:
+      - minio
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until mc alias set local http://minio:9000 floodrise_demo floodrise_demo_only && mc ready local; do sleep 2; done
+        mc mb --ignore-existing local/floodrise-demo-raw
+        mc mb --ignore-existing local/floodrise-demo-processed
+        mc anonymous set none local/floodrise-demo-raw
+        mc anonymous set none local/floodrise-demo-processed
+    restart: "no"
+    networks: [demo-internal]
+
+  localstack:
+    image: localstack/localstack:4.6.0
+    environment:
+      SERVICES: s3,sqs,kms,secretsmanager
+      AWS_DEFAULT_REGION: ap-south-1
+      EAGER_SERVICE_LOADING: "1"
+    ports:
+      - "127.0.0.1:4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - ./localstack/init:/etc/localstack/init/ready.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  # MockServer has no host port and is reachable only on the isolated demo
+  # network. Application code may dispatch demo alerts here for inspection.
+  demo-alert-sink:
+    image: mockserver/mockserver:5.15.0
+    environment:
+      <<: *demo-safety
+      MOCKSERVER_LOG_LEVEL: INFO
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  tile-api:
+    build:
+      context: ..
+      dockerfile: services/tile-api/Dockerfile
+    profiles: [tiles]
+    environment:
+      <<: *demo-safety
+      FLOODRISE_RASTER_MANIFEST: /app/artifacts/manifest.json
+    ports:
+      - "127.0.0.1:8790:8790"
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ../ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../ops/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  loki:
+    image: grafana/loki:3.5.0
+    profiles: [observability]
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    expose:
+      - "3100"
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.128.0
+    profiles: [observability]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ../ops/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    expose:
+      - "4317"
+      - "4318"
+      - "8889"
+    depends_on:
+      - loki
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  grafana:
+    image: grafana/grafana:12.0.1
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_USER: floodrise
+      GF_SECURITY_ADMIN_PASSWORD: floodrise_demo_only
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - ../ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+    networks: [demo-internal]
+
+volumes:
+  postgis-data:
+  redis-data:
+  minio-data:
+  localstack-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  demo-internal:
+    internal: true

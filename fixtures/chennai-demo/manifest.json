@@ -1,0 +1,21 @@
+{
+  "scenario_id": "demo-michaung-chennai-v1",
+  "incident_id": "inc-demo-michaung-2023",
+  "title": "Cyclone Michaung — Chennai deterministic replay",
+  "area": "Velachery–Saidapet–Adyar and Chembarambakkam",
+  "clock_start": "2023-12-04T14:10:00Z",
+  "timezone": "Asia/Kolkata",
+  "is_simulated": true,
+  "alert_gateway": "fake://notification-sink",
+  "live_integrations_enabled": false,
+  "model_version": "model-demo-20231204-001",
+  "evidence_version": "evidence-demo-001",
+  "files": [
+    { "path": "timeline.json", "sha256": "e49d9d92a89b11b39b06aff1c834fe56722f62d2cbe457f08bf552878b603d7a" },
+    { "path": "reports.json", "sha256": "69f93f677bc35001876ca855538211d9e92108286bce6479e33f05bf24233f33" },
+    { "path": "shelters.geojson", "sha256": "b60996ebd0d20d924fa615ce0dddf66424d710da05c02e6f7b887517cc7f0207" },
+    { "path": "roads.geojson", "sha256": "845081b92c6a0dbf6ba0eb049b9645f073e72d03df27432edd771be037fc7b76" },
+    { "path": "osm-baseline.geojson", "sha256": "1e9d13177f48851e80c5a78926d9d6fe248cff2b99bfed02a3cfaf3d89a3f277" },
+    { "path": "rasters/manifest.json", "sha256": "5a0e62d8916019b4e0bf34e77d2a3e9d6059a21b2dc4b99175f3c762b9019ac2" }
+  ]
+}

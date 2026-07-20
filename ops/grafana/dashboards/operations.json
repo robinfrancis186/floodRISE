@@ -1,0 +1,50 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "API availability",
+      "type": "stat",
+      "targets": [{"expr": "up{job=\"floodrise-api\"}", "refId": "A"}],
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "title": "Fourth report to corroboration p95",
+      "type": "timeseries",
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(floodrise_corroboration_seconds_bucket[5m])))", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 9, "x": 6, "y": 0}
+    },
+    {
+      "id": 3,
+      "title": "Simulation publication p95",
+      "type": "timeseries",
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(floodrise_simulation_seconds_bucket[15m])))", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 9, "x": 15, "y": 0}
+    },
+    {
+      "id": 4,
+      "title": "Audit outbox oldest event (seconds)",
+      "type": "timeseries",
+      "targets": [{"expr": "floodrise_audit_outbox_oldest_age_seconds", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "id": 5,
+      "title": "Demo external-notification attempts",
+      "type": "stat",
+      "targets": [{"expr": "sum(floodrise_notification_external_attempt_total{environment=\"demo\"})", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["floodrise", "demo", "operations"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "floodRISE Operations",
+  "uid": "floodrise-operations",
+  "version": 1
+}

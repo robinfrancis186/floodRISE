@@ -1,0 +1,43 @@
+{
+  "name": "floodrise",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "dev": "concurrently -n api,ops,field -c magenta,blue,green \"pnpm dev:api\" \"pnpm dev:ops\" \"pnpm dev:field\"",
+    "dev:api": "cd services/backend && uv run uvicorn app.main:app --reload --port 8787",
+    "dev:ops": "pnpm --filter @floodrise/ops-web dev",
+    "dev:field": "pnpm --filter @floodrise/field-web dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm test:unit && pnpm test:contracts",
+    "test:unit": "pnpm test:web && pnpm test:backend && pnpm test:tile",
+    "test:web": "pnpm -r --if-present test",
+    "test:backend": "cd services/backend && uv run pytest",
+    "test:api": "pnpm test:backend",
+    "test:tile": "cd services/tile-api && uv run pytest",
+    "test:contracts": "pnpm fixtures:validate && pnpm api:source-check && pnpm api:check",
+    "test:e2e": "playwright test",
+    "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
+    "lint": "pnpm -r --if-present lint && pnpm lint:backend && pnpm lint:tile",
+    "lint:backend": "cd services/backend && uv run ruff check .",
+    "lint:tile": "cd services/tile-api && uv run ruff check .",
+    "format:check": "pnpm -r --if-present format:check && pnpm format:backend && pnpm format:tile",
+    "format:backend": "cd services/backend && uv run ruff format --check .",
+    "format:tile": "cd services/tile-api && uv run ruff format --check .",
+    "api:generate": "cd services/backend && uv run python ../../scripts/export_openapi.py && cd ../.. && pnpm --filter @floodrise/api-client generate",
+    "api:source-check": "cd services/backend && uv run python ../../scripts/export_openapi.py --check",
+    "api:check": "pnpm --filter @floodrise/api-client generate:check",
+    "fixtures:validate": "node scripts/validate-fixtures.mjs",
+    "osm:import": "node scripts/import-osm-baseline.mjs",
+    "seed": "cd services/backend && uv run python -m app.seed",
+    "demo:reset": "ops/scripts/demo-reset.sh"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "^1.55.0",
+    "concurrently": "^9.2.0",
+    "openapi-typescript": "7.13.0",
+    "typescript": "^5.9.2"
+  }
+}

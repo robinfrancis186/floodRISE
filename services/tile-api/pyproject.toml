@@ -1,0 +1,23 @@
+[project]
+name = "floodrise-tile-api"
+version = "0.1.0"
+description = "Restricted artifact-id raster tile facade for floodRISE"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116.1",
+  "uvicorn[standard]>=0.35.0",
+  "pillow>=11.3.0"
+]
+
+[dependency-groups]
+dev = ["httpx>=0.28.1", "pytest>=8.4.1", "ruff>=0.12.10,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
