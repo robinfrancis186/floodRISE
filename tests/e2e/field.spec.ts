@@ -13,6 +13,8 @@ test("field PWA stores an offline report and blocks fresh route claims", async (
   await page.goto("http://127.0.0.1:55174", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveTitle(/floodRISE Field/);
   await expect(page.getByText(/DEMO DATA.*NOT LIVE/).first()).toBeVisible();
+  const conditionsMap = page.getByRole("region", { name: "Current flood conditions around Aluva" });
+  await expect(conditionsMap.getByText("Loading the detailed Kerala map…")).toBeHidden();
   await page.screenshot({ path: "artifacts/screenshots/field-conditions.png", fullPage: true });
 
   await page.getByRole("link", { name: "Report", exact: true }).click();

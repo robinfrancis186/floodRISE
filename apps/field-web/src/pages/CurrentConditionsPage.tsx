@@ -1,14 +1,11 @@
 import { FloodMap } from "@floodrise/map";
 import { Link } from "@tanstack/react-router";
-import { Alert, AlertDescription, AlertTitle, Badge, Button } from "@floodrise/ui";
+import { Alert, AlertDescription, AlertTitle, Button } from "@floodrise/ui";
 import { ArrowRight, Clock3, LocateFixed, Navigation, Plus, ShieldCheck } from "lucide-react";
 import { fieldConditions } from "../data/demo";
-import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { StatusMark } from "../components/StatusMark";
 
 export function CurrentConditionsPage() {
-  const { isOnline } = useNetworkStatus();
-
   return (
     <div className="page current-conditions-page">
       <section className="map-region" aria-labelledby="map-heading">
@@ -30,12 +27,11 @@ export function CurrentConditionsPage() {
       </section>
 
       <div className="page-content conditions-content">
-        <div className="page-title-row">
+        <div className="page-title-row conditions-title-row">
           <div>
             <h1>Current conditions</h1>
             <p>Observed information and rapid impact estimates are kept distinct.</p>
           </div>
-          <Badge variant={isOnline ? "success" : "warning"}>{isOnline ? "Connected" : "Last known"}</Badge>
         </div>
 
         <Alert variant="warning" className="community-caution">

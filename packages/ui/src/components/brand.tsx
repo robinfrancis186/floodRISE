@@ -3,8 +3,8 @@ import { Waves } from "lucide-react";
 export function FloodRiseLogo({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2 text-primary" aria-label="floodRISE">
-      <span className="flex size-8 items-center justify-center rounded-md bg-flood/8"><Waves aria-hidden className="size-6 text-flood" /></span>
-      {!compact && <span className="text-xl font-extrabold tracking-tight">floodRISE</span>}
+      <span className="flex size-8 items-center justify-center rounded-[2px] border border-flood/15 bg-flood/5"><Waves aria-hidden className="size-6 text-flood" /></span>
+      {!compact && <span className="text-xl font-extrabold tracking-[-0.035em]">floodRISE</span>}
     </div>
   );
 }
