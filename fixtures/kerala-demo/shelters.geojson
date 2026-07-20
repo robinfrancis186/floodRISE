@@ -1,0 +1,17 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "shelter-aluva-school",
+      "geometry": { "type": "Point", "coordinates": [76.3492000, 10.1036000] },
+      "properties": { "name": "Aluva School Shelter", "activation_status": "OPEN", "capacity_total": 420, "capacity_remaining": 186, "access_status": "REACHABLE", "verified_at": "2023-12-04T14:00:00Z", "is_simulated": true }
+    },
+    {
+      "type": "Feature",
+      "id": "shelter-kadungalloor-hall",
+      "geometry": { "type": "Point", "coordinates": [76.3456000, 10.0933000] },
+      "properties": { "name": "Kadungalloor Community Hall", "activation_status": "OPEN", "capacity_total": 300, "capacity_remaining": 0, "access_status": "FULL", "verified_at": "2023-12-04T13:55:00Z", "is_simulated": true }
+    }
+  ]
+}

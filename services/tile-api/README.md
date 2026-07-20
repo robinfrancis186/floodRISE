@@ -1,10 +1,10 @@
 # Restricted raster tile service
 
-This service exposes only artifact IDs listed in the Chennai deterministic
+This service exposes only artifact IDs listed in the Kerala deterministic
 replay manifest. It never accepts a source URL from a client.
 
 For the offline competition path it loads two georeferenced ASCII PGM depth
-grids from `fixtures/chennai-demo/rasters`, verifies their SHA-256 checksums and
+grids from `fixtures/kerala-demo/rasters`, verifies their SHA-256 checksums and
 metadata at startup, then samples the fixed values into PNG web-map tiles. Its
 TileJSON response identifies the model version, artifact version and checksum,
 validity, confidence, simulation label, rendering method, and input provenance.

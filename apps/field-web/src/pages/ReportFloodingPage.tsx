@@ -73,10 +73,10 @@ type FieldLocation = {
 };
 
 const demoLocation: FieldLocation = {
-  latitude: 12.9791,
-  longitude: 80.2209,
+  latitude: 10.1041000,
+  longitude: 76.3519000,
   accuracy: 12,
-  label: "Velachery Main Road"
+  label: "Aluva–Paravur Road"
 };
 
 export function ReportFloodingPage() {
@@ -126,7 +126,7 @@ export function ReportFloodingPage() {
         setFormError(null);
       },
       () => {
-        setFormError("Location permission was not available. The Velachery demo pin is still selected.");
+        setFormError("Location permission was not available. The Aluva demo pin is still selected.");
         setLocating(false);
       },
       { enableHighAccuracy: true, timeout: 8_000, maximumAge: 30_000 }

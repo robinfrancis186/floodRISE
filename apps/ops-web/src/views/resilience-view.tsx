@@ -59,12 +59,12 @@ export function ResilienceView() {
           <label>Evidence quality<Select><option>Verified + official</option><option>All evidence</option></Select></label>
           <fieldset><legend>Layers</legend><label><input type="checkbox" defaultChecked />Recurring flooding</label><label><input type="checkbox" defaultChecked />Drainage issues</label><label><input type="checkbox" defaultChecked />Road isolation</label><label><input type="checkbox" defaultChecked />Shelter gaps</label></fieldset>
         </div>
-        <FloodMap variant="resilience" selectedFeatureId={`hotspot-${selected.rank}`} onFeatureSelect={handleMapSelection} className="shared-map" height="100%" ariaLabel="Chennai recurring flood, road isolation and shelter access priorities" />
+        <FloodMap variant="resilience" selectedFeatureId={`hotspot-${selected.rank}`} onFeatureSelect={handleMapSelection} className="shared-map" height="100%" ariaLabel="Kerala recurring flood, road isolation and shelter access priorities" />
       </section>
 
       <section className="resilience-content">
         <header className="resilience-toolbar">
-          <div><h2>Chennai resilience priorities</h2><label>Ward<Select><option>All wards</option><option>Ward 110</option><option>Ward 121</option></Select></label><label>Asset type<Select><option>All</option><option>Drainage</option><option>Road</option><option>Shelter</option></Select></label><label>Confidence<Select><option>All</option><option>High</option></Select></label></div>
+          <div><h2>Kerala resilience priorities</h2><label>Ward<Select><option>All wards</option><option>Ward 110</option><option>Ward 121</option></Select></label><label>Asset type<Select><option>All</option><option>Drainage</option><option>Road</option><option>Shelter</option></Select></label><label>Confidence<Select><option>All</option><option>High</option></Select></label></div>
           <div><Button variant="outline" onClick={() => setCompare((value) => !value)}>{compare ? "Hide comparison" : "Compare scenario"}</Button><Button onClick={exportBriefing}><Download />{exported ? "Briefing exported" : "Export briefing"}</Button><Button variant="ghost" size="icon" aria-label="More audit options"><MoreVertical /></Button></div>
         </header>
 

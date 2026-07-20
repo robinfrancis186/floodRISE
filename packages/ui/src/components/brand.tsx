@@ -10,5 +10,5 @@ export function FloodRiseLogo({ compact = false }: { compact?: boolean }) {
 }
 
 export function DemoBanner() {
-  return <div className="flex h-7 items-center justify-center bg-demo px-3 text-center text-xs font-extrabold tracking-[0.14em] text-demo-foreground" role="status">DEMO DATA • NOT LIVE • CYCLONE MICHAUNG REPLAY</div>;
+  return <div className="flex h-7 items-center justify-center bg-demo px-3 text-center text-xs font-extrabold tracking-[0.14em] text-demo-foreground" role="status">DEMO DATA • NOT LIVE • KERALA EXTREME-RAINFALL REPLAY</div>;
 }

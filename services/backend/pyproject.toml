@@ -1,7 +1,7 @@
 [project]
 name = "floodrise-backend"
 version = "0.1.0"
-description = "floodRISE Chennai flood intelligence competition MVP API"
+description = "floodRISE Kerala flood intelligence competition MVP API"
 requires-python = ">=3.12"
 dependencies = [
   "aiosqlite>=0.21.0,<1",

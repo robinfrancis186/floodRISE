@@ -1,6 +1,6 @@
 # floodRISE backend
 
-FastAPI modular monolith for the deterministic Chennai flood-response MVP. The
+FastAPI modular monolith for the deterministic Kerala flood-response MVP. The
 default profile uses SQLite, packaged fixtures, a fixed scenario clock, and a
 synthetic notification state. Approval records may say `DISPATCHED` and name
 `fake://notification-sink`, but the backend does not call that sink or any real

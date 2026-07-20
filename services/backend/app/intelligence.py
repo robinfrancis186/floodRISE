@@ -2,7 +2,7 @@
 
 The functions in this module deliberately avoid databases and geospatial runtime
 dependencies.  They provide a small, auditable reference implementation for the
-Michaung replay and are safe to call from request handlers, workers, and tests.
+Kerala extreme-rainfall replay and are safe to call from request handlers, workers, and tests.
 
 This is a *rapid impact estimate*, not a certified hydraulic model.  Inputs and
 outputs are JSON-compatible mappings so model runs can be versioned and placed in
@@ -289,13 +289,13 @@ def _report_adjustment(
 def run_rapid_impact_model(
     snapshot: Mapping[str, Any], *, seed: int = DEFAULT_MODEL_SEED
 ) -> dict[str, Any]:
-    """Run the deterministic nine-member Chennai rapid-impact estimate.
+    """Run the deterministic nine-member Kerala rapid-impact estimate.
 
     Expected snapshot fields are intentionally modest: ``scenario_time``,
     ``rainfall_mm``, ``river_stage_m``, ``bankfull_stage_m``, ``base_depth_m``,
     ``terrain_susceptibility``, ``drainage_efficiency``, ``catchment_area_km2``,
     ``exposure_population``, and optionally ``rainfall_by_horizon_mm`` plus local
-    report assimilation inputs.  Missing values use documented Michaung demo
+    report assimilation inputs.  Missing values use documented Kerala extreme-rainfall demo
     defaults; callers should persist the complete snapshot returned in their own
     simulation manifest.
     """

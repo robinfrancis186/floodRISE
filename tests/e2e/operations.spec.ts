@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-test("operations console renders and completes an evidence review", async ({ page }) => {
+test("operations console renders and completes an evidence review", async ({ page, request }) => {
+  const reset = await request.post("http://127.0.0.1:8787/api/v1/demo/reset", {
+    headers: { "X-Demo-Role": "identity_administrator", "X-Demo-User": "playwright-reset-operator" },
+  });
+  expect(reset.ok()).toBeTruthy();
   await page.setViewportSize({ width: 1570, height: 1000 });
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -11,7 +15,7 @@ test("operations console renders and completes an evidence review", async ({ pag
   const impactMap = page.getByRole("region", { name: "Flood impact map" });
   await expect(impactMap.getByText("Rapid impact estimate", { exact: true })).toBeVisible();
   await expect(impactMap).toBeVisible();
-  await expect(impactMap.getByText("Loading the offline Chennai map…")).toBeHidden();
+  await expect(impactMap.getByText("Loading the detailed Kerala map…")).toBeHidden();
   await page.screenshot({ path: "artifacts/screenshots/ops-live.png", fullPage: true });
 
   await page.getByRole("button", { name: "FloodSignal" }).click();
@@ -29,8 +33,8 @@ test("operations console renders and completes an evidence review", async ({ pag
 
   await page.getByRole("button", { name: "Resilience Audit" }).click();
   await expect(page).toHaveURL(/\/resilience$/);
-  await expect(page.getByRole("heading", { name: "Chennai resilience priorities" })).toBeVisible();
-  await expect(page.getByText("Loading the offline Chennai map…")).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Kerala resilience priorities" })).toBeVisible();
+  await expect(page.getByText("Loading the detailed Kerala map…")).toBeHidden();
   await page.screenshot({ path: "artifacts/screenshots/ops-resilience.png", fullPage: true });
 
   expect(pageErrors).toEqual([]);

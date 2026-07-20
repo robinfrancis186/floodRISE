@@ -1,20 +1,25 @@
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 
-import { chennaiMapData } from "./data/chennai";
+import { keralaMapData } from "./data/kerala";
 import type { FloodMapVariant, MapHorizon, MapPosition } from "./types";
 
 const visibility = (shown: boolean): "visible" | "none" => (shown ? "visible" : "none");
 
 const isOperationalVariant = (variant: FloodMapVariant) => variant !== "resilience";
 
+const osmTileUrl = (
+  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
+    ?.VITE_OSM_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+).trim();
+
 export const initialViews: Record<
   FloodMapVariant,
   { center: MapPosition; zoom: number; minZoom: number; maxZoom: number }
 > = {
-  operations: { center: [80.225, 12.982], zoom: 12.55, minZoom: 10.5, maxZoom: 17 },
-  signals: { center: [80.219, 12.981], zoom: 13.55, minZoom: 11, maxZoom: 18 },
-  resilience: { center: [80.226, 12.978], zoom: 12.55, minZoom: 10.5, maxZoom: 17 },
-  field: { center: [80.212, 12.985], zoom: 13.35, minZoom: 12, maxZoom: 18 },
+  operations: { center: [76.356, 10.107], zoom: 12.35, minZoom: 7, maxZoom: 19 },
+  signals: { center: [76.35, 10.106], zoom: 14, minZoom: 9, maxZoom: 19 },
+  resilience: { center: [76.357, 10.103], zoom: 12.35, minZoom: 7, maxZoom: 19 },
+  field: { center: [76.349, 10.108], zoom: 13.8, minZoom: 9, maxZoom: 19 },
 };
 
 export const interactiveLayerIds = [
@@ -42,19 +47,27 @@ export function createMapStyle(
 
   return {
     version: 8,
-    name: "floodRISE deterministic Chennai offline map",
+    name: "floodRISE Kerala detailed OpenStreetMap with offline response overlays",
     sources: {
-      wards: { type: "geojson", data: chennaiMapData.wards },
-      water: { type: "geojson", data: chennaiMapData.water },
-      roads: { type: "geojson", data: chennaiMapData.roads },
-      "current-flood": { type: "geojson", data: chennaiMapData.currentFlood },
-      "predicted-flood-1h": { type: "geojson", data: chennaiMapData.predictedFlood1h },
-      "predicted-flood-3h": { type: "geojson", data: chennaiMapData.predictedFlood3h },
-      closures: { type: "geojson", data: chennaiMapData.closures },
-      routes: { type: "geojson", data: chennaiMapData.lowerRiskRoutes },
-      clusters: { type: "geojson", data: chennaiMapData.clusters },
-      "resilience-zones": { type: "geojson", data: chennaiMapData.resilienceZones },
-      "resilience-issues": { type: "geojson", data: chennaiMapData.resilienceIssues },
+      "osm-detail": {
+        type: "raster",
+        tiles: [osmTileUrl],
+        tileSize: 256,
+        minzoom: 0,
+        maxzoom: 19,
+        attribution: "© OpenStreetMap contributors",
+      },
+      wards: { type: "geojson", data: keralaMapData.wards },
+      water: { type: "geojson", data: keralaMapData.water },
+      roads: { type: "geojson", data: keralaMapData.roads },
+      "current-flood": { type: "geojson", data: keralaMapData.currentFlood },
+      "predicted-flood-1h": { type: "geojson", data: keralaMapData.predictedFlood1h },
+      "predicted-flood-3h": { type: "geojson", data: keralaMapData.predictedFlood3h },
+      closures: { type: "geojson", data: keralaMapData.closures },
+      routes: { type: "geojson", data: keralaMapData.lowerRiskRoutes },
+      clusters: { type: "geojson", data: keralaMapData.clusters },
+      "resilience-zones": { type: "geojson", data: keralaMapData.resilienceZones },
+      "resilience-issues": { type: "geojson", data: keralaMapData.resilienceIssues },
     },
     layers: [
       {
@@ -63,12 +76,22 @@ export function createMapStyle(
         paint: { "background-color": "#f8fafc" },
       },
       {
+        id: "osm-detail",
+        type: "raster",
+        source: "osm-detail",
+        paint: {
+          "raster-opacity": 0.96,
+          "raster-saturation": -0.22,
+          "raster-contrast": -0.06,
+        },
+      },
+      {
         id: "ward-fill",
         type: "fill",
         source: "wards",
         paint: {
           "fill-color": ["match", ["get", "class"], "ward-a", "#f4f7fa", "#eef2f6"],
-          "fill-opacity": 0.9,
+          "fill-opacity": 0.2,
         },
       },
       {
@@ -87,7 +110,7 @@ export function createMapStyle(
         type: "fill",
         source: "water",
         filter: ["==", ["geometry-type"], "Polygon"],
-        paint: { "fill-color": "#d9efe8", "fill-opacity": 0.86 },
+        paint: { "fill-color": "#d9efe8", "fill-opacity": 0.48 },
       },
       {
         id: "river-casing",

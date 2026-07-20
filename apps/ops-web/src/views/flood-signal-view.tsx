@@ -52,7 +52,7 @@ export function FloodSignalView() {
     ["Evidence consistency", selected.status === "DISPUTED" ? "Conflict" : "High"],
   ];
   const excludedReports = Math.max(0, selected.receivedReports - selected.independentReports);
-  const mapFeatureId = selected.id === "VEL-042" ? "cluster-velachery" : selected.id === "SAI-018" ? "cluster-saidapet" : selected.id === "PAL-031" ? "cluster-pallikaranai" : null;
+  const mapFeatureId = selected.id === "ALV-042" ? "cluster-aluva" : selected.id === "ELO-018" ? "cluster-eloor" : selected.id === "KDG-031" ? "cluster-kadungalloor" : null;
   const handleMapSelection = (selection: FloodMapSelection) => {
     if (selection.kind !== "cluster") return;
     const match = snapshot.signals.find((signal) => selection.name.includes(signal.id) || selection.name.toLowerCase().includes(signal.name.toLowerCase()));

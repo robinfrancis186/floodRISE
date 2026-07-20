@@ -211,7 +211,7 @@ class FloodRiseService:
 
     @property
     def incident_id(self) -> str:
-        return str(self.database.get_state("incident_id", "inc-demo-michaung-2023"))
+        return str(self.database.get_state("incident_id", "inc-demo-kerala-flood-2023"))
 
     def reset_demo(self, principal: Principal | None = None) -> dict[str, Any]:
         reset_database(self.database)
@@ -220,7 +220,10 @@ class FloodRiseService:
             "scenario_time": iso_utc(self.scenario_clock),
             "reset_at": iso_utc(datetime.now(UTC)),
             "data_label": "DEMO DATA",
-            "message": "Deterministic Michaung replay reset; no live provider was contacted.",
+            "message": (
+                "Deterministic Kerala extreme-rainfall replay reset; "
+                "no live provider was contacted."
+            ),
         }
 
     def incidents(self) -> list[dict[str, Any]]:
@@ -589,7 +592,7 @@ class FloodRiseService:
             "authenticated": bool(body["authenticated"]),
             "public_location": {
                 # A ~1 km grid comfortably exceeds the 200 m public minimum even
-                # after longitude convergence at Chennai's latitude.
+                # after longitude convergence at Kerala's latitude.
                 "latitude": round(float(body["location"]["latitude"]), 2),
                 "longitude": round(float(body["location"]["longitude"]), 2),
                 "accuracy_m": max(200, float(body["location"]["accuracy_m"])),
@@ -924,11 +927,11 @@ class FloodRiseService:
             else {
                 "id": "route-lower-risk-001",
                 "incident_id": signal["incident_id"],
-                "label": "Lower-risk route to Velachery School Shelter",
+                "label": "Lower-risk route to Aluva School Shelter",
                 "duration_min": 18,
                 "distance_km": 4.2,
-                "shelter": "Velachery School Shelter",
-                "shelter_id": "shelter-velachery-school",
+                "shelter": "Aluva School Shelter",
+                "shelter_id": "shelter-aluva-school",
                 "risk": "LOWER",
                 "reasons": [],
                 "model_version": self._active_model_version(),
@@ -1132,9 +1135,9 @@ class FloodRiseService:
         self.incident(incident_id)
         now = self.scenario_clock
         try:
-            from .routing import build_demo_chennai_graph, find_lower_risk_routes
+            from .routing import build_demo_kerala_graph, find_lower_risk_routes
 
-            graph = build_demo_chennai_graph()
+            graph = build_demo_kerala_graph()
             selected_origin = origin_node
             if not selected_origin and origin_location:
                 node_values = graph.get("nodes", {}).values()
@@ -1149,9 +1152,7 @@ class FloodRiseService:
                     ),
                 )
                 selected_origin = str(nearest["id"])
-            selected_origin = selected_origin or str(
-                graph.get("default_origin", "velachery_origin")
-            )
+            selected_origin = selected_origin or str(graph.get("default_origin", "aluva_origin"))
             result = find_lower_risk_routes(
                 graph,
                 selected_origin,

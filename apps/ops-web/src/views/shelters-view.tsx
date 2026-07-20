@@ -24,14 +24,14 @@ export function SheltersView() {
   return <div className="page-workspace shelters-page">
     <ViewHeader title="Shelter Operations" description="Capacity and route access are source-timestamped; unknown conditions remain explicitly unknown." actions={<StatusPill tone="success">{snapshot.shelters.filter((shelter) => shelter.status === "OPEN").length} confirmed open</StatusPill>} />
     <div className="shelter-layout">
-      <section className="table-panel shelter-table"><div className="panel-heading"><h3>Chennai shelters</h3><span>{snapshot.shelters.length} in incident area</span></div>
+      <section className="table-panel shelter-table"><div className="panel-heading"><h3>Kerala shelters</h3><span>{snapshot.shelters.length} in incident area</span></div>
         <Table><TableHeader><TableRow><TableHead>Shelter</TableHead><TableHead>Status</TableHead><TableHead>Occupancy</TableHead><TableHead>Access</TableHead><TableHead>Freshness</TableHead></TableRow></TableHeader>
           <TableBody>{snapshot.shelters.map((shelter) => <TableRow key={shelter.id} data-state={shelter.id === selected.id ? "selected" : undefined} onClick={() => setSelectedId(shelter.id)}>
             <TableCell><strong>{shelter.name}</strong><small className="cell-subtitle">{shelter.ward} · {shelter.id}</small></TableCell><TableCell><StatusPill tone={shelter.status === "OPEN" ? "success" : shelter.status === "LIMITED" ? "warning" : "danger"}>{shelter.status}</StatusPill></TableCell><TableCell>{shelter.occupancy} / {shelter.capacity}</TableCell><TableCell>{shelter.access}</TableCell><TableCell>{shelter.updatedMinutesAgo} min ago</TableCell>
           </TableRow>)}</TableBody>
         </Table>
       </section>
-      <section className="shelter-map"><FloodMap variant="operations" selectedFeatureId={selected.name.includes("Velachery") ? "shelter-velachery" : undefined} onFeatureSelect={handleMapSelection} className="shared-map" height="100%" ariaLabel="Shelters, current flood extent, and route access" /></section>
+      <section className="shelter-map"><FloodMap variant="operations" selectedFeatureId={selected.name.includes("Aluva") ? "shelter-aluva" : undefined} onFeatureSelect={handleMapSelection} className="shared-map" height="100%" ariaLabel="Shelters, current flood extent, and route access" /></section>
       <aside className="detail-panel shelter-detail"><div className="detail-panel-heading"><span><Building2 /></span><div><h3>{selected.name}</h3><p>{selected.ward} · updated {selected.updatedMinutesAgo} min ago</p></div></div>
         <div className="occupancy-gauge"><span style={{ width: `${utilization}%` }} /><p><strong>{utilization}%</strong> occupied</p></div>
         <div className="shelter-facts"><span><Users /><strong>{selected.capacity - selected.occupancy}</strong><small>spaces remaining</small></span><span><MapPin /><strong>{selected.access}</strong><small>route access</small></span><span><Clock3 /><strong>{selected.updatedMinutesAgo} min</strong><small>source age</small></span></div>

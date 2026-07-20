@@ -1,6 +1,6 @@
 # floodRISE
 
-floodRISE is a human-verified flood intelligence and emergency decision-support MVP for Chennai. It combines deterministic flood-impact replay, community corroboration, lower-risk evacuation routing, human approval, and resilience auditing.
+floodRISE is a human-verified flood intelligence and emergency decision-support MVP for Kerala. It combines deterministic flood-impact replay, community corroboration, lower-risk evacuation routing, human approval, and resilience auditing.
 
 The pnpm/uv monorepo contains two React products, shared packages, and two
 FastAPI services:
@@ -10,9 +10,9 @@ FastAPI services:
 - `services/backend`: versioned API, FloodSignal rules, demo simulation, routing, approvals, SSE, and audit.
 - `services/tile-api`: allow-listed raster tile facade backed by checksummed,
   versioned demo depth grids; arbitrary source URLs are rejected.
-- `packages/ui` and `packages/map`: shared accessible UI primitives and offline Chennai MapLibre layers.
+- `packages/ui` and `packages/map`: shared accessible UI primitives and Kerala MapLibre layers with a detailed interactive OpenStreetMap basemap plus a packaged offline road fallback.
 - `packages/contracts` and `packages/api-client`: Zod contracts plus a generated OpenAPI client.
-- `fixtures/chennai-demo`: checksummed deterministic Cyclone Michaung replay data.
+- `fixtures/kerala-demo`: checksummed deterministic Kerala extreme-rainfall replay data.
 - `infra`, `ops`, and `docs`: local Compose, an un-applied AWS Mumbai target-topology
   scaffold, observability configuration, CI gates, and runbooks.
 
@@ -31,6 +31,8 @@ pnpm dev
 The default profile is a deterministic, clearly watermarked `DEMO DATA` replay and never contacts a real notification destination. See `docs/DEMO_RUNBOOK.md` for the judging flow and `docs/SAFETY.md` for operational boundaries.
 The exact boundary between locally verified MVP behavior and deployment-time
 integration work is recorded in `docs/IMPLEMENTATION_STATUS.md`.
+The latest Kerala/OpenStreetMap release evidence is recorded in
+`docs/RELEASE_VERIFICATION_2026-07-21.md`.
 
 ## Verify
 

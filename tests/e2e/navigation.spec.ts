@@ -11,7 +11,7 @@ const operationsRoutes: RouteExpectation[] = [
   { path: "/incidents", text: "Incident Management" },
   { path: "/evacuation", text: "Evacuation Routing" },
   { path: "/shelters", text: "Shelter Operations" },
-  { path: "/resilience", text: "Chennai resilience priorities" },
+  { path: "/resilience", text: "Kerala resilience priorities" },
   { path: "/sources", text: "Source Health" },
   { path: "/audit", text: "Audit Log" },
 ];
@@ -52,7 +52,10 @@ test("all field workflows render at 360 by 800 without browser errors", async ({
   const failures = collectBrowserFailures(page);
 
   for (const route of fieldRoutes) {
-    await page.goto(`http://127.0.0.1:55174${route.path}`, { waitUntil: "networkidle" });
+    // Public map tiles may remain in flight while users pan and zoom. The app is
+    // ready once its document and route content have loaded; provider idleness is
+    // neither required nor guaranteed.
+    await page.goto(`http://127.0.0.1:55174${route.path}`, { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: route.text, exact: true }).first()).toBeVisible();
     await expect(page.getByText(/DEMO DATA.*NOT LIVE/).first()).toBeVisible();
   }

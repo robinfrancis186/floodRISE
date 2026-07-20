@@ -66,7 +66,7 @@ flowchart LR
   API --> Media[("Private in-process demo media bytes")]
   API --> Model["Synchronous deterministic model and route engine"]
   Ops --> Tiles["Restricted packaged-PGM tile service"]
-  Fixtures["Checksummed Michaung fixtures"] --> API
+  Fixtures["Checksummed Kerala extreme-rainfall fixtures"] --> API
   Fixtures --> Tiles
 ```
 
@@ -105,7 +105,7 @@ dispatcher. The deterministic path starts with checksum-pinned fixture data and
 stores versioned JSON entities through SQLAlchemy.
 
 The repository's lightweight tile service is deliberately demo-scoped. It
-loads immutable, georeferenced PGM depth grids from the Michaung fixture,
+loads immutable, georeferenced PGM depth grids from the Kerala extreme-rainfall fixture,
 verifies their SHA-256 checksums at startup, and renders nearest-neighbour PNG
 tiles with model, artifact, validity, confidence, and provenance metadata. This
 is an artifact-backed offline path, not a COG reader or TiTiler deployment. A

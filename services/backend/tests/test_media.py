@@ -18,7 +18,7 @@ from app.main import create_app
 from app.media import MediaService, MemoryMediaBlobStore, UnavailableScanner
 
 API = "/api/v1"
-INCIDENT_ID = "inc-demo-michaung-2023"
+INCIDENT_ID = "inc-demo-kerala-flood-2023"
 FIXED_TIME = datetime(2023, 12, 4, 14, 10, tzinfo=UTC)
 
 
@@ -155,7 +155,7 @@ def _report_payload(number: int, upload_ids: list[str]) -> dict[str, Any]:
         "reporter_id": f"reporter-{number}",
         "device_id": f"device-{number}",
         "observed_at": "2023-12-04T14:08:00Z",
-        "location": {"latitude": 12.9815, "longitude": 80.2207, "accuracy_m": 20},
+        "location": {"latitude": 10.1065000, "longitude": 76.3517000, "accuracy_m": 20},
         "water_depth": "KNEE",
         "road_status": "IMPASSABLE",
         "media_upload_ids": upload_ids,

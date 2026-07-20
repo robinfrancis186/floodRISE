@@ -10,10 +10,10 @@ import { useNetworkStatus } from "../hooks/useNetworkStatus";
 export function LowerRiskRoutePage() {
   const { isOnline } = useNetworkStatus();
   const [origin, setOrigin] = useState({
-    latitude: 12.9791,
-    longitude: 80.2209,
+    latitude: 10.1041000,
+    longitude: 76.3519000,
     accuracy_m: 12,
-    label: "Velachery Main Road"
+    label: "Aluva–Paravur Road"
   });
   const [locating, setLocating] = useState(false);
   const routes = useQuery({

@@ -143,7 +143,7 @@ def create_app(
         title="floodRISE API",
         summary="Human-verified flood intelligence and decision support",
         description=(
-            "Versioned Chennai flood-response API. The default profile is deterministic "
+            "Versioned Kerala flood-response API. The default profile is deterministic "
             "DEMO DATA and never contacts a production notification destination."
         ),
         version="0.1.0",

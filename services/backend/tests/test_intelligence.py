@@ -14,7 +14,7 @@ from app.intelligence import (
     run_rapid_impact_model,
 )
 from app.routing import (
-    build_demo_chennai_graph,
+    build_demo_kerala_graph,
     edge_is_usable,
     find_lower_risk_routes,
     shelter_is_eligible,
@@ -196,11 +196,11 @@ def test_model_rejects_ambiguous_catchment_flags() -> None:
 
 
 def test_demo_routes_exclude_threshold_edges_and_full_shelters() -> None:
-    graph = build_demo_chennai_graph()
-    assert graph["default_origin"] == "velachery"
+    graph = build_demo_kerala_graph()
+    assert graph["default_origin"] == "aluva"
     result = find_lower_risk_routes(
         graph,
-        "velachery",
+        "aluva",
         model_version="model-demo-1",
         evidence_version="evidence-demo-4",
         valid_until="2023-12-04T14:10:00Z",
@@ -211,23 +211,23 @@ def test_demo_routes_exclude_threshold_edges_and_full_shelters() -> None:
     assert [route["rank"] for route in result["alternatives"]] == [1, 2, 3]
     assert result["staging_point"] is None
     exclusions = {entry["edge_id"]: entry["reasons"] for entry in result["excluded_edges"]}
-    assert "P50_DEPTH_THRESHOLD" in exclusions["e-velachery-guindy"]
-    assert "AUTHORIZED_OR_CONFIRMED_CLOSURE" in exclusions["e-guindy-saidapet"]
+    assert "P50_DEPTH_THRESHOLD" in exclusions["e-aluva-ernakulam"]
+    assert "AUTHORIZED_OR_CONFIRMED_CLOSURE" in exclusions["e-ernakulam-eloor"]
     shelter_exclusions = {
         entry["shelter_id"]: entry["reasons"] for entry in result["excluded_shelters"]
     }
-    assert shelter_exclusions["shelter-saidapet"] == ["SHELTER_FULL"]
+    assert shelter_exclusions["shelter-eloor"] == ["SHELTER_FULL"]
 
     edges = {edge["id"]: edge for edge in graph["edges"]}
     for route in result["alternatives"]:
         assert route["geometry"]["type"] == "LineString"
-        assert route["geometry"]["coordinates"][0] == [80.2206, 12.9815]
+        assert route["geometry"]["coordinates"][0] == [76.3516000, 10.1065000]
         assert all(edge_is_usable(edges[edge_id])[0] for edge_id in route["edge_ids"])
         assert "safe" not in result["message"].lower()
 
 
 def test_route_results_are_deterministic_and_capped_at_three() -> None:
-    graph = build_demo_chennai_graph()
+    graph = build_demo_kerala_graph()
     arguments = {
         "model_version": "model-demo-1",
         "evidence_version": "evidence-demo-4",
@@ -235,8 +235,8 @@ def test_route_results_are_deterministic_and_capped_at_three() -> None:
         "max_alternatives": 99,
     }
 
-    first = find_lower_risk_routes(graph, "velachery", **arguments)
-    second = find_lower_risk_routes(graph, "velachery", **arguments)
+    first = find_lower_risk_routes(graph, "aluva", **arguments)
+    second = find_lower_risk_routes(graph, "aluva", **arguments)
 
     assert first == second
     assert len(first["alternatives"]) <= 3
@@ -314,14 +314,14 @@ def test_disconnected_graph_returns_explicit_no_route_and_staging_point() -> Non
             "origin": {
                 "id": "origin",
                 "name": "Origin",
-                "longitude": 80.2,
-                "latitude": 13.0,
+                "longitude": 76.3310000,
+                "latitude": 10.1250000,
             },
             "shelter-node": {
                 "id": "shelter-node",
                 "name": "Shelter",
-                "longitude": 80.21,
-                "latitude": 13.01,
+                "longitude": 76.3410000,
+                "latitude": 10.1350000,
             },
         },
         "edges": [],
@@ -359,7 +359,7 @@ def test_disconnected_graph_returns_explicit_no_route_and_staging_point() -> Non
 def test_unknown_origin_fails_before_issuing_route_guidance() -> None:
     with pytest.raises(ValueError, match="unknown origin_node"):
         find_lower_risk_routes(
-            build_demo_chennai_graph(),
+            build_demo_kerala_graph(),
             "not-on-graph",
             model_version="model-1",
             evidence_version="evidence-1",

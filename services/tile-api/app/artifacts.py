@@ -77,7 +77,7 @@ def default_manifest_path() -> Path:
     return (
         Path(__file__).resolve().parents[3]
         / "fixtures"
-        / "chennai-demo"
+        / "kerala-demo"
         / "rasters"
         / "manifest.json"
     )

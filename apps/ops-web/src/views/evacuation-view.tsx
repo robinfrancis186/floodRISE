@@ -19,7 +19,7 @@ export function EvacuationView() {
     <ViewHeader title="Evacuation Routing" description="Compare lower-risk alternatives against current evidence and rapid impact estimates." actions={<><StatusPill tone="warning">Valid until {selected.valid_until.slice(11, 16)}</StatusPill><Button disabled={!reviewable} title={reviewable ? undefined : "A current authoritative approval request is required"} onClick={() => setDialogOpen(true)}><ShieldAlert />{action?.status === "APPROVED" ? "Guidance approved" : "Review guidance approval"}</Button></>} />
     <div className="evacuation-layout">
       <section className="evacuation-map"><FloodMap variant="operations" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId="route-primary" className="shared-map" height="100%" ariaLabel="Lower-risk evacuation route alternatives and shelter access" /></section>
-      <section className="route-list-panel"><header><h3>Route alternatives</h3><span>Origin: Velachery Main Road</span></header>
+      <section className="route-list-panel"><header><h3>Route alternatives</h3><span>Origin: Aluva–Paravur Road</span></header>
         <div className="route-list">{snapshot.routes.map((route, index) => <button key={route.id} className="route-option" data-selected={selected.id === route.id || undefined} onClick={() => setSelectedId(route.id)}>
           <span className="route-rank">{index + 1}</span><span><strong>{route.label}</strong><small><Navigation />{route.distance_km} km · <Clock3 />{route.duration_min} min</small><em>{route.shelter}</em></span><StatusPill tone={route.risk === "LOWER" ? "success" : "warning"}>{route.risk === "LOWER" ? "Lower risk" : "Elevated"}</StatusPill>
         </button>)}</div>

@@ -1249,7 +1249,7 @@
     }
   },
   "info": {
-    "description": "Versioned Chennai flood-response API. The default profile is deterministic DEMO DATA and never contacts a production notification destination.",
+    "description": "Versioned Kerala flood-response API. The default profile is deterministic DEMO DATA and never contacts a production notification destination.",
     "summary": "Human-verified flood intelligence and decision support",
     "title": "floodRISE API",
     "version": "0.1.0"

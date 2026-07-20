@@ -1,4 +1,4 @@
-# Chennai Cyclone Michaung deterministic replay
+# Kerala extreme-rainfall deterministic replay
 
 This fixture bundle is privacy-safe. Flood-response observations and impacts are synthetic, while `osm-baseline.geojson` is a packaged OpenStreetMap road snapshot with ODbL attribution. The bundle contains no real reporter identity, contact detail, notification destination, or restricted dataset extract.
 
@@ -12,4 +12,4 @@ model/version binding, validity window, confidence, input provenance, and
 explicit centimetre-to-metre scale. They are packaged rapid impact estimates;
 they are not COGs, live observations, or hydraulically certified flood depths.
 
-Regenerate the road baseline with `pnpm osm:import`. Runtime maps use the packaged snapshot and never depend on OpenStreetMap tile servers or upstream internet.
+Regenerate the complete road baseline with `pnpm osm:import`; if the full snapshot is already pinned, regenerate only the bounded 800-segment application subset with `pnpm osm:fallback`. When online, the applications request only the OpenStreetMap tiles needed for the human-visible viewport. The packaged subset preserves road and response overlays without upstream internet; public OSM tiles are never prefetched for offline use.

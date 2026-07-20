@@ -68,8 +68,8 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [streamStatus, setStreamStatus] = useState<"offline" | OperationsStreamStatus>("offline");
   const [horizon, setHorizon] = useState<Horizon>("now");
-  const [selectedSignalId, setSelectedSignalId] = useState("VEL-042");
-  const [selectedPriorityId, setSelectedPriorityId] = useState("RES-PAL-01");
+  const [selectedSignalId, setSelectedSignalId] = useState("ALV-042");
+  const [selectedPriorityId, setSelectedPriorityId] = useState("RES-KDG-01");
   const [notice, setNotice] = useState<Notice | null>(null);
 
   useEffect(() => {
@@ -278,13 +278,13 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       try {
         await resetDemoApi(apiIdentityForRole(role));
         setHorizon("now");
-        setSelectedSignalId("VEL-042");
-        setSelectedPriorityId("RES-PAL-01");
+        setSelectedSignalId("ALV-042");
+        setSelectedPriorityId("RES-KDG-01");
         await queryClient.invalidateQueries({
           queryKey: ["operations-bootstrap", role],
           exact: true,
         });
-        announce("Cyclone Michaung replay reset to the judging checkpoint.", "success");
+        announce("Kerala extreme-rainfall replay reset to the judging checkpoint.", "success");
       } catch (error) {
         announce(`Replay was not reset. ${describeApiError(error)}`, "warning");
       }

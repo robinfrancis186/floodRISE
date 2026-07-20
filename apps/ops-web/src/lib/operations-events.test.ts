@@ -6,7 +6,7 @@ import {
   type OperationsStreamStatus,
 } from "./operations-events";
 
-const INCIDENT_ID = "inc-demo-michaung-2023";
+const INCIDENT_ID = "inc-demo-kerala-flood-2023";
 
 afterEach(() => {
   window.localStorage.clear();
@@ -19,7 +19,7 @@ function eventFrame(sequence: number, overrides: Partial<OperationsInvalidation>
     id: `evt-${sequence}`,
     type: "signal.updated",
     incident_id: INCIDENT_ID,
-    resource_id: "signal-velachery",
+    resource_id: "signal-aluva",
     version: 5,
     occurred_at: "2023-12-04T14:10:02Z",
     ...overrides,
@@ -61,7 +61,7 @@ describe("operations SSE subscription", () => {
     expect(received[0]).toMatchObject({
       type: "signal.updated",
       incident_id: INCIDENT_ID,
-      resource_id: "signal-velachery",
+      resource_id: "signal-aluva",
       version: 5,
     });
     expect(window.localStorage.getItem(operationsEventCursorKey(INCIDENT_ID))).toBe("42");

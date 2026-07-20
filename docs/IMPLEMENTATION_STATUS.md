@@ -20,7 +20,7 @@ and environment evidence.
 | Authority | Server-enforced roles, version conflicts, seeded two-person approval requests, distinct requester/approver checks, expiry/model/evidence binding, synthetic alert/audit records, OIDC/JWKS bearer verification, and phishing-resistant recent step-up claim checks for high-impact decisions. No external dispatcher or web PKCE/session flow is implemented. |
 | Durability | SQLAlchemy/Alembic versioned entity repository, idempotency records, atomic hash-chained audit plus transactional outbox, and replayable SSE invalidations. SQLite supplies the deterministic demo; SQLAlchemy can target PostgreSQL, but no PostGIS/pgRouting application schema or query path is implemented. |
 | Raster replay | Two checksum-pinned, georeferenced packaged PGM depth grids, fail-closed manifest validation, deterministic PNG tiles, TileJSON provenance/version metadata, and immutable ETags. This is explicitly not COG/TiTiler or certified depth output. |
-| Road baseline | 291 packaged Chennai OpenStreetMap road segments with source way IDs, snapshot metadata, ODbL licence metadata, visible attribution, fixture checksum validation, and bridge/tunnel tags. Runtime maps remain functional without upstream tile or API access; this is a baseline, not event-time road status. |
+| Kerala map and road baseline | Detailed standard OpenStreetMap tiles for normal interactive demo viewing, plus 3,967 packaged Kerala major-road segments with source way IDs, snapshot metadata, ODbL licence metadata, visible attribution, fixture checksum validation, and bridge/tunnel tags. Workbox does not cache cross-origin OSM tiles and the packaged response layers remain functional without upstream access. Public tiles are best-effort and not an emergency-runtime dependency. The exact legacy Chennai demo seed auto-migrates to Kerala without rewriting unrelated non-demo records. |
 | Delivery assets | OpenAPI snapshot and generated TypeScript client, deterministic fixtures, local Compose dependencies, AWS Mumbai Terraform scaffold, CI/security workflows, runbooks, Playwright/axe journeys, and screenshot evidence. |
 
 ## Implemented boundary, activation evidence still required
@@ -51,7 +51,7 @@ and environment evidence.
 
 ## Deliberately not claimed
 
-- No IMD, CWC/NWDP, GCC, Chennai Flood Monitor, or satellite credential was used
+- No IMD, CWC/NWDP, KSDMA, Kerala local-authority GIS, or satellite credential was used
   and no permission-gated source was scraped. The repository contains a
   source/provenance policy and contract-faithful deterministic fixtures, not an
   activated live ingestion fleet.
@@ -80,8 +80,9 @@ offline behavior, and media failure handling. They are development evidence,
 not a signed judging rehearsal record.
 
 Three consecutive clean automated resets/corroboration runs and the degraded
-network field journey passed locally on 2026-07-20; the exact timings and scope
-are recorded in `docs/RELEASE_VERIFICATION_2026-07-20.md`. The sub-two-minute
+network field journey passed for the Kerala baseline on 2026-07-21; the exact
+timings, OpenStreetMap snapshot, and scope are recorded in
+`docs/RELEASE_VERIFICATION_2026-07-21.md`. The sub-two-minute
 full reset rehearsal, eight-minute presentation timing, full numerical fixture
 tolerances, performance percentiles, VoiceOver review, ZAP/k6 gates, and
 zero-destination environment observation must still be run and recorded on the

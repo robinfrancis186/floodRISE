@@ -14,7 +14,7 @@ from app.database import Database
 from app.domain import CORROBORATION_MESSAGE, EXPIRY_MESSAGE
 from app.main import create_app
 
-INCIDENT_ID = "inc-demo-michaung-2023"
+INCIDENT_ID = "inc-demo-kerala-flood-2023"
 API = "/api/v1"
 
 
@@ -50,8 +50,8 @@ def _report_payload(
         "device_id": device_id or f"device-{number}",
         "observed_at": observed_at,
         "location": {
-            "latitude": 12.98150 + number * 0.00004,
-            "longitude": 80.22070 + number * 0.00004,
+            "latitude": 10.1065000 + number * 0.00004,
+            "longitude": 76.3517000 + number * 0.00004,
             "accuracy_m": 20,
         },
         "water_depth": "KNEE",
@@ -105,8 +105,8 @@ def _approval_payload() -> dict[str, Any]:
             "title": "Official flood warning",
             "body": "Move away from low-lying streets and follow responder instructions.",
         },
-        "audience": "Residents inside the approved Velachery warning area",
-        "geometry": {"type": "Point", "coordinates": [80.2207, 12.9815]},
+        "audience": "Residents inside the approved Aluva warning area",
+        "geometry": {"type": "Point", "coordinates": [76.3517000, 10.1065000]},
         "evidence_version": "evidence-demo-001",
         "model_version": "model-demo-20231204-001",
         "reason": "Issue an official warning for the reviewed impact area.",
@@ -188,7 +188,9 @@ def test_demo_reset_requires_identity_administrator_and_returns_canonical_checkp
         "scenario_time": "2023-12-04T14:10:00Z",
         "reset_at": "ignored",
         "data_label": "DEMO DATA",
-        "message": "Deterministic Michaung replay reset; no live provider was contacted.",
+        "message": (
+            "Deterministic Kerala extreme-rainfall replay reset; no live provider was contacted."
+        ),
     }
 
 
@@ -631,7 +633,7 @@ def test_audit_chain_and_finite_sse_replay_share_persisted_events(client: TestCl
 def test_route_and_simulation_endpoints_publish_versioned_estimates(client: TestClient) -> None:
     route = client.post(
         f"{API}/routes/recommend",
-        json={"incident_id": INCIDENT_ID, "origin_node": "velachery", "max_alternatives": 3},
+        json={"incident_id": INCIDENT_ID, "origin_node": "aluva", "max_alternatives": 3},
     )
 
     assert route.status_code == 200

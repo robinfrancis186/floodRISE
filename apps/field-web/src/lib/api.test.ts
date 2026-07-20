@@ -18,16 +18,16 @@ afterEach(() => {
 function reportDraft(withPhoto = true): OfflineReportDraft {
   return {
     client_report_id: "report-client-media-0001",
-    incident_id: "inc-demo-michaung-2023",
+    incident_id: "inc-demo-kerala-flood-2023",
     reporter_id: "reporter-field-1",
     device_id: "device-field-1",
     observed_at: DEMO_SCENARIO_TIME,
-    location: { latitude: 12.9791, longitude: 80.2209, accuracy_m: 12 },
+    location: { latitude: 10.1041000, longitude: 76.3519000, accuracy_m: 12 },
     water_depth: "KNEE",
     road_status: "DIFFICULT",
     infrastructure_issues: ["BLOCKED_DRAIN"],
     note: "Water rising beside the bus stop.",
-    place_label: "Velachery Main Road",
+    place_label: "Aluva–Paravur Road",
     photo: withPhoto
       ? {
           name: "field-evidence.jpg",

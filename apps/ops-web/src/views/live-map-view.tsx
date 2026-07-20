@@ -33,7 +33,7 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
     { icon: GitCompareArrows, label: "Rapid impact estimate", value: "Higher runoff" },
     { icon: Users, label: `${selected.independentReports} independent ground reports`, value: "3–8 min ago" },
   ], [selected.independentReports]);
-  const mapFeatureId = selected.id === "VEL-042" ? "cluster-velachery" : selected.id === "SAI-018" ? "cluster-saidapet" : selected.id === "PAL-031" ? "cluster-pallikaranai" : null;
+  const mapFeatureId = selected.id === "ALV-042" ? "cluster-aluva" : selected.id === "ELO-018" ? "cluster-eloor" : selected.id === "KDG-031" ? "cluster-kadungalloor" : null;
   const handleMapSelection = (selection: FloodMapSelection) => {
     if (selection.kind !== "cluster") return;
     const match = snapshot.signals.find((signal) => selection.name.includes(signal.id) || selection.name.toLowerCase().includes(signal.name.toLowerCase()));
@@ -44,7 +44,7 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
     <div className="workspace live-workspace">
       <div className="change-alert" role="status">
         <AlertTriangle aria-hidden />
-        <strong>Flood extent increased near Velachery</strong>
+        <strong>Flood extent increased near Aluva</strong>
         <span>•</span><span>{selected.independentReports} independent reports</span><span>•</span><span>2 routes affected</span>
         <Button size="sm" onClick={() => onNavigate("signals")}>Review evidence</Button>
       </div>
@@ -63,7 +63,7 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
           showHorizonControl={false}
           className="shared-map"
           height="100%"
-          ariaLabel="Chennai current flooding, predicted flooding, routes and shelters"
+          ariaLabel="Kerala current flooding, predicted flooding, routes and shelters"
         />
         <div className="map-horizon" role="group" aria-label="Forecast horizon">
           {(["now", "1h", "3h"] as const).map((item) => <button key={item} type="button" data-active={horizon === item || undefined} onClick={() => setHorizon(item)}>{item === "now" ? "Now" : `+${item}`}</button>)}

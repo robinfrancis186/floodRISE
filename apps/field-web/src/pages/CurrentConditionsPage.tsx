@@ -12,18 +12,18 @@ export function CurrentConditionsPage() {
   return (
     <div className="page current-conditions-page">
       <section className="map-region" aria-labelledby="map-heading">
-        <h1 id="map-heading" className="sr-only">Current flood conditions around Velachery</h1>
+        <h1 id="map-heading" className="sr-only">Current flood conditions around Aluva</h1>
         <FloodMap
           variant="field"
           horizon="3h"
           height="clamp(320px, 47vh, 470px)"
           showSummary={false}
-          ariaLabel="Current and estimated flood conditions near Velachery"
+          ariaLabel="Current and estimated flood conditions near Aluva"
         />
         <div className="map-place-overlay">
           <LocateFixed aria-hidden />
           <div>
-            <strong>Velachery, Chennai</strong>
+            <strong>Aluva, Kerala</strong>
             <span>Demo location · ±12 m</span>
           </div>
         </div>

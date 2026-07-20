@@ -28,7 +28,7 @@ from app.schemas import (
 )
 from app.seed import seed_database
 
-INCIDENT_ID = "inc-demo-michaung-2023"
+INCIDENT_ID = "inc-demo-kerala-flood-2023"
 
 
 @pytest.fixture
@@ -61,8 +61,8 @@ def _report_input(
             "device_id": device_id or f"device-{number}",
             "observed_at": observed_at,
             "location": {
-                "latitude": 12.98150 + number * 0.00004,
-                "longitude": 80.22070 + number * 0.00004,
+                "latitude": 10.1065000 + number * 0.00004,
+                "longitude": 76.3517000 + number * 0.00004,
                 "accuracy_m": 20,
             },
             "water_depth": "KNEE",
@@ -97,7 +97,7 @@ def _approval_input() -> ApprovalCreateInput:
                 "body": "Follow the reviewed official flood instructions.",
             },
             "audience": "Residents inside the approved warning geometry",
-            "geometry": {"type": "Point", "coordinates": [80.2207, 12.9815]},
+            "geometry": {"type": "Point", "coordinates": [76.3517000, 10.1065000]},
             "evidence_version": "evidence-demo-001",
             "model_version": "model-demo-20231204-001",
             "reason": "Issue a reviewed official warning.",
@@ -119,7 +119,7 @@ def test_database_seed_commit_outbox_and_hash_chain(database: Database) -> None:
         "approval.requested",
     ]
     assert len(database.list("approval")) == 3
-    initial_signal = database.get("signal", "signal-velachery-042")
+    initial_signal = database.get("signal", "signal-aluva-042")
     assert initial_signal is not None
     assert initial_signal["state"] == "NEEDS_REVIEW"
     assert initial_signal["version"] == 1
@@ -316,7 +316,7 @@ def test_first_report_replaces_the_presentation_checkpoint_with_real_evidence(
         "COMMUNITY_CORROBORATED",
     ]
     assert [signal["independent_report_count"] for signal in states] == [1, 2, 3, 4]
-    assert states[0]["id"] == "signal-velachery-042"
+    assert states[0]["id"] == "signal-aluva-042"
     assert states[0]["version"] == 2
     assert "presentation_seed" not in states[0]
 
@@ -469,7 +469,7 @@ def test_service_publishes_simulation_and_lower_risk_routes(
     )
     routes = service.recommend_routes(
         INCIDENT_ID,
-        origin_node="velachery",
+        origin_node="aluva",
         max_alternatives=3,
         principal=Principal("field-responder", "responder", True),
     )

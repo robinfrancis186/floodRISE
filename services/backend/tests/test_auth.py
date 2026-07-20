@@ -21,7 +21,7 @@ from app.database import Database
 from app.main import create_app
 
 API = "/api/v1"
-INCIDENT_ID = "inc-demo-michaung-2023"
+INCIDENT_ID = "inc-demo-kerala-flood-2023"
 ISSUER = "https://cognito-idp.ap-south-1.amazonaws.com/ap-south-1_example"
 AUDIENCE = "staff-web-client"
 KEY_ID = "local-test-key"
@@ -107,7 +107,7 @@ def _approval_payload() -> dict[str, Any]:
             "body": "This remains a fake-gateway test action.",
         },
         "audience": "Local static-JWKS test audience",
-        "geometry": {"type": "Point", "coordinates": [80.2207, 12.9815]},
+        "geometry": {"type": "Point", "coordinates": [76.3517000, 10.1065000]},
         "evidence_version": "evidence-auth-test-001",
         "model_version": "model-auth-test-001",
         "reason": "Exercise the production authorization boundary.",

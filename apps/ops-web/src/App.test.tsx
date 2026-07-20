@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 vi.mock("@floodrise/map", () => ({
-  FloodMap: ({ ariaLabel }: { ariaLabel?: string }) => <div data-testid="flood-map" aria-label={ariaLabel}>Deterministic Chennai map</div>,
+  FloodMap: ({ ariaLabel }: { ariaLabel?: string }) => <div data-testid="flood-map" aria-label={ariaLabel}>Deterministic Kerala map</div>,
 }));
 
 beforeEach(() => {
@@ -31,7 +31,7 @@ function installApprovalApi(decisionStatus = 200) {
       id: "approval-area-demo",
       action_type: "AREA_CAUTION",
       action_payload: { presentation_id: "ACT-204", title: "Issue area caution and reroute teams", body: "Issue an opt-in caution." },
-      audience: "Velachery hazard footprint + 1 km",
+      audience: "Aluva hazard footprint + 1 km",
       evidence_version: "evidence-demo-001",
       model_version: "model-demo-001",
       status: "PENDING",
@@ -60,8 +60,8 @@ function installApprovalApi(decisionStatus = 200) {
   ];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-michaung-2023" }] });
-    if (url.includes("/incidents/inc-demo-michaung-2023/bootstrap")) {
+    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-kerala-flood-2023" }] });
+    if (url.includes("/incidents/inc-demo-kerala-flood-2023/bootstrap")) {
       return jsonResponse({
         scenario_clock: "2023-12-04T14:10:00Z",
         simulation: { model_version: "model-demo-001" },
@@ -99,14 +99,14 @@ function installApprovalApi(decisionStatus = 200) {
 function installSignalApi(decisionStatus = 200) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-michaung-2023" }] });
-    if (url.includes("/incidents/inc-demo-michaung-2023/bootstrap")) {
+    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-kerala-flood-2023" }] });
+    if (url.includes("/incidents/inc-demo-kerala-flood-2023/bootstrap")) {
       return jsonResponse({
         scenario_clock: "2023-12-04T14:10:00Z",
         simulation: { model_version: "model-demo-001" },
         approvals: [],
         signals: [{
-          id: "signal-velachery",
+          id: "signal-aluva",
           state: "CORROBORATING",
           report_count: 4,
           independent_report_count: 4,
@@ -117,7 +117,7 @@ function installSignalApi(decisionStatus = 200) {
         reports: [],
       });
     }
-    if (url.includes("/signals/signal-velachery/decisions")) {
+    if (url.includes("/signals/signal-aluva/decisions")) {
       if (decisionStatus >= 400) {
         return jsonResponse({
           title: "Version conflict",
@@ -126,7 +126,7 @@ function installSignalApi(decisionStatus = 200) {
         }, decisionStatus);
       }
       return jsonResponse({
-        id: "signal-velachery",
+        id: "signal-aluva",
         state: "COMMUNITY_CORROBORATED",
         human_decision: "VERIFY",
         version: 5,
@@ -141,8 +141,8 @@ function installSignalApi(decisionStatus = 200) {
 function installShelterApi(updateStatus = 200) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-michaung-2023" }] });
-    if (url.includes("/incidents/inc-demo-michaung-2023/bootstrap")) {
+    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-kerala-flood-2023" }] });
+    if (url.includes("/incidents/inc-demo-kerala-flood-2023/bootstrap")) {
       return jsonResponse({
         scenario_clock: "2023-12-04T14:10:00Z",
         simulation: { model_version: "model-demo-001" },
@@ -150,8 +150,8 @@ function installShelterApi(updateStatus = 200) {
         signals: [],
         reports: [],
         shelters: [{
-          id: "shelter-velachery-school",
-          name: "Velachery School Shelter",
+          id: "shelter-aluva-school",
+          name: "Aluva School Shelter",
           activation_status: "OPEN",
           access_status: "REACHABLE",
           capacity_total: 300,
@@ -162,7 +162,7 @@ function installShelterApi(updateStatus = 200) {
         }],
       });
     }
-    if (url.includes("/shelters/shelter-velachery-school")) {
+    if (url.includes("/shelters/shelter-aluva-school")) {
       if (updateStatus >= 400) {
         return jsonResponse({
           title: "Version conflict",
@@ -172,7 +172,7 @@ function installShelterApi(updateStatus = 200) {
       }
       const body = JSON.parse(String(init?.body));
       return jsonResponse({
-        id: "shelter-velachery-school",
+        id: "shelter-aluva-school",
         activation_status: body.activation_status,
         access_status: body.access_status,
         capacity_total: 300,
@@ -192,8 +192,8 @@ function installAuditApi(options: { chainValid?: boolean; auditStatus?: number }
   const { chainValid = true, auditStatus = 200 } = options;
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-michaung-2023" }] });
-    if (url.includes("/incidents/inc-demo-michaung-2023/bootstrap")) {
+    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-kerala-flood-2023" }] });
+    if (url.includes("/incidents/inc-demo-kerala-flood-2023/bootstrap")) {
       return jsonResponse({ scenario_clock: "2023-12-04T14:10:00Z", simulation: { model_version: "model-demo-001" }, approvals: [], signals: [], reports: [], shelters: [] });
     }
     if (url.includes("/audit?limit=200")) {
@@ -204,7 +204,7 @@ function installAuditApi(options: { chainValid?: boolean; auditStatus?: number }
           id: "evt-authoritative-1",
           event_type: "shelter.status_updated",
           aggregate_kind: "shelter",
-          aggregate_id: "shelter-velachery-school",
+          aggregate_id: "shelter-aluva-school",
           aggregate_version: 4,
           actor_id: "ops-shelter-manager",
           actor_role: "shelter_manager",
@@ -229,8 +229,8 @@ function installLiveEventsApi() {
   let bootstrapRequests = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-michaung-2023" }] });
-    if (url.includes("/incidents/inc-demo-michaung-2023/bootstrap")) {
+    if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-kerala-flood-2023" }] });
+    if (url.includes("/incidents/inc-demo-kerala-flood-2023/bootstrap")) {
       bootstrapRequests += 1;
       return jsonResponse({
         scenario_clock: "2023-12-04T14:10:00Z",
@@ -259,7 +259,7 @@ function installLiveEventsApi() {
       const data = {
         id: `evt-${sequence}`,
         type: "simulation.published",
-        incident_id: "inc-demo-michaung-2023",
+        incident_id: "inc-demo-kerala-flood-2023",
         resource_id: `model-demo-${sequence}`,
         version: sequence,
         occurred_at: "2023-12-04T14:10:02Z",
@@ -283,9 +283,9 @@ function installDemoControlApi() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith("/incidents")) {
-      return jsonResponse({ items: [{ id: "inc-demo-michaung-2023" }] });
+      return jsonResponse({ items: [{ id: "inc-demo-kerala-flood-2023" }] });
     }
-    if (url.includes("/incidents/inc-demo-michaung-2023/bootstrap")) {
+    if (url.includes("/incidents/inc-demo-kerala-flood-2023/bootstrap")) {
       return jsonResponse({
         scenario_clock: scenarioTime,
         simulation: { model_version: modelVersion },
@@ -326,7 +326,7 @@ describe("operations console", () => {
 
     liveApi.emit(12);
     await waitFor(() => expect(liveApi.bootstrapCount()).toBe(2));
-    expect(window.localStorage.getItem("floodrise.ops.events.cursor.inc-demo-michaung-2023")).toBe("12");
+    expect(window.localStorage.getItem("floodrise.ops.events.cursor.inc-demo-kerala-flood-2023")).toBe("12");
 
     liveApi.fail();
     expect(await screen.findByText("API connected · live updates reconnecting", { exact: true })).toBeInTheDocument();
@@ -340,7 +340,7 @@ describe("operations console", () => {
     await user.click(screen.getByRole("button", { name: "FloodSignal" }));
     expect(window.location.pathname).toBe("/signals");
     expect(screen.getByRole("heading", { name: "FloodSignal Review" })).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: /Velachery evidence review/i })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: /Aluva evidence review/i })).toBeInTheDocument();
   });
 
   it("records a community-corroboration decision with explicit safety wording", async () => {
@@ -444,8 +444,8 @@ describe("operations console", () => {
     await user.click(save);
 
     expect(await screen.findByText(/Shelter status confirmed by the server/i)).toBeInTheDocument();
-    expect(screen.getByRole("row", { name: /Velachery School Shelter/ })).toHaveTextContent("150 / 300");
-    const updateCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/shelters/shelter-velachery-school"));
+    expect(screen.getByRole("row", { name: /Aluva School Shelter/ })).toHaveTextContent("150 / 300");
+    const updateCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/shelters/shelter-aluva-school"));
     expect(updateCall).toBeDefined();
     const updateInit = updateCall?.[1] as RequestInit;
     const headers = new Headers(updateInit.headers);
@@ -469,8 +469,8 @@ describe("operations console", () => {
     await user.click(save);
 
     expect(await screen.findByText(/Shelter update not recorded.*version is 4; expected 3.*Displayed shelter data is unchanged/i)).toBeInTheDocument();
-    expect(screen.getByRole("row", { name: /Velachery School Shelter/ })).toHaveTextContent("138 / 300");
-    expect(screen.getByRole("row", { name: /Velachery School Shelter/ })).toHaveTextContent("OPEN");
+    expect(screen.getByRole("row", { name: /Aluva School Shelter/ })).toHaveTextContent("138 / 300");
+    expect(screen.getByRole("row", { name: /Aluva School Shelter/ })).toHaveTextContent("OPEN");
   });
 
   it("shows audit integrity as valid only after an authoritative server response", async () => {

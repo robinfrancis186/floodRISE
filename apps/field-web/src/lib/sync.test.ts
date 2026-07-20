@@ -17,15 +17,15 @@ import { syncQueuedReports } from "./sync";
 
 const draft: OfflineReportDraft = {
   client_report_id: "sync-report-immutable-0001",
-  incident_id: "inc-demo-michaung-2023",
+  incident_id: "inc-demo-kerala-flood-2023",
   reporter_id: "field-reporter",
   device_id: "field-device",
   observed_at: "2023-12-04T14:08:00.000Z",
-  location: { latitude: 12.9791, longitude: 80.2209, accuracy_m: 12 },
+  location: { latitude: 10.1041000, longitude: 76.3519000, accuracy_m: 12 },
   water_depth: "KNEE",
   road_status: "DIFFICULT",
   infrastructure_issues: ["BLOCKED_DRAIN"],
-  place_label: "Velachery Main Road"
+  place_label: "Aluva–Paravur Road"
 };
 
 const receipt: ReportReceipt = {

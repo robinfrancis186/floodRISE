@@ -50,7 +50,7 @@ export type MapFeatureCollection<G extends MapGeometry = MapGeometry> = {
   features: Array<MapFeature<G>>;
 };
 
-export type ChennaiMapData = {
+export type KeralaMapData = {
   wards: MapFeatureCollection<{ type: "Polygon"; coordinates: MapPosition[][] }>;
   water: MapFeatureCollection;
   roads: MapFeatureCollection<{ type: "LineString"; coordinates: MapPosition[] }>;

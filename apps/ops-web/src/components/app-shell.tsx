@@ -55,8 +55,8 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
       <DemoBanner />
       <header className="topbar">
         <div className="topbar-brand"><FloodRiseLogo /><span className="topbar-divider" aria-hidden /><h1>{viewConfig[view].title}</h1></div>
-        <button className="incident-select" type="button" aria-label="Selected incident: Chennai Cyclone Michaung replay">
-          Chennai <span aria-hidden>•</span> Cyclone Michaung <span aria-hidden>⌄</span>
+        <button className="incident-select" type="button" aria-label="Selected incident: Ernakulam Kerala extreme-rainfall replay">
+          Ernakulam <span aria-hidden>•</span> Kerala extreme-rainfall <span aria-hidden>⌄</span>
         </button>
         <div className="topbar-sync" aria-live="polite">
           <span>Scenario {time} IST</span><span className={liveUpdatesConnected ? "sync-dot connected" : "sync-dot"} aria-hidden />
@@ -92,7 +92,7 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
 
       <footer className="status-rail" aria-label="Operational status">
         <StatusItem icon={CloudRain} label="IMD warning" value="Red · Heavy to very heavy rain" tone="danger" />
-        <StatusItem icon={Waves} label="CWC river feed" value="Adyar River: Rising" />
+        <StatusItem icon={Waves} label="CWC river feed" value="Periyar River: Rising" />
         <StatusItem icon={Gauge} label="Simulation run" value={snapshot.modelVersion} />
         <StatusItem icon={ClipboardList} label="Pending reports" value={`${snapshot.signals.filter((signal) => signal.decision === "UNREVIEWED").length} clusters`} />
         <StatusItem icon={HeartHandshake} label="Shelters" value={`${snapshot.shelters.filter((shelter) => shelter.status === "OPEN").length} confirmed open`} tone="success" />

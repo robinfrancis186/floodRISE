@@ -2,9 +2,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./map.css";
 
 export { FloodMap } from "./FloodMap";
-export { chennaiMapData } from "./data/chennai";
+export { keralaMapData } from "./data/kerala";
 export type {
-  ChennaiMapData,
+  KeralaMapData,
   FloodMapProps,
   FloodMapSelection,
   FloodMapVariant,

@@ -1,4 +1,4 @@
-"""Deterministic Chennai demo seed, independent of the process working directory."""
+"""Deterministic Kerala demo seed, independent of the process working directory."""
 
 from __future__ import annotations
 
@@ -11,7 +11,10 @@ from typing import Any
 from .database import Database, EntityChange, EventInput, canonical_json
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_FIXTURE_ROOT = REPOSITORY_ROOT / "fixtures" / "chennai-demo"
+DEFAULT_FIXTURE_ROOT = REPOSITORY_ROOT / "fixtures" / "kerala-demo"
+LEGACY_DEMO_SCENARIOS = {
+    ("demo-michaung-chennai-v1", "inc-demo-michaung-2023"),
+}
 
 
 def _read_json(path: Path, fallback: Any) -> Any:
@@ -49,7 +52,7 @@ def _pending_approval(
             "body": body,
         },
         "audience": audience,
-        "geometry": {"type": "Point", "coordinates": [80.2207, 12.9815]},
+        "geometry": {"type": "Point", "coordinates": [76.3517000, 10.1065000]},
         "evidence_version": evidence_version,
         "model_version": model_version,
         "reason": body,
@@ -80,10 +83,10 @@ def build_seed_bundle(
     manifest = _read_json(
         fixture_root / "manifest.json",
         {
-            "scenario_id": "demo-michaung-chennai-v1",
-            "incident_id": "inc-demo-michaung-2023",
-            "title": "Cyclone Michaung — Chennai deterministic replay",
-            "area": "Velachery–Saidapet–Adyar and Chembarambakkam",
+            "scenario_id": "demo-kerala-flood-v1",
+            "incident_id": "inc-demo-kerala-flood-2023",
+            "title": "Kerala extreme-rainfall deterministic replay",
+            "area": "Aluva–Eloor–Kalamassery and the Periyar floodplain",
             "clock_start": "2023-12-04T14:10:00Z",
             "timezone": "Asia/Kolkata",
             "is_simulated": True,
@@ -118,7 +121,7 @@ def build_seed_bundle(
         "public_alerts_enabled": False,
         "alert_gateway": "fake://notification-sink",
         "version": 1,
-        "bounds": [80.12, 12.88, 80.31, 13.08],
+        "bounds": [76.2, 9.92, 76.48, 10.24],
     }
 
     source_specs = [
@@ -160,11 +163,14 @@ def build_seed_bundle(
         ),
         (
             "osm-southern-zone-demo",
-            "OpenStreetMap / Geofabrik",
+            "OpenStreetMap Overpass snapshot",
             "HEALTHY",
             "Daily",
-            "Packaged 2026-07-20 Chennai OSM road baseline; not event-time road status",
-            "https://download.geofabrik.de/asia/india/southern-zone.html",
+            (
+                "Packaged 2026-07-20 Kerala OSM baseline with 3,967 major-road "
+                "segments; not event-time road status"
+            ),
+            "https://www.openstreetmap.org/",
             "ODbL attribution and share-alike obligations apply",
         ),
     ]
@@ -187,7 +193,7 @@ def build_seed_bundle(
                 "last_ingested_at": _iso(clock),
                 "valid_from": _iso(clock - timedelta(minutes=10)),
                 "valid_until": _iso(clock + timedelta(minutes=30)),
-                "coverage_geometry": {"type": "Point", "coordinates": [80.2207, 12.9815]},
+                "coverage_geometry": {"type": "Point", "coordinates": [76.3517000, 10.1065000]},
                 "confidence": 0.72 if status == "STALE" else 0.9,
                 "quality_flags": (
                     ["PACKAGED_BASELINE", "NOT_EVENT_TIME"]
@@ -197,15 +203,15 @@ def build_seed_bundle(
                 "licence": licence,
                 "attribution": ("© OpenStreetMap contributors" if is_osm_baseline else provider),
                 "checksum": (
-                    "1e9d13177f48851e80c5a78926d9d6fe248cff2b99bfed02a3cfaf3d89a3f277"
+                    "a6f0271c54f8b842f607c0ecbeddb4c0f5e3263c22ba3597fc9e1851c13331d0"
                     if is_osm_baseline
                     else f"fixture-{source_id}-v1"
                 ),
-                "version": "osm-2026-07-20T15:45:19Z" if is_osm_baseline else "demo-v1",
+                "version": "osm-2026-07-20T18:40:36Z" if is_osm_baseline else "demo-v1",
                 "raw_payload_reference": (
-                    "fixtures/chennai-demo/osm-baseline.geojson"
+                    "fixtures/kerala-demo/osm-baseline.geojson"
                     if is_osm_baseline
-                    else f"fixtures/chennai-demo/{source_id}.json"
+                    else f"fixtures/kerala-demo/{source_id}.json"
                 ),
                 "cadence": cadence,
                 "summary": summary,
@@ -239,7 +245,7 @@ def build_seed_bundle(
                 "verified_at": props.get("verified_at"),
                 "observed_at": props.get("verified_at"),
                 "verified_by": "demo-shelter-manager",
-                "source": "Deterministic Chennai demo fixture",
+                "source": "Deterministic Kerala demo fixture",
                 "is_simulated": True,
                 "version": 1,
             }
@@ -247,10 +253,10 @@ def build_seed_bundle(
     if not shelters:
         shelters.append(
             {
-                "id": "shelter-velachery-school",
+                "id": "shelter-aluva-school",
                 "incident_id": incident_id,
-                "name": "Velachery School Shelter",
-                "location": {"type": "Point", "coordinates": [80.2182, 12.9786]},
+                "name": "Aluva School Shelter",
+                "location": {"type": "Point", "coordinates": [76.3492000, 10.1036000]},
                 "activation_status": "OPEN",
                 "availability": "OPEN",
                 "capacity_total": 420,
@@ -261,7 +267,7 @@ def build_seed_bundle(
                 "verified_at": _iso(clock),
                 "observed_at": _iso(clock),
                 "verified_by": "demo-shelter-manager",
-                "source": "Deterministic Chennai demo fixture",
+                "source": "Deterministic Kerala demo fixture",
                 "is_simulated": True,
                 "version": 1,
             }
@@ -296,7 +302,7 @@ def build_seed_bundle(
         "outputs": {
             "depth": ["p10", "p50", "p90"],
             "scenario_agreement": True,
-            "artifact_manifest": "fixture://chennai-demo/rasters/manifest.json",
+            "artifact_manifest": "fixture://kerala-demo/rasters/manifest.json",
             "published_artifacts": ["depth-p50-now", "depth-p90-3h"],
             "representation": "PACKAGED_PGM",
         },
@@ -319,15 +325,15 @@ def build_seed_bundle(
         "version": 1,
     }
     # An authoritative, versioned aggregate backs the console's initial
-    # VEL-042 review. It is explicitly a presentation checkpoint rather than
+    # ALV-042 review. It is explicitly a presentation checkpoint rather than
     # four stored citizen reports. The first submitted report rebuilds this
     # aggregate from actual evidence and removes ``presentation_seed``.
     initial_signal = {
-        "id": "signal-velachery-042",
+        "id": "signal-aluva-042",
         "incident_id": incident_id,
-        "cluster_id": "cluster-velachery-042",
+        "cluster_id": "cluster-aluva-042",
         "state": "NEEDS_REVIEW",
-        "location": {"type": "Point", "coordinates": [80.2207, 12.9815]},
+        "location": {"type": "Point", "coordinates": [76.3517000, 10.1065000]},
         "radius_m": 148.0,
         "diameter_m": 296.0,
         "confidence": 0.92,
@@ -357,14 +363,14 @@ def build_seed_bundle(
     route = {
         "id": "route-lower-risk-001",
         "incident_id": incident_id,
-        "label": "Lower-risk route to Velachery School Shelter",
+        "label": "Lower-risk route to Aluva School Shelter",
         "duration_min": 18,
         "distance_km": 4.2,
-        "shelter": "Velachery School Shelter",
-        "shelter_id": "shelter-velachery-school",
+        "shelter": "Aluva School Shelter",
+        "shelter_id": "shelter-aluva-school",
         "risk": "LOWER",
         "reasons": [
-            "Avoids modelled deep water on Velachery Main Road",
+            "Avoids modelled deep water on Aluva–Paravur Road",
             "Shelter access was verified in the demo fixture",
         ],
         "model_version": simulation["model_version"],
@@ -377,9 +383,9 @@ def build_seed_bundle(
         "version": 1,
     }
     resilience = {
-        "id": "audit-velachery-demo-v1",
+        "id": "audit-aluva-demo-v1",
         "incident_id": incident_id,
-        "title": "Velachery resilience audit",
+        "title": "Aluva resilience audit",
         "generated_at": _iso(clock),
         "modelled_scenario": True,
         "metrics": {
@@ -391,7 +397,7 @@ def build_seed_bundle(
         },
         "recommendations": [
             "Inspect recurring drain blockage locations before the next monsoon.",
-            "Assess culvert capacity along the lower Velachery catchment.",
+            "Assess culvert capacity along the lower Aluva catchment.",
             "Evaluate an additional reachable shelter north of the modelled isolation pocket.",
             "Consider responder-grade water-level sensors at recurring evidence gaps.",
         ],
@@ -410,10 +416,10 @@ def build_seed_bundle(
             action_type="AREA_CAUTION",
             title="Issue area caution and reroute teams",
             body=(
-                "Use 100 Feet Road for response teams. Community-corroborated flooding "
+                "Use NH 544 for response teams. Community-corroborated flooding "
                 "is not an official confirmation."
             ),
-            audience="Velachery hazard footprint + 1 km",
+            audience="Aluva hazard footprint + 1 km",
             evidence_version=evidence_version,
             model_version=model_version,
             requested_by="demo-requester-area-caution",
@@ -423,7 +429,7 @@ def build_seed_bundle(
             clock=clock,
             presentation_id="ACT-198",
             action_type="ROAD_CLOSURE",
-            title="Close Velachery Main Road underpass",
+            title="Close Aluva–Paravur Road underpass",
             body="Close the modelled high-risk underpass after independent review.",
             audience="Road operations and navigation partners",
             evidence_version=evidence_version,
@@ -507,7 +513,11 @@ def reset_database(database: Database) -> None:
 
 def seed_database(database: Database) -> None:
     database.initialize()
-    if database.is_empty():
+    persisted_demo = (
+        database.get_state("scenario_id"),
+        database.get_state("incident_id"),
+    )
+    if database.is_empty() or persisted_demo in LEGACY_DEMO_SCENARIOS:
         reset_database(database)
 
 

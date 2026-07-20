@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
-import reports from "../../fixtures/chennai-demo/reports.json";
+import reports from "../../fixtures/kerala-demo/reports.json";
 
 const apiUrl = "http://127.0.0.1:8787/api/v1";
-const incidentId = "inc-demo-michaung-2023";
+const incidentId = "inc-demo-kerala-flood-2023";
 
 test("four independent reports produce one explicitly unofficial corroboration", async ({ request }) => {
   expect((await request.post(`${apiUrl}/demo/reset`, {

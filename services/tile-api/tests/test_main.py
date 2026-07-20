@@ -38,7 +38,7 @@ def test_known_artifact_tile_and_metadata() -> None:
         "NOT_HYDRAULICALLY_CERTIFIED",
     ]
 
-    tile = client.get("/api/v1/raster/depth-p50-now/10/740/474.png")
+    tile = client.get("/api/v1/raster/depth-p50-now/10/729/483.png")
     assert tile.status_code == 200
     assert tile.headers["content-type"] == "image/png"
     assert tile.headers["x-floodrise-representation"] == "PACKAGED_PGM"
@@ -50,14 +50,14 @@ def test_known_artifact_tile_and_metadata() -> None:
 
 
 def test_tile_rendering_is_deterministic_and_supports_conditional_get() -> None:
-    first = client.get("/api/v1/raster/depth-p90-3h/10/740/474.png")
-    second = client.get("/api/v1/raster/depth-p90-3h/10/740/474.png")
+    first = client.get("/api/v1/raster/depth-p90-3h/10/729/483.png")
+    second = client.get("/api/v1/raster/depth-p90-3h/10/729/483.png")
     assert first.status_code == second.status_code == 200
     assert first.content == second.content
     assert first.headers["etag"] == second.headers["etag"]
 
     unchanged = client.get(
-        "/api/v1/raster/depth-p90-3h/10/740/474.png",
+        "/api/v1/raster/depth-p90-3h/10/729/483.png",
         headers={"If-None-Match": first.headers["etag"]},
     )
     assert unchanged.status_code == 304

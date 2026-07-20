@@ -403,7 +403,7 @@ export function currentRoutesAt(routes: RouteRecommendation[], referenceTime: st
   });
 }
 
-export async function fetchRoutes(origin = { latitude: 12.9791, longitude: 80.2209, accuracy_m: 12 }): Promise<RouteGuidance> {
+export async function fetchRoutes(origin = { latitude: 10.1041000, longitude: 76.3519000, accuracy_m: 12 }): Promise<RouteGuidance> {
   try {
     const response = await fetch(`${API_BASE}/routes/recommend`, {
       method: "POST",

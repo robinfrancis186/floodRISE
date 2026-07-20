@@ -1,7 +1,7 @@
 {
   "schema_version": "floodrise-packaged-raster/v1",
-  "scenario_id": "demo-michaung-chennai-v1",
-  "incident_id": "inc-demo-michaung-2023",
+  "scenario_id": "demo-kerala-flood-v1",
+  "incident_id": "inc-demo-kerala-flood-2023",
   "model_version": "model-demo-20231204-001",
   "generated_at": "2023-12-04T14:10:00Z",
   "is_simulated": true,
@@ -10,12 +10,12 @@
   "description": "Checksummed offline demonstration rasters. These are rapid impact estimates, not COGs, certified flood depths, or live observations.",
   "provenance": {
     "provider": "floodRISE deterministic fixture generator",
-    "source_url_or_id": "fixture://demo-michaung-chennai-v1",
+    "source_url_or_id": "fixture://demo-kerala-flood-v1",
     "observed_at": "2023-12-04T14:10:00Z",
     "acquired_at": "2023-12-04T14:10:00Z",
     "issued_at": "2023-12-04T14:10:00Z",
     "ingested_at": "2023-12-04T14:10:00Z",
-    "licence": "Synthetic demonstration fixture; see fixtures/chennai-demo/LICENSES.md",
+    "licence": "Synthetic demonstration fixture; see fixtures/kerala-demo/LICENSES.md",
     "attribution": "floodRISE DEMO DATA",
     "quality_flags": [
       "SYNTHETIC",
@@ -23,10 +23,10 @@
       "NOT_HYDRAULICALLY_CERTIFIED"
     ],
     "input_artifact_checksums": {
-      "timeline.json": "e49d9d92a89b11b39b06aff1c834fe56722f62d2cbe457f08bf552878b603d7a",
-      "reports.json": "69f93f677bc35001876ca855538211d9e92108286bce6479e33f05bf24233f33",
-      "shelters.geojson": "b60996ebd0d20d924fa615ce0dddf66424d710da05c02e6f7b887517cc7f0207",
-      "roads.geojson": "845081b92c6a0dbf6ba0eb049b9645f073e72d03df27432edd771be037fc7b76"
+      "timeline.json": "a64cea015960b0076d37321b4c674c27f2b8ab5c71f7e2a5fdb222a68f775b3c",
+      "reports.json": "25dd2db1dbe722cd17b4d9f8ac8d9f953dfedc6833e64551a20ccbb33365b8f0",
+      "shelters.geojson": "16c2fc40625fa1b795562ecc06a66fe0ee1321e78d7ff5c7657d3e1410fa5375",
+      "roads.geojson": "3bc1826b14ebb48b63889eb2f8dd8d5891870121b531a6f1505e9fc35f251216"
     }
   },
   "rendering": {
@@ -46,7 +46,7 @@
       "content_sha256": "318d675624ec47706124bd6596849012b214363d74bb3b9d19fafc6c9f4adc8c",
       "format": "image/x-portable-graymap; variant=P2",
       "crs": "EPSG:4326",
-      "bounds": [80.12, 12.88, 80.32, 13.08],
+      "bounds": [76.25, 9.98, 76.45, 10.2],
       "width": 24,
       "height": 24,
       "row_order": "north_to_south",
@@ -69,7 +69,7 @@
       "content_sha256": "3241e3de2b1eceb163b9c2ac23595659ddc2b16312d0bfaaecfe916bcfc048d1",
       "format": "image/x-portable-graymap; variant=P2",
       "crs": "EPSG:4326",
-      "bounds": [80.12, 12.88, 80.32, 13.08],
+      "bounds": [76.25, 9.98, 76.45, 10.2],
       "width": 24,
       "height": 24,
       "row_order": "north_to_south",

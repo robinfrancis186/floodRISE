@@ -83,7 +83,7 @@ describe("operations approval API", () => {
   it("hydrates presentation actions from real approval records", async () => {
     const approval = {
       id: "approval-evacuation-demo",
-      incident_id: "inc-demo-michaung-2023",
+      incident_id: "inc-demo-kerala-flood-2023",
       action_type: "EVACUATION_GUIDANCE",
       action_payload: {
         presentation_id: "ACT-190",
@@ -102,7 +102,7 @@ describe("operations approval API", () => {
       version: 7,
     };
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ items: [{ id: "inc-demo-michaung-2023" }] }))
+      .mockResolvedValueOnce(jsonResponse({ items: [{ id: "inc-demo-kerala-flood-2023" }] }))
       .mockResolvedValueOnce(jsonResponse({
         scenario_clock: "2023-12-04T14:10:00Z",
         simulation: { model_version: "model-demo-001" },

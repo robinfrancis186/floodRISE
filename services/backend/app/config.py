@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     )
 
     demo_mode: bool = True
-    demo_incident_id: str = "inc-demo-michaung-2023"
+    demo_incident_id: str = "inc-demo-kerala-flood-2023"
     demo_alert_sink: str = "fake://notification-sink"
     scenario_clock_start: str = "2023-12-04T14:10:00Z"
 

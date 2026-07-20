@@ -1,0 +1,52 @@
+"""Seed migration checks for deterministic demo installations."""
+
+from app.database import Database, EntityChange
+from app.seed import seed_database
+
+
+def test_seed_database_replaces_only_the_legacy_chennai_demo() -> None:
+    database = Database("sqlite://")
+    database.initialize()
+    legacy_incident = {
+        "id": "inc-demo-michaung-2023",
+        "scenario_id": "demo-michaung-chennai-v1",
+        "title": "Cyclone Michaung — Chennai deterministic replay",
+        "is_demo": True,
+        "version": 1,
+    }
+    database.reset(
+        changes=[EntityChange("incident", legacy_incident["id"], legacy_incident, 1)],
+        state={
+            "scenario_id": "demo-michaung-chennai-v1",
+            "incident_id": "inc-demo-michaung-2023",
+        },
+    )
+
+    seed_database(database)
+
+    assert database.get("incident", "inc-demo-michaung-2023") is None
+    kerala = database.get("incident", "inc-demo-kerala-flood-2023")
+    assert kerala is not None
+    assert kerala["scenario_id"] == "demo-kerala-flood-v1"
+    assert database.get_state("scenario_id") == "demo-kerala-flood-v1"
+
+
+def test_seed_database_preserves_non_demo_existing_records() -> None:
+    database = Database("sqlite://")
+    database.initialize()
+    incident = {
+        "id": "inc-authority-owned",
+        "scenario_id": "authority-event-v1",
+        "title": "Authority-owned incident",
+        "is_demo": False,
+        "version": 1,
+    }
+    database.reset(
+        changes=[EntityChange("incident", incident["id"], incident, 1)],
+        state={"scenario_id": "authority-event-v1", "incident_id": incident["id"]},
+    )
+
+    seed_database(database)
+
+    assert database.get("incident", incident["id"]) == incident
+    assert database.get("incident", "inc-demo-kerala-flood-2023") is None
