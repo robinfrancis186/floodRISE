@@ -1,6 +1,7 @@
 import { Button, Field, FieldDescription, FieldLabel, Textarea } from "@floodrise/ui";
 import { X } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 
 export function DecisionDialog({
   open,
@@ -40,6 +41,21 @@ export function DecisionDialog({
     return () => document.removeEventListener("keydown", escape);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) return;
+    const appFrame = document.querySelector<HTMLElement>(".app-frame");
+    const previousAriaHidden = appFrame?.getAttribute("aria-hidden") ?? null;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    appFrame?.setAttribute("inert", "");
+    appFrame?.setAttribute("aria-hidden", "true");
+    return () => {
+      appFrame?.removeAttribute("inert");
+      if (previousAriaHidden === null) appFrame?.removeAttribute("aria-hidden");
+      else appFrame?.setAttribute("aria-hidden", previousAriaHidden);
+      previouslyFocused?.focus();
+    };
+  }, [open]);
+
   if (!open) return null;
   const invalid = requireNote && !note.trim();
   const confirm = async () => {
@@ -51,7 +67,7 @@ export function DecisionDialog({
       setSubmitting(false);
     }
   };
-  return (
+  return createPortal(
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="decision-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="dialog-heading">
@@ -71,6 +87,7 @@ export function DecisionDialog({
           <Button variant={destructive ? "destructive" : "default"} disabled={invalid || submitting} onClick={() => void confirm()}>{submitting ? "Recording…" : confirmLabel}</Button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -423,7 +423,9 @@ describe("operations console", () => {
     await user.click(within(dialog).getByRole("button", { name: "Approve guidance" }));
 
     expect(await screen.findByText(/Approval not recorded.*version is 8; expected 7.*action remains pending/i)).toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Approve evacuation guidance" })).toBeInTheDocument();
+    const retainedDialog = screen.getByRole("dialog", { name: "Approve evacuation guidance" });
+    expect(retainedDialog).toBeInTheDocument();
+    await user.click(within(retainedDialog).getByRole("button", { name: "Close decision dialog" }));
     expect(screen.getByRole("button", { name: "Review guidance approval" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Guidance approved" })).not.toBeInTheDocument();
   });
