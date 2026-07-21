@@ -177,6 +177,13 @@ def build_seed_bundle(
     sources: list[dict[str, Any]] = []
     for source_id, provider, status, cadence, summary, source_url, licence in source_specs:
         is_osm_baseline = source_id == "osm-southern-zone-demo"
+        maximum_age_seconds = {
+            "imd-rainfall-demo": 600,
+            "cwc-gauge-demo": 3_600,
+            "copernicus-gfm-demo": 21_600,
+            "copernicus-dem-glo30": 31_536_000,
+            "osm-southern-zone-demo": 86_400,
+        }[source_id]
         sources.append(
             {
                 "id": source_id,
@@ -184,6 +191,7 @@ def build_seed_bundle(
                 "source_url": source_url,
                 "provider_record_id": source_id,
                 "status": status,
+                "maximum_age_seconds": maximum_age_seconds,
                 "observed_at": _iso(
                     clock - (timedelta(hours=9) if status == "STALE" else timedelta())
                 ),

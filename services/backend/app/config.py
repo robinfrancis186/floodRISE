@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     object_store_endpoint: str = "http://localhost:9000"
     object_store_bucket: str = "floodrise-demo"
     object_store_region: str = "ap-south-1"
+    jobs_queue_url: str | None = None
+    jobs_queue_name: str = "floodrise-jobs"
+    worker_visibility_timeout_seconds: int = Field(default=900, ge=60, le=43_200)
 
     sse_replay_limit: int = Field(default=1_000, ge=10, le=10_000)
     report_queue_limit: int = Field(default=100, ge=1, le=1_000)

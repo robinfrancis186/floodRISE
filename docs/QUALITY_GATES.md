@@ -8,7 +8,7 @@ merge-blocking; repository files alone cannot enforce that setting.
 
 | Command | Scope | Browser required |
 | --- | --- | --- |
-| `pnpm test` | Vitest, backend pytest, tile pytest, bounded OSM importer tests, fixture checksums/safety flags, FastAPI snapshot drift, generated OpenAPI client drift | No |
+| `pnpm test` | Vitest, backend pytest (including 20-sample local latency acceptance and Alembic upgrade), tile pytest, plan-conformance checks, bounded OSM importer tests, fixture checksums/safety flags, FastAPI snapshot drift, generated OpenAPI client drift | No |
 | `pnpm lint` | TypeScript package checks and Ruff for both Python services | No |
 | `pnpm format:check` | Ruff formatting for both Python services | No |
 | `pnpm typecheck` | Every TypeScript workspace package | No |
@@ -57,6 +57,7 @@ OWASP ZAP against the deployed WAF/OIDC surface, authenticated authorization
 testing, k6 performance acceptance, container-image scanning by immutable image
 digest, a deployed malware-scanner outage drill, production restore exercises,
 and cloud configuration review are not represented as passing local gates. Unit
-and HTTP integration tests do cover fail-closed scanner unavailability and
-quarantine retention, but the environment exercises require a deployed,
-authorized system and are release evidence, not mocked CI claims.
+and HTTP integration tests do cover fail-closed scanner unavailability,
+quarantine retention, and the deterministic request-path latency thresholds,
+but the environment exercises require a deployed, authorized system and are
+release evidence, not mocked CI claims.

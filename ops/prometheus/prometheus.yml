@@ -23,6 +23,10 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:8787"]
         labels:
+          environment: demo
+          service: floodrise-backend
+          release: local
+          demo_mode: "true"
           incident_mode: demo
 
   - job_name: otel-collector

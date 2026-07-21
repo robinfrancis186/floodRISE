@@ -33,6 +33,8 @@ The exact boundary between locally verified MVP behavior and deployment-time
 integration work is recorded in `docs/IMPLEMENTATION_STATUS.md`.
 The latest Kerala/OpenStreetMap release evidence is recorded in
 `docs/RELEASE_VERIFICATION_2026-07-21.md`.
+The original brief is reconciled requirement by requirement in
+`docs/PLAN_EXECUTION_MATRIX.md`; its executable checks run inside `pnpm test`.
 
 ## Verify
 
@@ -58,10 +60,11 @@ pnpm test:e2e
 ```
 
 Backend tests use the lightweight deterministic profile. The judging API uses
-SQLite by default; local Compose supplies an optional PostgreSQL image with
-PostGIS/pgRouting extensions for integration work, but the deterministic model
-and router do not use those extensions. Terraform describes an RDS PostgreSQL
-target and does not install PostGIS/pgRouting or deploy a working application by
-itself. Browser artifacts are written under `artifacts/`.
+SQLite by default; local Compose supplies PostgreSQL and Alembic bootstraps
+PostGIS/pgRouting operational tables for authorized deployment rehearsals. The
+deterministic model and router intentionally remain offline Python references.
+Terraform plus the non-root backend image and Celery/SQS worker entry point form
+an un-applied deployment scaffold; they are not AWS activation evidence.
+Browser artifacts are written under `artifacts/`.
 The full CI and security gate matrix, including explicitly manual checks, is in
 `docs/QUALITY_GATES.md`.

@@ -99,10 +99,12 @@ Redis loss may slow delivery but must not lose authoritative state. S3 artifacts
 are private. The tile facade accepts an allow-listed artifact identifier, not an
 arbitrary URL, and is not attached to a public load balancer.
 
-The repository does not yet implement raw-provider capture, normalized PostGIS
-source tables, COG publication, distributed workers, or a production outbox
-dispatcher. The deterministic path starts with checksum-pinned fixture data and
-stores versioned JSON entities through SQLAlchemy.
+The repository provides normalized PostGIS source/snapshot/route tables and
+Celery simulation/route worker entry points for the deployment scaffold. The
+deterministic path still starts with checksum-pinned fixture data and stores
+versioned JSON entities through SQLAlchemy; production query cutover, raw
+provider capture, COG publication, worker dispatch scheduling, and a production
+outbox dispatcher require an authorized deployment rehearsal.
 
 The repository's lightweight tile service is deliberately demo-scoped. It
 loads immutable, georeferenced PGM depth grids from the Kerala extreme-rainfall fixture,

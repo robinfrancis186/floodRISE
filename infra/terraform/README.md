@@ -28,12 +28,13 @@ run floodRISE, an authorized delivery team must at minimum:
 - supply reviewed container images, DNS names, certificates, remote state, and
   secret values, then reconcile the secret/environment shape with the FastAPI
   settings;
-- implement and package the declared `app.worker` Celery entry point and the
-  SQS worker transport (the judging API runs model/route work synchronously);
+- build and publish the checked-in backend image, exercise the declared
+  `app.worker:celery_app` tasks against the provisioned SQS queue, and cut the
+  production API over from the synchronous judging path only after rehearsal;
 - implement the web PKCE flow and secure HttpOnly session/token handling;
-- enable and verify `postgis`, `pgrouting`, `pgcrypto`, and `btree_gist` in RDS
-  with an approved database-owner bootstrap. Terraform provisions PostgreSQL,
-  while the checked-in Alembic migration creates only application tables;
+- run Alembic with an approved database-owner bootstrap and verify the checked-in
+  `postgis`, `pgrouting`, `pgcrypto`, `btree_gist`, normalized-source and route
+  schema migration against RDS before enabling application traffic;
 - connect private S3 media, an approved malware scanner, COG/TiTiler, retention
   jobs, and any separately authorized notification provider; and
 - perform account-level IAM/network/WAF review, database migration, smoke,

@@ -12,6 +12,7 @@ locals {
     { name = "FLOODRISE_DATABASE_HOST", value = var.database_host },
     { name = "FLOODRISE_REDIS_URL", value = "rediss://${var.redis_endpoint}:6379/0" },
     { name = "FLOODRISE_JOBS_QUEUE_URL", value = var.jobs_queue_url },
+    { name = "FLOODRISE_JOBS_QUEUE_NAME", value = "${var.name}-jobs" },
     { name = "FLOODRISE_TILE_API_BASE_URL", value = "http://tile-api:8790" },
     { name = "FLOODRISE_COG_BUCKET_ARN", value = var.processed_bucket_arn },
     { name = "FLOODRISE_COG_PUBLIC_ACCESS", value = "false" },
@@ -224,7 +225,7 @@ resource "aws_ecs_task_definition" "worker" {
     name        = "worker"
     image       = var.worker_image
     essential   = true
-    command     = ["celery", "-A", "app.worker", "worker", "--loglevel=INFO"]
+    command     = ["celery", "-A", "app.worker:celery_app", "worker", "--loglevel=INFO"]
     environment = local.common_environment
     secrets = [
       { name = "FLOODRISE_APPLICATION_CONFIG_JSON", valueFrom = var.application_secret_arn },

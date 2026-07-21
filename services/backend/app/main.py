@@ -7,6 +7,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Annotated, Any
 from uuid import uuid4
 
@@ -27,6 +28,7 @@ from .database import Database, canonical_json
 from .domain import FloodRiseService, iso_utc
 from .errors import AppError, NotFoundError, install_exception_handlers, problem_openapi_response
 from .media import MAX_MEDIA_BYTES, DemoCleanScanner, MediaService, UnavailableScanner
+from .metrics import FloodRiseMetrics
 from .schemas import (
     ApprovalCreateInput,
     ApprovalDecisionInput,
@@ -121,6 +123,7 @@ def create_app(
     runtime = settings or get_settings()
     target_database = database or Database(_database_url_for_sync(runtime.database_url))
     target_service = FloodRiseService(target_database)
+    target_metrics = FloodRiseMetrics(is_demo=runtime.is_demo)
     target_media_service = media_service or MediaService(
         target_database,
         # A simulated clean result is permitted only inside the visibly
@@ -137,6 +140,7 @@ def create_app(
         application.state.database = target_database
         application.state.service = target_service
         application.state.media_service = target_media_service
+        application.state.metrics = target_metrics
         yield
 
     application = FastAPI(
@@ -157,6 +161,7 @@ def create_app(
     application.state.database = target_database
     application.state.service = target_service
     application.state.media_service = target_media_service
+    application.state.metrics = target_metrics
     application.add_middleware(
         CORSMiddleware,
         allow_origins=runtime.allowed_origins,
@@ -209,6 +214,16 @@ def create_app(
             "data_label": "DEMO DATA" if runtime.is_demo else "LIVE",
             "time": iso_utc(datetime.now(UTC)),
         }
+
+    @application.get("/metrics", include_in_schema=False)
+    async def metrics(request: Request) -> Response:
+        database_value: Database = request.app.state.database
+        metrics_value: FloodRiseMetrics = request.app.state.metrics
+        payload = metrics_value.render(database_value, service(request))
+        return Response(
+            content=payload,
+            headers={"Content-Type": "text/plain; version=0.0.4; charset=utf-8"},
+        )
 
     @router.get("/auth/me", tags=["authentication"])
     async def auth_context(principal: PrincipalDependency) -> dict[str, Any]:
@@ -389,11 +404,16 @@ def create_app(
             "engineer",
             "incident_commander",
         )
+        started_at = perf_counter()
         response_status, payload = service(request).create_report(
             body,
             idempotency_key=idempotency_key,
             principal=principal,
         )
+        elapsed = perf_counter() - started_at
+        request.app.state.metrics.report_submit.observe(elapsed)
+        if payload.get("corroboration_transitioned") is True:
+            request.app.state.metrics.corroboration.observe(elapsed)
         response_payload = dict(payload)
         report = response_payload.get("report")
         if isinstance(report, dict):
@@ -478,11 +498,14 @@ def create_app(
         principal: PrincipalDependency,
     ) -> dict[str, Any]:
         ensure_role(principal, "engineer", "responder", "incident_commander")
-        return service(request).run_simulation(
+        started_at = perf_counter()
+        result = service(request).run_simulation(
             body.incident_id,
             trigger=body.trigger,
             principal=principal,
         )
+        request.app.state.metrics.simulation.observe(perf_counter() - started_at)
+        return result
 
     @router.get("/impacts", tags=["simulation"])
     async def list_impacts(
@@ -504,13 +527,16 @@ def create_app(
         request: Request,
         principal: PrincipalDependency,
     ) -> dict[str, Any]:
-        return service(request).recommend_routes(
+        started_at = perf_counter()
+        result = service(request).recommend_routes(
             body.incident_id,
             origin_node=body.origin_node,
             origin_location=(body.origin.model_dump() if body.origin else None),
             max_alternatives=body.max_alternatives,
             principal=principal,
         )
+        request.app.state.metrics.route.observe(perf_counter() - started_at)
+        return result
 
     @router.get("/shelters", tags=["shelters"])
     async def list_shelters(

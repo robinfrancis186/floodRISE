@@ -25,12 +25,26 @@ authority-approved production flood system.
 | Gate | Result |
 | --- | --- |
 | Lint, format, and types | Passed for every TypeScript workspace and both Python services. |
-| Unit and service tests | 132 passed: field web 23, operations web 21, backend 75, restricted tile API 7, and bounded OpenStreetMap importer 6. |
-| Contracts and fixtures | Seven fixture files, two raster artifacts, 3,967 full OpenStreetMap road segments, and 800 bundled fallback segments validated. The 33-path OpenAPI snapshot and generated TypeScript client matched FastAPI. |
-| Production builds | Both Vite applications built. The field PWA generated a 23-entry, 2,185.09 KiB precache containing its route and packaged fallback chunks. |
-| Browser journeys | 10 Playwright tests passed in 37.7 seconds, including WCAG AA axe smoke checks, all eight Operations routes, all six static field routes at 360x800, offline queue restrictions, private photo sanitization, four-report corroboration, FloodSignal review, and two-person approval. |
+| Unit and service tests | 138 passed: field web 23, operations web 21, backend 81, restricted tile API 7, and bounded OpenStreetMap importer 6. |
+| Contracts and fixtures | Twelve original-plan conformance checks passed. Seven fixture files, two raster artifacts, 3,967 full OpenStreetMap road segments, and 800 bundled fallback segments validated. The 33-path OpenAPI snapshot and generated TypeScript client matched FastAPI. |
+| Local performance acceptance | Twenty samples each produced report p95 7.40 ms, route p95 2.66 ms, and nine-member model-publication p95 5.65 ms. The fourth qualifying report completed corroboration and route recalculation in 5.73 ms. These are local deterministic timings, not deployed k6 evidence. |
+| Production builds | Both Vite applications built. The field PWA generated a 23-entry, 2,185.88 KiB precache containing its route and packaged fallback chunks. |
+| Browser journeys | 10 Playwright tests passed in 43.3 seconds, including WCAG AA axe smoke checks, all eight Operations routes, all six static field routes at 360x800, offline queue restrictions, private photo sanitization, four-report corroboration, FloodSignal review, and two-person approval. |
 | Repeatability | Three consecutive clean reset/corroboration runs passed in 248 ms, 189 ms, and 222 ms; every fourth report produced the explicitly unofficial corroboration, requested recalculation, and retained a valid audit chain. |
 | Dependency audit | `pnpm audit --prod` reported no known vulnerabilities. |
+
+## Plan-completion hardening
+
+- A non-root frozen-uv backend container definition now packages the API,
+  migrations, and worker code.
+- Celery provides eager in-process demo tasks and fails closed outside demo
+  unless it receives an exact HTTPS predefined SQS queue URL.
+- Alembic now reaches a PostgreSQL-only PostGIS/pgRouting/pgcrypto/btree_gist
+  operational schema head; the SQLite revision-chain acceptance test passed.
+- The API now emits privacy-safe Prometheus SLO, source-freshness, audit/outbox,
+  and demo external-notification-attempt metrics.
+- `scripts/plan-conformance.test.mjs` makes the original brief an executable
+  release gate while preserving explicit external-activation boundaries.
 
 ## Rendered-product review
 

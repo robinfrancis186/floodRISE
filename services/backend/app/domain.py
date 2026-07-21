@@ -738,6 +738,7 @@ class FloodRiseService:
             "report": report,
             "signal": signal,
             "receipt": self._receipt(report, duplicate=disposition == "DUPLICATE"),
+            "corroboration_transitioned": transitioned,
             "replayed": False,
         }
         try:

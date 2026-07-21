@@ -125,8 +125,8 @@ docker compose -f infra/compose.yaml down
 The current backend does not call the mock sink, so its request log should be
 empty; synthetic alert state is inspected through the API/audit log instead.
 Prometheus includes an alert rule for
-`floodrise_notification_external_attempt_total{environment="demo"}`, but the
-backend does not currently emit that metric. A missing time series is not proof
-of zero attempts—record configuration/preflight results and environment-level
-network observation for release evidence.
+`floodrise_notification_external_attempt_total{environment="demo"}` and the
+backend initializes that counter to zero. Record the metric together with
+configuration/preflight results and environment-level network observation; one
+application process alone cannot prove that every process made zero attempts.
 Do not use `down -v` unless intentionally deleting the named local demo volumes.
