@@ -1,14 +1,19 @@
 import { FloodMap } from "@floodrise/map";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle, Badge, Button } from "@floodrise/ui";
 import { Clock3, MapPin, Navigation, Route, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { fetchRoutes } from "../lib/api";
 import { formatDateTime } from "../lib/format";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import {
+  isLiveEligibleLocationAccuracy,
+  MAX_LIVE_LOCATION_ACCURACY_M
+} from "../lib/location-policy";
 
 export function LowerRiskRoutePage() {
   const { isOnline } = useNetworkStatus();
+  const queryClient = useQueryClient();
   const [origin, setOrigin] = useState({
     latitude: 10.1041000,
     longitude: 76.3519000,
@@ -16,22 +21,24 @@ export function LowerRiskRoutePage() {
     label: "Aluva–Paravur Road"
   });
   const [locating, setLocating] = useState(false);
+  const originIsEligible = isLiveEligibleLocationAccuracy(origin.accuracy_m);
   const routes = useQuery({
-    queryKey: ["field-routes", origin.latitude, origin.longitude],
+    queryKey: ["field-routes", origin.latitude, origin.longitude, origin.accuracy_m],
     queryFn: () => fetchRoutes(origin),
-    enabled: isOnline
+    enabled: isOnline && originIsEligible
   });
-  const guidanceAvailable = routes.data?.availability === "CURRENT";
+  const guidanceAvailable = originIsEligible && routes.data?.availability === "CURRENT";
 
   function useCurrentOrigin() {
     if (!navigator.geolocation || !isOnline) return;
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        queryClient.removeQueries({ queryKey: ["field-routes"] });
         setOrigin({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-          accuracy_m: Math.min(100, Math.round(position.coords.accuracy)),
+          accuracy_m: position.coords.accuracy,
           label: "Current device location"
         });
         setLocating(false);
@@ -44,14 +51,22 @@ export function LowerRiskRoutePage() {
   return (
     <div className="page route-page">
       <section className="map-region compact-map-region">
-        <FloodMap
-          variant="field"
-          horizon="now"
-          height="clamp(260px, 37vh, 370px)"
-          showSummary={false}
-          interactive={isOnline}
-          ariaLabel="Map of lower-risk route alternatives to nearby shelters"
-        />
+        {originIsEligible ? (
+          <FloodMap
+            variant="field"
+            horizon="now"
+            height="clamp(260px, 37vh, 370px)"
+            showSummary={false}
+            interactive={isOnline}
+            ariaLabel="Map of lower-risk route alternatives to nearby shelters"
+          />
+        ) : (
+          <div className="route-map-paused" role="status">
+            <MapPin aria-hidden />
+            <strong>Route map paused</strong>
+            <span>Improve the device location fix before showing route geometry.</span>
+          </div>
+        )}
       </section>
       <div className="page-content route-content">
         <div className="page-title-row">
@@ -84,6 +99,19 @@ export function LowerRiskRoutePage() {
           </Alert>
         ) : null}
 
+        {isOnline && !originIsEligible ? (
+          <Alert variant="warning" className="location-policy-alert">
+            <ShieldAlert aria-hidden className="alert-leading-icon" />
+            <div>
+              <AlertTitle>Location accuracy is too low for route guidance</AlertTitle>
+              <AlertDescription>
+                The current ±{Math.round(origin.accuracy_m)} m fix is preserved. Route guidance requires{" "}
+                {MAX_LIVE_LOCATION_ACCURACY_M} m or better; move to an open area and try again.
+              </AlertDescription>
+            </div>
+          </Alert>
+        ) : null}
+
         <div className="route-origin-row">
           <MapPin aria-hidden />
           <div><span>Starting near</span><strong>{origin.label}</strong></div>
@@ -92,7 +120,7 @@ export function LowerRiskRoutePage() {
           </Button>
         </div>
 
-        {isOnline && routes.isLoading ? (
+        {isOnline && originIsEligible && routes.isLoading ? (
           <div className="route-disabled-state" role="status">
             <Navigation aria-hidden />
             <strong>Checking route freshness…</strong>

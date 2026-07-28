@@ -90,6 +90,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     const unsubscribe = subscribeToOperationsEvents({
       apiRoot: API_ROOT,
       incidentId,
+      identity: apiIdentityForRole(role),
       onStatus: setStreamStatus,
       onEvent: () => {
         if (invalidationTimer !== null) window.clearTimeout(invalidationTimer);

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle, Badge } from "@floodrise/ui";
-import { BellRing, Clock3, Info, ShieldAlert, UsersRound } from "lucide-react";
+import { BellOff, BellRing, Clock3, Info, ShieldAlert, UsersRound } from "lucide-react";
 import { fetchAlerts } from "../lib/api";
 import { formatDateTime } from "../lib/format";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
@@ -49,6 +49,13 @@ export function AlertsPage() {
             </article>
           );
         })}
+        {!alerts.isLoading && (alerts.data?.length ?? 0) === 0 ? (
+          <div className="alerts-empty-state" role="status">
+            <BellOff aria-hidden />
+            <strong>No current alerts for the demo scenario time</strong>
+            <span>Expired and not-yet-issued messages are withheld. Continue to monitor conditions.</span>
+          </div>
+        ) : null}
       </div>
 
       <p className="page-footnote">

@@ -37,16 +37,18 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,woff2}"],
         runtimeCaching: [
           {
-            // Health must always be fetched from the network because the
-            // per-profile demo reset uses it as a deletion safety proof.
-            urlPattern: ({ url }) => url.pathname.startsWith("/api/v1/")
-              && url.pathname !== "/api/v1/reports"
-              && url.pathname !== "/api/v1/health",
+            // Only the public alert feed may be retained for last-known offline
+            // awareness. Reporter-scoped media, receipts, routes, health and
+            // commands always cross the network and are never cached.
+            urlPattern: ({ url, request, sameOrigin }) => sameOrigin
+              && request.method === "GET"
+              && url.pathname === "/api/v1/alerts",
             handler: "NetworkFirst",
             options: {
-              cacheName: "field-api-last-known",
+              cacheName: "field-public-alerts-v2",
               networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 40, maxAgeSeconds: 3600 }
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 8, maxAgeSeconds: 3600 }
             }
           }
         ]

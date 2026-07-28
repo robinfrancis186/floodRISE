@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { router } from "./router";
+import { deleteLegacyFieldApiCache } from "./lib/service-worker-cache";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -10,6 +11,8 @@ const queryClient = new QueryClient({
     queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false }
   }
 });
+
+void deleteLegacyFieldApiCache();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

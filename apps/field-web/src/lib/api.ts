@@ -2,6 +2,10 @@ import { ReportInput, type RouteRecommendation } from "@floodrise/contracts";
 import { z } from "zod";
 import { DEMO_INCIDENT_ID, DEMO_SCENARIO_TIME, demoAlerts, demoRoutes, type FieldAlert } from "../data/demo";
 import type { OfflineReportDraft, ReportReceipt } from "./db";
+import {
+  isLiveEligibleLocationAccuracy,
+  MAX_LIVE_LOCATION_ACCURACY_M
+} from "./location-policy";
 import { isForcedOfflineMode } from "./network";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "/api/v1";
@@ -53,7 +57,7 @@ type MediaUploadGrant = MediaUploadMetadata & {
 export type RouteGuidance = {
   alternatives: RouteRecommendation[];
   availability: "CURRENT" | "UNAVAILABLE";
-  source: "API" | "DEMO_FALLBACK";
+  source: "API" | "DEMO_FALLBACK" | "LOCAL_POLICY";
   referenceTime: string;
   message: string;
 };
@@ -339,7 +343,9 @@ export async function fetchAlerts(): Promise<FieldAlert[]> {
     });
     if (!response.ok) throw new Error("Alerts unavailable");
     const payload = AlertListResponse.parse(await response.json());
-    return payload.items.map(normalizeFieldAlert);
+    return payload.items
+      .map(normalizeFieldAlert)
+      .filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME));
   } catch {
     return demoAlerts.filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME));
   }
@@ -404,6 +410,15 @@ export function currentRoutesAt(routes: RouteRecommendation[], referenceTime: st
 }
 
 export async function fetchRoutes(origin = { latitude: 10.1041000, longitude: 76.3519000, accuracy_m: 12 }): Promise<RouteGuidance> {
+  if (!isLiveEligibleLocationAccuracy(origin.accuracy_m)) {
+    return {
+      alternatives: [],
+      availability: "UNAVAILABLE",
+      source: "LOCAL_POLICY",
+      referenceTime: DEMO_SCENARIO_TIME,
+      message: `Location accuracy must be ${MAX_LIVE_LOCATION_ACCURACY_M} m or better before requesting route guidance.`
+    };
+  }
   try {
     const response = await fetch(`${API_BASE}/routes/recommend`, {
       method: "POST",

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { operationsEventCursorKey } from "./lib/operations-events";
 
 vi.mock("@floodrise/map", () => ({
   FloodMap: ({ ariaLabel }: { ariaLabel?: string }) => <div data-testid="flood-map" aria-label={ariaLabel}>Deterministic Kerala map</div>,
@@ -240,7 +241,7 @@ function installLiveEventsApi() {
         reports: [],
       });
     }
-    if (url.endsWith("/events")) {
+    if (url.includes("/events?incident_id=")) {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           eventController = controller;
@@ -304,7 +305,7 @@ function installDemoControlApi() {
       modelVersion = "model-demo-reset";
       return jsonResponse({ scenario_time: scenarioTime });
     }
-    if (url.endsWith("/events")) {
+    if (url.includes("/events?incident_id=")) {
       return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
         status: 200,
         headers: { "Content-Type": "text/event-stream" },
@@ -326,7 +327,10 @@ describe("operations console", () => {
 
     liveApi.emit(12);
     await waitFor(() => expect(liveApi.bootstrapCount()).toBe(2));
-    expect(window.localStorage.getItem("floodrise.ops.events.cursor.inc-demo-kerala-flood-2023")).toBe("12");
+    expect(window.localStorage.getItem(operationsEventCursorKey(
+      "inc-demo-kerala-flood-2023",
+      "ops-incident-commander",
+    ))).toBe("12");
 
     liveApi.fail();
     expect(await screen.findByText("API connected · live updates reconnecting", { exact: true })).toBeInTheDocument();

@@ -232,6 +232,25 @@ describe("deterministic field freshness", () => {
     expect(result.message).toMatch(/withheld.*freshness cannot be verified/i);
   });
 
+  it("does not contact the route API when origin accuracy is worse than 100 metres", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchRoutes({
+      latitude: 10.1041,
+      longitude: 76.3519,
+      accuracy_m: 100.01
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      alternatives: [],
+      availability: "UNAVAILABLE",
+      source: "LOCAL_POLICY",
+      message: expect.stringMatching(/100 m or better/i)
+    });
+  });
+
   it("rejects expired alternatives returned by an otherwise successful API", async () => {
     Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
     const expired = { ...demoRoutes[0], valid_until: "2023-12-04T14:09:59.000Z" };
@@ -270,7 +289,7 @@ describe("deterministic field freshness", () => {
         caution_only: true,
         official: false,
         created_at: "2023-12-04T14:10:00.000Z",
-        dispatched_at: "2023-12-04T14:10:01.000Z",
+        dispatched_at: DEMO_SCENARIO_TIME,
         expires_at: "2023-12-04T14:40:00.000Z",
         is_demo: true
       }],
@@ -285,10 +304,58 @@ describe("deterministic field freshness", () => {
       title: "Community-corroborated flooding nearby",
       description: "Corroborated by 4 independent recent reports; not an official confirmation.",
       area: "Opted-in users inside the hazard footprint plus 1 km",
-      issuedAt: "2023-12-04T14:10:01.000Z",
+      issuedAt: DEMO_SCENARIO_TIME,
       validUntil: "2023-12-04T14:40:00.000Z",
       severity: "CAUTION",
       isSimulated: true
     }]);
+  });
+
+  it("withholds expired and not-yet-issued authoritative alerts at the scenario reference time", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [
+        {
+          id: "active-alert",
+          title: "Active caution",
+          body: "Current at the deterministic scenario time.",
+          audience: "Aluva",
+          caution_only: true,
+          official: false,
+          created_at: "2023-12-04T14:09:00.000Z",
+          dispatched_at: "2023-12-04T14:09:00.000Z",
+          expires_at: "2023-12-04T14:11:00.000Z",
+          is_demo: true
+        },
+        {
+          id: "expired-alert",
+          title: "Expired warning",
+          body: "Must not render at its exact expiry boundary.",
+          audience: "Aluva",
+          caution_only: false,
+          official: true,
+          created_at: "2023-12-04T13:50:00.000Z",
+          dispatched_at: "2023-12-04T13:50:00.000Z",
+          expires_at: DEMO_SCENARIO_TIME,
+          is_demo: true
+        },
+        {
+          id: "future-alert",
+          title: "Future warning",
+          body: "Must not render before it is issued.",
+          audience: "Aluva",
+          caution_only: false,
+          official: true,
+          created_at: "2023-12-04T14:11:00.000Z",
+          dispatched_at: "2023-12-04T14:11:00.000Z",
+          expires_at: "2023-12-04T14:40:00.000Z",
+          is_demo: true
+        }
+      ],
+      next_cursor: null
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const alerts = await fetchAlerts();
+
+    expect(alerts.map((alert) => alert.id)).toEqual(["active-alert"]);
   });
 });

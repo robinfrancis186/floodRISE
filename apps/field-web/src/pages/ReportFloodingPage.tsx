@@ -41,6 +41,7 @@ import { useQueueSummary } from "../hooks/useQueueSummary";
 import { ReportSubmissionError, shouldRetrySubmission, submitReport } from "../lib/api";
 import { enqueueReport, saveReceipt, type OfflineReportDraft, type PhotoDraft } from "../lib/db";
 import { createClientReportId, getDeviceId, getReporterId } from "../lib/identity";
+import { isLiveEligibleLocationAccuracy } from "../lib/location-policy";
 import { defaultReportValues, reportFormSchema, type ReportFormValues } from "../lib/report-schema";
 
 const depthOptions = [
@@ -91,6 +92,7 @@ export function ReportFloodingPage() {
   const previewRef = useRef<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [savedOffline, setSavedOffline] = useState(false);
+  const locationIsLiveEligible = isLiveEligibleLocationAccuracy(location.accuracy);
 
   const {
     control,
@@ -119,7 +121,7 @@ export function ReportFloodingPage() {
         setLocation({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-          accuracy: Math.round(position.coords.accuracy),
+          accuracy: position.coords.accuracy,
           label: "Current location"
         });
         setLocating(false);
@@ -172,7 +174,7 @@ export function ReportFloodingPage() {
       location: {
         latitude: location.latitude,
         longitude: location.longitude,
-        accuracy_m: Math.min(location.accuracy, 100)
+        accuracy_m: location.accuracy
       },
       water_depth: values.waterDepth,
       road_status: values.roadStatus,
@@ -246,6 +248,20 @@ export function ReportFloodingPage() {
               {locating ? "Locating…" : "Adjust pin"}<ChevronRight aria-hidden />
             </Button>
           </div>
+
+          {!locationIsLiveEligible ? (
+            <Alert variant="warning" className="location-policy-alert">
+              <ShieldAlert aria-hidden className="alert-leading-icon" />
+              <div>
+                <AlertTitle>Location accuracy is too low for live corroboration</AlertTitle>
+                <AlertDescription>
+                  The ±{Math.round(location.accuracy)} m reading will be preserved with this report. It does not
+                  qualify for live community corroboration unless accuracy is 100 m or better, but responders may
+                  still review it.
+                </AlertDescription>
+              </div>
+            </Alert>
+          ) : null}
 
           <Controller
             name="waterDepth"
