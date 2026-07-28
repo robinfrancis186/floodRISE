@@ -127,11 +127,12 @@ def create_app(
     target_media_service = media_service or MediaService(
         target_database,
         # A simulated clean result is permitted only inside the visibly
-        # labelled deterministic demo. Any non-demo deployment without an
-        # injected approved scanner fails closed and retains quarantine bytes.
+        # labelled deterministic demo. Any non-demo deployment without both
+        # approved external adapters fails before an evidence body is read.
         scanner=DemoCleanScanner() if runtime.is_demo else UnavailableScanner(),
         clock=lambda: target_service.scenario_clock,
     )
+    target_media_service.bind_runtime(is_demo=runtime.is_demo)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -337,6 +338,8 @@ def create_app(
         checksum: Annotated[str, Header(alias="X-Checksum-SHA256")],
         content_length: Annotated[int | None, Header(alias="Content-Length")] = None,
     ) -> Response:
+        media_service = media(request)
+        media_service.ensure_body_ingestion_ready()
         content_type = request.headers.get("content-type", "")
         payload = bytearray()
         async for chunk in request.stream():
@@ -348,7 +351,7 @@ def create_app(
                     detail="Evidence image uploads are limited to 10 MB.",
                     code="MEDIA_SIZE_LIMIT_EXCEEDED",
                 )
-        response_status, metadata = media(request).upload_content(
+        response_status, metadata = media_service.upload_content(
             upload_id,
             bytes(payload),
             content_type=content_type,

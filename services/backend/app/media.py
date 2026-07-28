@@ -27,6 +27,8 @@ from .schemas import MediaUploadRequest
 
 MAX_MEDIA_BYTES = 10_000_000
 MAX_IMAGE_PIXELS = 20_000_000
+DEMO_MEDIA_MAX_OBJECTS = 200
+DEMO_MEDIA_MAX_BYTES = 100_000_000
 ALLOWED_MEDIA_TYPES = {
     "image/jpeg": "JPEG",
     "image/png": "PNG",
@@ -51,55 +53,171 @@ def _parse_utc(value: str) -> datetime:
 
 
 class MediaBlobStore(Protocol):
-    def put_quarantine(self, upload_id: str, payload: bytes) -> None: ...
+    production_approved: bool
+
+    def put_quarantine(
+        self,
+        upload_id: str,
+        payload: bytes,
+        *,
+        delete_after: datetime,
+    ) -> None: ...
     def read_quarantine(self, upload_id: str) -> bytes | None: ...
-    def put_clean(self, upload_id: str, payload: bytes) -> None: ...
+    def put_clean(
+        self,
+        upload_id: str,
+        payload: bytes,
+        *,
+        delete_after: datetime,
+    ) -> None: ...
     def read_clean(self, upload_id: str) -> bytes | None: ...
     def delete_quarantine(self, upload_id: str) -> None: ...
     def delete_clean(self, upload_id: str) -> None: ...
+    def cleanup_expired(self, now: datetime) -> int: ...
     def clear(self) -> None: ...
+
+
+class MediaStoreCapacityError(RuntimeError):
+    """Raised before a demo byte store would exceed its aggregate quota."""
 
 
 @dataclass(slots=True)
 class MemoryMediaBlobStore:
-    """Private byte adapter for the fully offline deterministic profile."""
+    """Bounded private byte adapter for the fully offline deterministic profile."""
 
+    max_objects: int = DEMO_MEDIA_MAX_OBJECTS
+    max_bytes: int = DEMO_MEDIA_MAX_BYTES
     quarantine: dict[str, bytes] = field(default_factory=dict)
     clean: dict[str, bytes] = field(default_factory=dict)
+    production_approved: bool = field(default=False, init=False)
+    _quarantine_delete_after: dict[str, datetime] = field(default_factory=dict, repr=False)
+    _clean_delete_after: dict[str, datetime] = field(default_factory=dict, repr=False)
+    _lock: RLock = field(default_factory=RLock, repr=False)
 
-    def put_quarantine(self, upload_id: str, payload: bytes) -> None:
-        self.quarantine[upload_id] = bytes(payload)
+    def __post_init__(self) -> None:
+        if self.max_objects <= 0 or self.max_bytes <= 0:
+            raise ValueError("demo media object and byte quotas must be positive")
+
+    @property
+    def object_count(self) -> int:
+        with self._lock:
+            return len(self.quarantine) + len(self.clean)
+
+    @property
+    def byte_count(self) -> int:
+        with self._lock:
+            return sum(map(len, self.quarantine.values())) + sum(map(len, self.clean.values()))
+
+    def _put(
+        self,
+        bucket: dict[str, bytes],
+        deadlines: dict[str, datetime],
+        upload_id: str,
+        payload: bytes,
+        *,
+        delete_after: datetime,
+    ) -> None:
+        stored = bytes(payload)
+        with self._lock:
+            existing = bucket.get(upload_id)
+            projected_objects = self.object_count + (0 if existing is not None else 1)
+            projected_bytes = self.byte_count - len(existing or b"") + len(stored)
+            if projected_objects > self.max_objects or projected_bytes > self.max_bytes:
+                raise MediaStoreCapacityError(
+                    "the deterministic media store has reached its aggregate capacity"
+                )
+            bucket[upload_id] = stored
+            deadlines[upload_id] = delete_after.astimezone(UTC)
+
+    def put_quarantine(
+        self,
+        upload_id: str,
+        payload: bytes,
+        *,
+        delete_after: datetime,
+    ) -> None:
+        self._put(
+            self.quarantine,
+            self._quarantine_delete_after,
+            upload_id,
+            payload,
+            delete_after=delete_after,
+        )
 
     def read_quarantine(self, upload_id: str) -> bytes | None:
-        return self.quarantine.get(upload_id)
+        with self._lock:
+            return self.quarantine.get(upload_id)
 
-    def put_clean(self, upload_id: str, payload: bytes) -> None:
-        self.clean[upload_id] = bytes(payload)
+    def put_clean(
+        self,
+        upload_id: str,
+        payload: bytes,
+        *,
+        delete_after: datetime,
+    ) -> None:
+        self._put(
+            self.clean,
+            self._clean_delete_after,
+            upload_id,
+            payload,
+            delete_after=delete_after,
+        )
 
     def read_clean(self, upload_id: str) -> bytes | None:
-        return self.clean.get(upload_id)
+        with self._lock:
+            return self.clean.get(upload_id)
 
     def delete_quarantine(self, upload_id: str) -> None:
-        self.quarantine.pop(upload_id, None)
+        with self._lock:
+            self.quarantine.pop(upload_id, None)
+            self._quarantine_delete_after.pop(upload_id, None)
 
     def delete_clean(self, upload_id: str) -> None:
-        self.clean.pop(upload_id, None)
+        with self._lock:
+            self.clean.pop(upload_id, None)
+            self._clean_delete_after.pop(upload_id, None)
+
+    def cleanup_expired(self, now: datetime) -> int:
+        current = now.astimezone(UTC)
+        removed = 0
+        with self._lock:
+            for bucket, deadlines in (
+                (self.quarantine, self._quarantine_delete_after),
+                (self.clean, self._clean_delete_after),
+            ):
+                expired = [
+                    upload_id
+                    for upload_id, delete_after in deadlines.items()
+                    if delete_after <= current
+                ]
+                for upload_id in expired:
+                    bucket.pop(upload_id, None)
+                    deadlines.pop(upload_id, None)
+                    removed += 1
+        return removed
 
     def clear(self) -> None:
-        self.quarantine.clear()
-        self.clean.clear()
+        with self._lock:
+            self.quarantine.clear()
+            self.clean.clear()
+            self._quarantine_delete_after.clear()
+            self._clean_delete_after.clear()
 
 
 ScannerResult = Literal["DEMO_CLEAN", "CLEAN", "MALICIOUS", "UNAVAILABLE"]
 
 
 class MediaScanner(Protocol):
+    production_approved: bool
+
     def scan(self, payload: bytes) -> ScannerResult: ...
 
 
 @dataclass(frozen=True, slots=True)
 class DemoCleanScanner:
     """Explicitly simulated scanner used only by the offline demo."""
+
+    production_approved: bool = field(default=False, init=False)
 
     def scan(self, payload: bytes) -> ScannerResult:
         del payload
@@ -108,6 +226,8 @@ class DemoCleanScanner:
 
 @dataclass(frozen=True, slots=True)
 class UnavailableScanner:
+    production_approved: bool = field(default=False, init=False)
+
     def scan(self, payload: bytes) -> ScannerResult:
         del payload
         return "UNAVAILABLE"
@@ -115,6 +235,8 @@ class UnavailableScanner:
 
 @dataclass(frozen=True, slots=True)
 class RejectingScanner:
+    production_approved: bool = field(default=False, init=False)
+
     def scan(self, payload: bytes) -> ScannerResult:
         del payload
         return "MALICIOUS"
@@ -237,6 +359,7 @@ class MediaService:
     blob_store: MediaBlobStore = field(default_factory=MemoryMediaBlobStore)
     scanner: MediaScanner = field(default_factory=DemoCleanScanner)
     clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
+    runtime_is_demo: bool = True
     _lock: RLock = field(default_factory=RLock, repr=False)
 
     def _now(self) -> datetime:
@@ -244,6 +367,34 @@ class MediaService:
         if value.tzinfo is None:
             value = value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
+
+    def bind_runtime(self, *, is_demo: bool) -> None:
+        """Bind adapter policy to the application profile that owns this service."""
+
+        self.runtime_is_demo = is_demo
+
+    def ensure_body_ingestion_ready(self) -> None:
+        """Fail before an evidence body is read when production adapters are absent."""
+
+        if self.runtime_is_demo:
+            return
+        if not (
+            getattr(self.blob_store, "production_approved", False) is True
+            and getattr(self.scanner, "production_approved", False) is True
+        ):
+            raise AppError(
+                status_code=503,
+                title="Private media pipeline unavailable",
+                detail=(
+                    "Evidence bytes are not accepted until approved external private "
+                    "blob storage and malware-scanner adapters are configured."
+                ),
+                code="MEDIA_PIPELINE_UNAVAILABLE",
+                headers={"Retry-After": "60"},
+            )
+
+    def _cleanup_expired(self) -> None:
+        self.blob_store.cleanup_expired(self._now())
 
     def _record(self, upload_id: str) -> dict[str, Any]:
         record = self.database.get("media_upload", upload_id)
@@ -287,6 +438,7 @@ class MediaService:
         principal: Principal,
     ) -> tuple[int, dict[str, Any]]:
         with self._lock:
+            self._cleanup_expired()
             return self._create_upload_locked(
                 body,
                 idempotency_key=idempotency_key,
@@ -420,6 +572,10 @@ class MediaService:
     ) -> tuple[int, dict[str, Any]]:
         self._validate_idempotency_key(idempotency_key)
         with self._lock:
+            # The HTTP adapter runs this check before streaming. Keep the same
+            # invariant at the storage boundary for internal callers.
+            self.ensure_body_ingestion_ready()
+            self._cleanup_expired()
             record = self._record(upload_id)
             self._authorize(record, principal)
             idempotency_scope = self._idempotency_scope(
@@ -492,7 +648,22 @@ class MediaService:
                     code="MEDIA_CHECKSUM_MISMATCH",
                 )
 
-            self.blob_store.put_quarantine(upload_id, payload)
+            try:
+                self.blob_store.put_quarantine(
+                    upload_id,
+                    payload,
+                    delete_after=_parse_utc(record["quarantine_delete_after"]),
+                )
+            except MediaStoreCapacityError as exc:
+                raise AppError(
+                    status_code=503,
+                    title="Private media capacity unavailable",
+                    detail=(
+                        "The bounded demo evidence store is full; retry after retention cleanup."
+                    ),
+                    code="MEDIA_STORE_CAPACITY_EXCEEDED",
+                    headers={"Retry-After": "60"},
+                ) from exc
             updated = {
                 **record,
                 "actual_size_bytes": len(payload),
@@ -533,6 +704,7 @@ class MediaService:
     ) -> tuple[int, dict[str, Any], dict[str, str]]:
         self._validate_idempotency_key(idempotency_key)
         with self._lock:
+            self._cleanup_expired()
             record = self._record(upload_id)
             self._authorize(record, principal)
             idempotency_scope = self._idempotency_scope(
@@ -662,7 +834,22 @@ class MediaService:
                     duplicate_distance = distance
 
             clean_payload = processed.pop("payload")
-            self.blob_store.put_clean(upload_id, clean_payload)
+            try:
+                self.blob_store.put_clean(
+                    upload_id,
+                    clean_payload,
+                    delete_after=_parse_utc(record["evidence_delete_after"]),
+                )
+            except MediaStoreCapacityError as exc:
+                raise AppError(
+                    status_code=503,
+                    title="Private media capacity unavailable",
+                    detail=(
+                        "The bounded demo evidence store is full; retry after retention cleanup."
+                    ),
+                    code="MEDIA_STORE_CAPACITY_EXCEEDED",
+                    headers={"Retry-After": "60"},
+                ) from exc
             status_value = "DUPLICATE_PRIVATE" if duplicate else "READY_PRIVATE"
             independence_hash = (
                 str(duplicate.get("independence_hash") or duplicate["perceptual_hash"])
@@ -769,9 +956,11 @@ class MediaService:
         )
 
     def metadata(self, upload_id: str, principal: Principal) -> dict[str, Any]:
-        record = self._record(upload_id)
-        self._authorize(record, principal)
-        return self.public_metadata(record)
+        with self._lock:
+            self._cleanup_expired()
+            record = self._record(upload_id)
+            self._authorize(record, principal)
+            return self.public_metadata(record)
 
     @staticmethod
     def public_metadata(record: dict[str, Any]) -> dict[str, Any]:
@@ -809,11 +998,14 @@ class MediaService:
 
 
 __all__ = [
+    "DEMO_MEDIA_MAX_BYTES",
+    "DEMO_MEDIA_MAX_OBJECTS",
     "DemoCleanScanner",
     "MAX_MEDIA_BYTES",
     "MediaBlobStore",
     "MediaScanner",
     "MediaService",
+    "MediaStoreCapacityError",
     "MemoryMediaBlobStore",
     "RejectingScanner",
     "UnavailableScanner",

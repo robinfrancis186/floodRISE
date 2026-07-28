@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -19,6 +20,14 @@ ARTIFACT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
 TILE_SIZE = 256
 MIN_ZOOM = 8
 MAX_ZOOM = 16
+TRANSPARENT_TILE_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAABFUlEQVR42u3BMQEAAADCoPVP7WsIoAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAMBPAAB2ClDBAAAAABJRU5E"
+    "rkJggg=="
+)
 
 
 class ArtifactManifestError(RuntimeError):
@@ -244,6 +253,20 @@ def _tile_latitudes(y: int, z: int) -> list[float]:
     ]
 
 
+def tile_intersects_artifact(artifact: RasterArtifact, z: int, x: int, y: int) -> bool:
+    """Return whether a Web Mercator tile overlaps artifact coverage in O(1)."""
+
+    scale = 1 << z
+    tile_west = (x / scale) * 360.0 - 180.0
+    tile_east = ((x + 1) / scale) * 360.0 - 180.0
+    tile_north = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / scale))))
+    tile_south = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / scale))))
+    west, south, east, north = artifact.bounds
+    return not (
+        tile_east <= west or tile_west >= east or tile_north <= south or tile_south >= north
+    )
+
+
 def _depth_colour(depth_centimetres: int) -> tuple[int, int, int, int]:
     if depth_centimetres <= 0:
         return (0, 0, 0, 0)
@@ -282,8 +305,10 @@ __all__ = [
     "MAX_ZOOM",
     "MIN_ZOOM",
     "RENDERER_VERSION",
+    "TRANSPARENT_TILE_PNG",
     "RasterArtifact",
     "load_artifact_store",
     "render_tile",
     "tile_etag",
+    "tile_intersects_artifact",
 ]

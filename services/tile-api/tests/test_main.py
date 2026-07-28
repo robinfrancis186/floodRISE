@@ -6,7 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.artifacts import ArtifactManifestError, default_manifest_path, load_artifact_store
+from app.artifacts import (
+    TRANSPARENT_TILE_PNG,
+    ArtifactManifestError,
+    default_manifest_path,
+    load_artifact_store,
+)
 from app.main import app
 
 client = TestClient(app)
@@ -67,11 +72,43 @@ def test_tile_rendering_is_deterministic_and_supports_conditional_get() -> None:
 def test_tile_outside_fixture_bounds_is_transparent_and_invalid_coordinate_fails() -> None:
     outside = client.get("/api/v1/raster/depth-p50-now/10/722/449.png")
     assert outside.status_code == 200
+    assert outside.content == TRANSPARENT_TILE_PNG
     image = Image.open(BytesIO(outside.content)).convert("RGBA")
     assert image.getchannel("A").getextrema()[1] == 0
 
     assert client.get("/api/v1/raster/depth-p50-now/7/1/1.png").status_code == 400
     assert client.get("/api/v1/raster/depth-p50-now/10/1024/1.png").status_code == 400
+
+
+def test_outside_tile_uses_constant_time_transparent_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_render(*_args: object, **_kwargs: object) -> bytes:
+        raise AssertionError("out-of-coverage tile reached the raster renderer")
+
+    monkeypatch.setattr("app.main.render_tile", unexpected_render)
+    outside = client.get("/api/v1/raster/depth-p50-now/10/722/449.png")
+
+    assert outside.status_code == 200
+    assert outside.content == TRANSPARENT_TILE_PNG
+
+
+def test_inside_tile_still_uses_raster_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import main as tile_main
+
+    original_render = tile_main.render_tile
+    rendered: list[tuple[int, int, int]] = []
+
+    def recording_render(artifact: object, z: int, x: int, y: int) -> bytes:
+        rendered.append((z, x, y))
+        return original_render(artifact, z, x, y)
+
+    monkeypatch.setattr(tile_main, "render_tile", recording_render)
+    inside = client.get("/api/v1/raster/depth-p50-now/10/729/483.png")
+
+    assert inside.status_code == 200
+    assert rendered == [(10, 729, 483)]
+    assert Image.open(BytesIO(inside.content)).convert("RGBA").getchannel("A").getextrema()[1] > 0
 
 
 def test_health_proves_loaded_manifest() -> None:
