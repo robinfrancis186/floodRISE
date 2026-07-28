@@ -60,6 +60,7 @@ class Principal:
     phishing_resistant: bool = False
     step_up_authenticated: bool = False
     token_id_digest: str | None = None
+    install_id_digest: str | None = None
     audit_pseudonym_key: bytes = field(
         default=b"floodrise-demo-audit-pseudonym-v1",
         repr=False,
@@ -275,6 +276,7 @@ class OIDCVerifier:
             claims.get(self.settings.oidc_step_up_claim)
         )
         token_id = claims.get("jti") or claims.get("origin_jti")
+        install_id = claims.get(self.settings.oidc_install_id_claim)
         return Principal(
             user_id=str(claims["sub"]),
             role=primary_role,
@@ -291,6 +293,13 @@ class OIDCVerifier:
             token_id_digest=hashlib.sha256(str(token_id).encode()).hexdigest()[:16]
             if token_id
             else None,
+            install_id_digest=hmac.new(
+                self.settings.session_secret.get_secret_value().encode(),
+                f"install:{install_id}".encode(),
+                hashlib.sha256,
+            ).hexdigest()
+            if install_id
+            else None,
             audit_pseudonym_key=self.settings.session_secret.get_secret_value().encode(),
         )
 
@@ -305,8 +314,9 @@ async def demo_principal(
     role = _normalize_role(x_demo_role)
     if role not in ROLES:
         raise PermissionDeniedError("The supplied demo role is not recognized")
+    user_id = x_demo_user.strip() or "demo-user"
     return Principal(
-        user_id=x_demo_user.strip() or "demo-user",
+        user_id=user_id,
         role=role,
         roles=frozenset({role}),
         authenticated=True,
@@ -317,6 +327,11 @@ async def demo_principal(
         mfa_authenticated=True,
         phishing_resistant=True,
         step_up_authenticated=True,
+        install_id_digest=hmac.new(
+            audit_pseudonym_key,
+            f"demo-install:{user_id}".encode(),
+            hashlib.sha256,
+        ).hexdigest(),
         audit_pseudonym_key=audit_pseudonym_key,
     )
 
@@ -332,7 +347,9 @@ async def authenticated_principal(
     if settings.allow_demo_headers:
         if credentials is not None:
             verifier: OIDCVerifier = request.app.state.oidc_verifier
-            return await verifier.verify(credentials.credentials)
+            principal = await verifier.verify(credentials.credentials)
+            ensure_staff_auth(principal)
+            return principal
         return await demo_principal(
             x_demo_user=x_demo_user or "demo-reporter",
             x_demo_role=x_demo_role or "reporter",
@@ -343,7 +360,9 @@ async def authenticated_principal(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise AuthenticationError()
     verifier = request.app.state.oidc_verifier
-    return await verifier.verify(credentials.credentials)
+    principal = await verifier.verify(credentials.credentials)
+    ensure_staff_auth(principal)
+    return principal
 
 
 def ensure_role(principal: Principal, *allowed: str) -> None:
@@ -384,6 +403,22 @@ def ensure_high_impact_auth(principal: Principal) -> None:
         )
 
 
+def ensure_staff_auth(principal: Principal) -> None:
+    """Require phishing-resistant MFA for every authenticated staff capability."""
+
+    if principal.granted_roles == frozenset({"reporter"}):
+        return
+    missing: list[str] = []
+    if not principal.mfa_authenticated:
+        missing.append("MFA")
+    if not principal.phishing_resistant:
+        missing.append("phishing-resistant authentication")
+    if missing:
+        raise PermissionDeniedError(
+            "Staff access requires " + ", ".join(missing) + ". Re-authenticate and retry."
+        )
+
+
 __all__ = [
     "OIDCVerifier",
     "Principal",
@@ -394,4 +429,5 @@ __all__ = [
     "demo_principal",
     "ensure_high_impact_auth",
     "ensure_role",
+    "ensure_staff_auth",
 ]

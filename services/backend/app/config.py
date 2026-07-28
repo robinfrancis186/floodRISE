@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     oidc_mfa_claim: str = "custom:mfa"
     oidc_phishing_resistant_claim: str = "custom:phishing_resistant"
     oidc_step_up_claim: str = "custom:step_up"
+    oidc_install_id_claim: str = "custom:install_id"
     oidc_step_up_max_age_seconds: int = Field(default=300, ge=60, le=3_600)
     oidc_jwks_cache_seconds: int = Field(default=300, ge=30, le=86_400)
     oidc_http_timeout_seconds: float = Field(default=3.0, gt=0, le=15)
@@ -84,9 +85,13 @@ class Settings(BaseSettings):
     worker_visibility_timeout_seconds: int = Field(default=900, ge=60, le=43_200)
 
     sse_replay_limit: int = Field(default=1_000, ge=10, le=10_000)
+    sse_max_connections: int = Field(default=100, ge=1, le=10_000)
+    sse_max_connections_per_principal: int = Field(default=3, ge=1, le=100)
+    sse_poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=30)
     report_queue_limit: int = Field(default=100, ge=1, le=1_000)
     report_max_age_minutes: int = Field(default=45, ge=1, le=24 * 60)
     report_future_skew_minutes: int = Field(default=5, ge=0, le=60)
+    route_max_snap_distance_m: float = Field(default=500, ge=50, le=5_000)
 
     @property
     def is_demo(self) -> bool:

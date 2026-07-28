@@ -459,6 +459,16 @@ def build_seed_bundle(
             requested_by="demo-requester-evacuation-guidance",
         ),
     ]
+    for approval in approvals:
+        approval["binding"] = {
+            "evidence_record_id": initial_signal["id"],
+            "evidence_record_version": initial_signal["version"],
+            "evidence_version": evidence_version,
+            "model_record_id": simulation["id"],
+            "model_record_version": simulation["version"],
+            "model_version": model_version,
+            "incident_id": incident_id,
+        }
 
     timeline = _read_json(fixture_root / "timeline.json", [])
     fixture_reports = _read_json(fixture_root / "reports.json", [])
@@ -519,8 +529,25 @@ def reset_database(database: Database) -> None:
     )
 
 
-def seed_database(database: Database) -> None:
+def seed_database(database: Database, *, is_demo: bool) -> None:
+    """Initialize one runtime without ever mixing demo and live records."""
+
     database.initialize()
+    stored_demo_mode = database.get_state("demo_mode")
+    simulated_incidents = [
+        incident
+        for incident in database.list("incident")
+        if incident.get("is_demo") is True or incident.get("is_simulated") is True
+    ]
+    if not is_demo:
+        if stored_demo_mode is True or simulated_incidents:
+            raise RuntimeError(
+                "A non-demo runtime cannot open storage containing demo or simulated incidents"
+            )
+        return
+
+    if stored_demo_mode is False and not database.is_empty():
+        raise RuntimeError("A demo runtime cannot open authority-owned live storage")
     persisted_demo = (
         database.get_state("scenario_id"),
         database.get_state("incident_id"),
@@ -534,6 +561,7 @@ if __name__ == "__main__":
 
     settings = get_settings()
     target = Database(settings.database_url)
-    target.initialize()
-    reset_database(target)
+    seed_database(target, is_demo=settings.is_demo)
+    if not settings.is_demo:
+        raise SystemExit("Refusing to seed deterministic demo data outside demo mode")
     print(f"Seeded deterministic {settings.environment} database at {settings.database_url}")

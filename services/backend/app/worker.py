@@ -72,9 +72,13 @@ celery_app = create_celery_app()
 def _service() -> tuple[Database, FloodRiseService]:
     runtime = get_settings()
     database = Database(_database_url_for_sync(runtime.database_url))
-    database.initialize()
-    seed_database(database)
-    return database, FloodRiseService(database)
+    seed_database(database, is_demo=runtime.is_demo)
+    return database, FloodRiseService(
+        database,
+        is_demo=runtime.is_demo,
+        route_max_snap_distance_m=runtime.route_max_snap_distance_m,
+        alert_sink=runtime.demo_alert_sink if runtime.is_demo else None,
+    )
 
 
 @celery_app.task(name="floodrise.simulation.run")

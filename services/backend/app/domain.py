@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -11,7 +12,7 @@ from threading import RLock
 from typing import Any
 
 from .auth import Principal, audit_actor_id
-from .database import Database, EntityChange, EventInput, canonical_json
+from .database import ConcurrentWriteError, Database, EntityChange, EventInput, canonical_json
 from .errors import AppError, ConflictError, NotFoundError, PermissionDeniedError
 from .schemas import (
     ApprovalCreateInput,
@@ -200,7 +201,14 @@ def confidence_breakdown(
 @dataclass(slots=True)
 class FloodRiseService:
     database: Database
+    is_demo: bool
+    route_max_snap_distance_m: float = 500.0
+    alert_sink: str | None = None
     _mutation_lock: RLock = field(default_factory=RLock, repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.is_demo and self.alert_sink and self.alert_sink.startswith("fake://"):
+            raise ValueError("A non-demo service cannot use the deterministic fake alert sink")
 
     @property
     def scenario_clock(self) -> datetime:
@@ -211,9 +219,19 @@ class FloodRiseService:
 
     @property
     def incident_id(self) -> str:
-        return str(self.database.get_state("incident_id", "inc-demo-kerala-flood-2023"))
+        value = self.database.get_state("incident_id")
+        if not value:
+            raise AppError(
+                status_code=404,
+                title="No active incident",
+                detail="No active incident has been configured for this runtime.",
+                code="NO_ACTIVE_INCIDENT",
+            )
+        return str(value)
 
     def reset_demo(self, principal: Principal | None = None) -> dict[str, Any]:
+        if not self.is_demo:
+            raise PermissionDeniedError("Demo reset is disabled outside demo mode")
         reset_database(self.database)
         return {
             "incident_id": self.incident_id,
@@ -427,9 +445,24 @@ class FloodRiseService:
                 if existing and not existing.get("presentation_seed")
                 else None
             ),
-            "is_simulated": True,
+            "is_simulated": self.is_demo,
             "version": version,
         }
+
+    def _authoritative_install_id(self, principal: Principal) -> str:
+        """Return only an IdP/server-derived install family identifier."""
+
+        if principal.install_id_digest:
+            return principal.install_id_digest
+        if self.is_demo:
+            return hmac.new(
+                principal.audit_pseudonym_key,
+                f"demo-install:{principal.user_id}".encode(),
+                hashlib.sha256,
+            ).hexdigest()
+        raise PermissionDeniedError(
+            "A signed install identity claim is required for live report submission"
+        )
 
     def create_report(
         self,
@@ -442,11 +475,17 @@ class FloodRiseService:
         # read-classify-write aggregate transition serializable; production
         # PostgreSQL deployments additionally use transaction/row locking.
         with self._mutation_lock:
-            return self._create_report_locked(
-                report_input,
-                idempotency_key=idempotency_key,
-                principal=principal,
-            )
+            for attempt in range(3):
+                try:
+                    return self._create_report_locked(
+                        report_input,
+                        idempotency_key=idempotency_key,
+                        principal=principal,
+                    )
+                except ConcurrentWriteError:
+                    if attempt == 2:
+                        raise
+            raise AssertionError("unreachable report retry state")
 
     def _create_report_locked(
         self,
@@ -463,6 +502,7 @@ class FloodRiseService:
                 code="IDEMPOTENCY_KEY_REQUIRED",
             )
         request_body = report_input.model_dump(mode="json")
+        request_body["device_id"] = self._authoritative_install_id(principal)
         principal_scope = hashlib.sha256(principal.user_id.encode()).hexdigest()[:24]
         idempotency_scope = f"report.create:{principal_scope}"
         replay = self.database.idempotent_response(idempotency_scope, idempotency_key)
@@ -478,7 +518,7 @@ class FloodRiseService:
                 )
             return status, {**payload, "replayed": True}
 
-        body = request_body
+        body = dict(request_body)
         # Independence and trust are authority data. Never accept them from the
         # request body: bind the evidence to the authenticated principal and
         # derive trusted-responder status from server-enforced roles.
@@ -491,7 +531,7 @@ class FloodRiseService:
             "incident_commander",
         }
         incident = self.incident(str(body["incident_id"]))
-        if bool(incident.get("is_simulated")) != bool(self.database.get_state("demo_mode", True)):
+        if bool(incident.get("is_simulated")) != self.is_demo:
             raise ConflictError(
                 "Demo and live reports cannot share an incident", code="MODE_MISMATCH"
             )
@@ -546,7 +586,10 @@ class FloodRiseService:
         observed = parse_utc(body["observed_at"])
         reasons: list[str] = []
         disposition = "ELIGIBLE"
-        if observed > now + timedelta(minutes=5):
+        if float(body["location"]["accuracy_m"]) > 100:
+            disposition = "INVALID"
+            reasons.append("GPS accuracy is worse than 100 m; retained for human review only")
+        elif observed > now + timedelta(minutes=5):
             disposition = "INVALID"
             reasons.append("Observation time is more than five minutes in the future")
         elif now - observed > timedelta(minutes=45):
@@ -598,7 +641,7 @@ class FloodRiseService:
                 "accuracy_m": max(200, float(body["location"]["accuracy_m"])),
             },
             "idempotency_key_digest": hashlib.sha256(idempotency_key.encode()).hexdigest(),
-            "is_simulated": True,
+            "is_simulated": self.is_demo,
             "version": 1,
         }
 
@@ -633,6 +676,7 @@ class FloodRiseService:
                     str(updated_media["upload_id"]),
                     updated_media,
                     updated_media["version"],
+                    int(media_record.get("version", 1)),
                 )
             )
             media_events.append(
@@ -654,7 +698,13 @@ class FloodRiseService:
 
         changes = [
             EntityChange("report", report_id, report, 1),
-            EntityChange("signal", signal["id"], signal, signal["version"]),
+            EntityChange(
+                "signal",
+                signal["id"],
+                signal,
+                signal["version"],
+                int(existing_signal["version"]) if existing_signal else 0,
+            ),
             *media_changes,
         ]
         event_type = {
@@ -674,7 +724,7 @@ class FloodRiseService:
                     "disposition": disposition,
                     "cluster_id": cluster_id,
                     "quality_score": report["quality_score"],
-                    "is_simulated": True,
+                    "is_simulated": self.is_demo,
                 },
                 incident_id=body["incident_id"],
             ),
@@ -726,7 +776,12 @@ class FloodRiseService:
                     aggregate_version=caution["version"],
                     actor_id="floodsignal-engine",
                     actor_role="system",
-                    payload={"caution_only": True, "official": False, "gateway": "demo-sink"},
+                    payload={
+                        "caution_only": True,
+                        "official": False,
+                        "gateway": self.alert_sink,
+                        "dispatch_suppressed": self.alert_sink is None,
+                    },
                     incident_id=body["incident_id"],
                 )
             )
@@ -886,12 +941,13 @@ class FloodRiseService:
 
     def _community_caution(self, signal: Mapping[str, Any]) -> dict[str, Any]:
         now = self.scenario_clock
+        dispatched = self.alert_sink is not None
         return {
             "id": f"caution-{signal['id']}-v{signal['version']}",
             "incident_id": signal["incident_id"],
             "signal_id": signal["id"],
             "approval_request_id": None,
-            "status": "DISPATCHED",
+            "status": "DISPATCHED" if dispatched else "SUPPRESSED",
             "title": "Community-corroborated flooding nearby",
             "body": CORROBORATION_MESSAGE,
             "audience": "Opted-in users inside the hazard footprint plus 1 km",
@@ -902,10 +958,10 @@ class FloodRiseService:
             "model_version": self._active_model_version(),
             "created_at": iso_utc(now),
             "approved_at": None,
-            "dispatched_at": iso_utc(now),
+            "dispatched_at": iso_utc(now) if dispatched else None,
             "expires_at": iso_utc(now + timedelta(minutes=30)),
-            "gateway": "fake://notification-sink",
-            "is_demo": True,
+            "gateway": self.alert_sink,
+            "is_demo": self.is_demo,
             "version": 1,
         }
 
@@ -914,7 +970,7 @@ class FloodRiseService:
         return (
             str(simulations[-1].get("model_version", "model-demo-20231204-001"))
             if simulations
-            else "model-demo-20231204-001"
+            else ("model-demo-20231204-001" if self.is_demo else "model-unavailable")
         )
 
     def _recalculate_routes_for_signal(
@@ -947,9 +1003,17 @@ class FloodRiseService:
             "Avoids modelled p50 depth of at least 0.15 m and p90 depth of at least 0.30 m",
         ]
         route["wording"] = LOWER_RISK_DISCLAIMER
-        route["is_simulated"] = True
+        route["is_simulated"] = self.is_demo
         return (
-            [EntityChange("route", route["id"], route, route["version"])],
+            [
+                EntityChange(
+                    "route",
+                    route["id"],
+                    route,
+                    route["version"],
+                    int(route["version"]) - 1,
+                )
+            ],
             [
                 EventInput(
                     event_type="route.recalculated",
@@ -1000,7 +1064,15 @@ class FloodRiseService:
         }
         updated["version"] = int(updated["version"]) + 1
         self.database.commit(
-            changes=[EntityChange("signal", signal_id, updated, updated["version"])],
+            changes=[
+                EntityChange(
+                    "signal",
+                    signal_id,
+                    updated,
+                    updated["version"],
+                    int(current["version"]),
+                )
+            ],
             events=[
                 EventInput(
                     event_type="signal.reviewed",
@@ -1026,6 +1098,16 @@ class FloodRiseService:
         self, incident_id: str, *, trigger: str, principal: Principal
     ) -> dict[str, Any]:
         self.incident(incident_id)
+        if not self.is_demo:
+            raise AppError(
+                status_code=503,
+                title="Live model unavailable",
+                detail=(
+                    "The deterministic replay model is isolated from live incidents; "
+                    "configure an approved live model adapter before publishing."
+                ),
+                code="LIVE_MODEL_UNAVAILABLE",
+            )
         snapshot = {
             "incident_id": incident_id,
             "scenario_time": iso_utc(self.scenario_clock),
@@ -1033,7 +1115,7 @@ class FloodRiseService:
             "gauge_stage_m": 2.14,
             "reports": self.reports(incident_id),
             "sources": self.sources(),
-            "is_simulated": True,
+            "is_simulated": self.is_demo,
         }
         try:
             from .intelligence import run_rapid_impact_model
@@ -1069,10 +1151,12 @@ class FloodRiseService:
             "published_at": iso_utc(self.scenario_clock),
             "ensemble_members": int(model_result.get("ensemble_members", 9)),
             "result": model_result,
-            "is_simulated": True,
+            "is_simulated": self.is_demo,
             "version": version,
         }
         impact_id = f"impact-{model_version}"
+        existing_impact = self.database.get("impact", impact_id)
+        impact_version = int(existing_impact.get("version", 0)) + 1 if existing_impact else 1
         impact = {
             "id": impact_id,
             "incident_id": incident_id,
@@ -1088,13 +1172,25 @@ class FloodRiseService:
             "confidence": 0.78,
             "valid_until": iso_utc(self.scenario_clock + timedelta(minutes=10)),
             "label": "Rapid impact estimate",
-            "is_simulated": True,
-            "version": 1,
+            "is_simulated": self.is_demo,
+            "version": impact_version,
         }
         self.database.commit(
             changes=[
-                EntityChange("simulation", model_version, simulation, version),
-                EntityChange("impact", impact_id, impact, 1),
+                EntityChange(
+                    "simulation",
+                    model_version,
+                    simulation,
+                    version,
+                    int(existing["version"]) if existing else 0,
+                ),
+                EntityChange(
+                    "impact",
+                    impact_id,
+                    impact,
+                    impact_version,
+                    int(existing_impact["version"]) if existing_impact else 0,
+                ),
             ],
             events=[
                 EventInput(
@@ -1118,7 +1214,7 @@ class FloodRiseService:
     def _latest_evidence_version(self, incident_id: str) -> str:
         signals = self.signals(incident_id)
         if not signals:
-            return "evidence-demo-001"
+            return "evidence-demo-001" if self.is_demo else "evidence-unavailable"
         return str(max(signals, key=lambda item: int(item["version"]))["evidence_version"])
 
     def routes(self, incident_id: str) -> list[dict[str, Any]]:
@@ -1133,45 +1229,154 @@ class FloodRiseService:
         max_alternatives: int,
         principal: Principal,
     ) -> dict[str, Any]:
-        self.incident(incident_id)
+        del principal
+        incident = self.incident(incident_id)
         now = self.scenario_clock
-        try:
-            from .routing import build_demo_kerala_graph, find_lower_risk_routes
-
-            graph = build_demo_kerala_graph()
-            selected_origin = origin_node
-            if not selected_origin and origin_location:
-                node_values = graph.get("nodes", {}).values()
-                nearest = min(
-                    node_values,
-                    key=lambda node: haversine_m(
-                        origin_location,
-                        {
-                            "latitude": float(node["latitude"]),
-                            "longitude": float(node["longitude"]),
-                        },
-                    ),
-                )
-                selected_origin = str(nearest["id"])
-            selected_origin = selected_origin or str(graph.get("default_origin", "aluva_origin"))
-            result = find_lower_risk_routes(
-                graph,
-                selected_origin,
-                model_version=self._active_model_version(),
-                evidence_version=self._latest_evidence_version(incident_id),
-                valid_until=iso_utc(now + timedelta(minutes=10)),
-                max_alternatives=max_alternatives,
-            )
-        except (ImportError, KeyError, TypeError, ValueError):
-            result = {
-                "status": "ROUTES_AVAILABLE",
-                "alternatives": self.routes(incident_id)[:max_alternatives],
-                "exclusions": [],
-                "staging_point": None,
-            }
         model_version = self._active_model_version()
         evidence_version = self._latest_evidence_version(incident_id)
         valid_until = iso_utc(now + timedelta(minutes=10))
+        if not self.is_demo:
+            raise AppError(
+                status_code=503,
+                title="Live routing unavailable",
+                detail=(
+                    "The deterministic Kerala graph is isolated from live incidents; "
+                    "configure an approved versioned road graph before requesting routes."
+                ),
+                code="LIVE_ROUTING_UNAVAILABLE",
+            )
+        try:
+            from .routing import build_demo_kerala_graph, find_lower_risk_routes
+        except ImportError as exc:
+            raise AppError(
+                status_code=503,
+                title="Routing unavailable",
+                detail="The lower-risk routing engine could not be loaded.",
+                code="ROUTING_UNAVAILABLE",
+            ) from exc
+
+        graph = build_demo_kerala_graph()
+        nodes = graph.get("nodes")
+        if not isinstance(nodes, Mapping) or not nodes:
+            raise AppError(
+                status_code=503,
+                title="Routing unavailable",
+                detail="The active road graph has no routable nodes.",
+                code="ROUTING_UNAVAILABLE",
+            )
+
+        selected_origin: str | None = None
+        if origin_node and origin_location:
+            return self._no_route_response(
+                incident_id,
+                now=now,
+                model_version=model_version,
+                evidence_version=evidence_version,
+                valid_until=valid_until,
+                reason_code="AMBIGUOUS_ORIGIN",
+                reason="Provide one route origin, not both a node and coordinates.",
+            )
+        if origin_node:
+            selected_origin = str(origin_node)
+            if selected_origin not in nodes:
+                return self._no_route_response(
+                    incident_id,
+                    now=now,
+                    model_version=model_version,
+                    evidence_version=evidence_version,
+                    valid_until=valid_until,
+                    reason_code="UNKNOWN_ORIGIN_NODE",
+                    reason="The requested origin is not part of the active routable graph.",
+                )
+        elif origin_location:
+            if float(origin_location.get("accuracy_m", 10_001)) > 100:
+                return self._no_route_response(
+                    incident_id,
+                    now=now,
+                    model_version=model_version,
+                    evidence_version=evidence_version,
+                    valid_until=valid_until,
+                    reason_code="ORIGIN_ACCURACY_TOO_LOW",
+                    reason="Route guidance requires a location accuracy of 100 m or better.",
+                )
+            bounds = incident.get("bounds")
+            longitude = float(origin_location["longitude"])
+            latitude = float(origin_location["latitude"])
+            if (
+                not isinstance(bounds, list)
+                or len(bounds) != 4
+                or not (
+                    float(bounds[0]) <= longitude <= float(bounds[2])
+                    and float(bounds[1]) <= latitude <= float(bounds[3])
+                )
+            ):
+                return self._no_route_response(
+                    incident_id,
+                    now=now,
+                    model_version=model_version,
+                    evidence_version=evidence_version,
+                    valid_until=valid_until,
+                    reason_code="ORIGIN_OUTSIDE_INCIDENT_AREA",
+                    reason="The supplied origin is outside the active incident area.",
+                )
+            nearest = min(
+                nodes.values(),
+                key=lambda node: haversine_m(
+                    origin_location,
+                    {
+                        "latitude": float(node["latitude"]),
+                        "longitude": float(node["longitude"]),
+                    },
+                ),
+            )
+            snap_distance = haversine_m(
+                origin_location,
+                {
+                    "latitude": float(nearest["latitude"]),
+                    "longitude": float(nearest["longitude"]),
+                },
+            )
+            if snap_distance > self.route_max_snap_distance_m:
+                return self._no_route_response(
+                    incident_id,
+                    now=now,
+                    model_version=model_version,
+                    evidence_version=evidence_version,
+                    valid_until=valid_until,
+                    reason_code="ORIGIN_TOO_FAR_FROM_ROUTABLE_NETWORK",
+                    reason=(
+                        "The supplied origin is too far from the verified routable network "
+                        "for lower-risk guidance."
+                    ),
+                )
+            selected_origin = str(nearest["id"])
+        else:
+            return self._no_route_response(
+                incident_id,
+                now=now,
+                model_version=model_version,
+                evidence_version=evidence_version,
+                valid_until=valid_until,
+                reason_code="ORIGIN_REQUIRED",
+                reason="A route origin is required.",
+            )
+
+        try:
+            result = find_lower_risk_routes(
+                graph,
+                selected_origin,
+                model_version=model_version,
+                evidence_version=evidence_version,
+                valid_until=valid_until,
+                max_alternatives=max_alternatives,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AppError(
+                status_code=503,
+                title="Routing unavailable",
+                detail="The active road graph could not produce a trustworthy route result.",
+                code="ROUTING_UNAVAILABLE",
+            ) from exc
         alternatives = []
         for raw in result.get("alternatives", []):
             alternative = dict(raw)
@@ -1217,7 +1422,34 @@ class FloodRiseService:
             "evidence_version": evidence_version,
             "valid_until": valid_until,
             "disclaimer": LOWER_RISK_DISCLAIMER,
-            "is_simulated": True,
+            "is_simulated": self.is_demo,
+        }
+
+    def _no_route_response(
+        self,
+        incident_id: str,
+        *,
+        now: datetime,
+        model_version: str,
+        evidence_version: str,
+        valid_until: str,
+        reason_code: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return {
+            "incident_id": incident_id,
+            "generated_at": iso_utc(now),
+            "status": "NO_ROUTE",
+            "alternatives": [],
+            "exclusions": [{"reason_code": reason_code}],
+            "no_route_reason": reason,
+            "reason_code": reason_code,
+            "staging_point": None,
+            "model_version": model_version,
+            "evidence_version": evidence_version,
+            "valid_until": valid_until,
+            "disclaimer": LOWER_RISK_DISCLAIMER,
+            "is_simulated": self.is_demo,
         }
 
     def shelters(self, incident_id: str) -> list[dict[str, Any]]:
@@ -1235,9 +1467,12 @@ class FloodRiseService:
         expected = int(updates.get("expected_version", current["version"]))
         if expected != int(current["version"]):
             raise ConflictError(f"Shelter version is {current['version']}; expected {expected}")
-        if str(updates.get("activation_status", current["activation_status"])) == "CLOSED":
+        closure_values = {"CLOSED", "BLOCKED", "UNREACHABLE", "IMPASSABLE"}
+        requested_activation = str(updates.get("activation_status", "")).upper()
+        requested_access = str(updates.get("access_status", "")).upper()
+        if requested_activation in closure_values or requested_access in closure_values:
             raise PermissionDeniedError(
-                "Shelter closure requires a separate two-person approval request"
+                "Shelter closure or blocked access requires a separate two-person approval request"
             )
         updated = {
             **current,
@@ -1247,7 +1482,15 @@ class FloodRiseService:
         updated["verified_by"] = principal.user_id
         updated["verified_at"] = iso_utc(self.scenario_clock)
         self.database.commit(
-            changes=[EntityChange("shelter", shelter_id, updated, updated["version"])],
+            changes=[
+                EntityChange(
+                    "shelter",
+                    shelter_id,
+                    updated,
+                    updated["version"],
+                    int(current["version"]),
+                )
+            ],
             events=[
                 EventInput(
                     event_type="shelter.status_updated",
@@ -1273,6 +1516,59 @@ class FloodRiseService:
     def approvals(self, incident_id: str) -> list[dict[str, Any]]:
         return self._for_incident(self.database.list("approval"), incident_id)
 
+    def _resolve_approval_bindings(
+        self,
+        incident_id: str,
+        evidence_version: str,
+        model_version: str,
+    ) -> dict[str, Any]:
+        evidence = next(
+            (
+                signal
+                for signal in self.signals(incident_id)
+                if signal.get("evidence_version") == evidence_version
+            ),
+            None,
+        )
+        if evidence is None:
+            raise AppError(
+                status_code=422,
+                title="Invalid approval binding",
+                detail="The cited evidence version does not exist for this incident.",
+                code="INVALID_EVIDENCE_BINDING",
+            )
+        if evidence.get("state") in {"STALE", "EXPIRED"}:
+            raise AppError(
+                status_code=422,
+                title="Invalid approval binding",
+                detail="The cited evidence is stale or expired and cannot authorize this action.",
+                code="STALE_EVIDENCE_BINDING",
+            )
+        simulation = next(
+            (
+                item
+                for item in self.simulations(incident_id)
+                if item.get("model_version") == model_version
+            ),
+            None,
+        )
+        if simulation is None or simulation.get("status") != "PUBLISHED":
+            raise AppError(
+                status_code=422,
+                title="Invalid approval binding",
+                detail="The cited published model version does not exist for this incident.",
+                code="INVALID_MODEL_BINDING",
+            )
+        return {
+            "evidence_record_id": str(evidence["id"]),
+            "evidence_record_version": int(evidence["version"]),
+            "evidence_version": evidence_version,
+            "model_record_id": str(simulation["id"]),
+            "model_record_version": int(simulation["version"]),
+            "model_version": model_version,
+            "incident_id": incident_id,
+        }
+
     def create_approval(self, request: ApprovalCreateInput, principal: Principal) -> dict[str, Any]:
         if principal.role == "identity_administrator":
             raise PermissionDeniedError(
@@ -1280,6 +1576,11 @@ class FloodRiseService:
             )
         body = request.model_dump(mode="json")
         self.incident(body["incident_id"])
+        binding = self._resolve_approval_bindings(
+            str(body["incident_id"]),
+            str(body["evidence_version"]),
+            str(body["model_version"]),
+        )
         now = self.scenario_clock
         payload_digest = hashlib.sha256(canonical_json(body).encode()).hexdigest()
         approval_id = f"approval-{payload_digest[:14]}"
@@ -1295,13 +1596,14 @@ class FloodRiseService:
             "requested_by": principal.user_id,
             "requested_role": principal.role,
             "request_authentication": principal.authentication_evidence(),
+            "binding": binding,
             "requested_at": iso_utc(now),
             "expires_at": iso_utc(now + timedelta(minutes=15)),
             "decided_by": None,
             "decided_at": None,
             "decision_reason": None,
             "execution_status": "NOT_STARTED",
-            "is_simulated": True,
+            "is_simulated": self.is_demo,
             "version": 1,
         }
         self.database.commit(
@@ -1359,7 +1661,15 @@ class FloodRiseService:
         if now >= parse_utc(current["expires_at"]):
             expired = {**current, "status": "EXPIRED", "version": int(current["version"]) + 1}
             self.database.commit(
-                changes=[EntityChange("approval", approval_id, expired, expired["version"])],
+                changes=[
+                    EntityChange(
+                        "approval",
+                        approval_id,
+                        expired,
+                        expired["version"],
+                        int(current["version"]),
+                    )
+                ],
                 events=[
                     EventInput(
                         event_type="approval.expired",
@@ -1382,6 +1692,23 @@ class FloodRiseService:
 
         decision_value = str(decision.decision)
         approved = decision_value.endswith("APPROVE")
+        if approved:
+            try:
+                current_binding = self._resolve_approval_bindings(
+                    str(current["incident_id"]),
+                    str(current["evidence_version"]),
+                    str(current["model_version"]),
+                )
+            except AppError as exc:
+                raise ConflictError(
+                    "The approval evidence or model binding is no longer valid",
+                    code="APPROVAL_BINDING_CHANGED",
+                ) from exc
+            if current_binding != current.get("binding"):
+                raise ConflictError(
+                    "The approval evidence or model record changed after the request",
+                    code="APPROVAL_BINDING_CHANGED",
+                )
         updated = {
             **current,
             "status": "APPROVED" if approved else "REJECTED",
@@ -1393,7 +1720,15 @@ class FloodRiseService:
             "execution_status": "SUCCEEDED" if approved else "NOT_STARTED",
             "version": int(current["version"]) + 1,
         }
-        changes = [EntityChange("approval", approval_id, updated, updated["version"])]
+        changes = [
+            EntityChange(
+                "approval",
+                approval_id,
+                updated,
+                updated["version"],
+                int(current["version"]),
+            )
+        ]
         event_type = "approval.approved" if approved else "approval.rejected"
         events = [
             EventInput(
@@ -1419,18 +1754,19 @@ class FloodRiseService:
             events.extend(action_events)
             alert = self._official_alert(updated)
             changes.append(EntityChange("alert", alert["id"], alert, 1))
+            dispatched = self.alert_sink is not None
             events.append(
                 EventInput(
-                    event_type="alert.dispatched",
+                    event_type="alert.dispatched" if dispatched else "alert.dispatch_suppressed",
                     aggregate_kind="alert",
                     aggregate_id=alert["id"],
                     aggregate_version=1,
-                    actor_id="demo-alert-gateway",
+                    actor_id="demo-alert-gateway" if self.is_demo else "alert-gateway",
                     actor_role="system",
                     payload={
                         "official": True,
                         "approval_request_id": approval_id,
-                        "gateway": "fake://notification-sink",
+                        "gateway": self.alert_sink,
                     },
                     incident_id=current["incident_id"],
                 )
@@ -1459,7 +1795,15 @@ class FloodRiseService:
                 "authorized_by_approval": approval["id"],
                 "version": int(road.get("version", 1)) + 1,
             }
-            return [EntityChange("road", road_id, changed, changed["version"])], [
+            return [
+                EntityChange(
+                    "road",
+                    road_id,
+                    changed,
+                    changed["version"],
+                    int(road.get("version", 1)),
+                )
+            ], [
                 EventInput(
                     event_type="road.officially_closed",
                     aggregate_kind="road",
@@ -1484,7 +1828,15 @@ class FloodRiseService:
                 "authorized_by_approval": approval["id"],
                 "version": int(shelter.get("version", 1)) + 1,
             }
-            return [EntityChange("shelter", shelter_id, changed, changed["version"])], [
+            return [
+                EntityChange(
+                    "shelter",
+                    shelter_id,
+                    changed,
+                    changed["version"],
+                    int(shelter.get("version", 1)),
+                )
+            ], [
                 EventInput(
                     event_type="shelter.officially_closed",
                     aggregate_kind="shelter",
@@ -1501,11 +1853,12 @@ class FloodRiseService:
     def _official_alert(self, approval: Mapping[str, Any]) -> dict[str, Any]:
         now = self.scenario_clock
         payload = approval.get("action_payload", {})
+        dispatched = self.alert_sink is not None
         return {
             "id": f"alert-{approval['id']}",
             "incident_id": approval["incident_id"],
             "approval_request_id": approval["id"],
-            "status": "DISPATCHED",
+            "status": "DISPATCHED" if dispatched else "APPROVED",
             "title": payload.get("title", str(approval["action_type"]).replace("_", " ").title()),
             "body": payload.get("body", approval["reason"]),
             "audience": approval["audience"],
@@ -1516,10 +1869,10 @@ class FloodRiseService:
             "model_version": approval["model_version"],
             "created_at": approval["requested_at"],
             "approved_at": approval["decided_at"],
-            "dispatched_at": iso_utc(now),
+            "dispatched_at": iso_utc(now) if dispatched else None,
             "expires_at": approval["expires_at"],
-            "gateway": "fake://notification-sink",
-            "is_demo": True,
+            "gateway": self.alert_sink,
+            "is_demo": self.is_demo,
             "version": 1,
         }
 
@@ -1527,6 +1880,8 @@ class FloodRiseService:
         return self._for_incident(self.database.list("alert"), incident_id)
 
     def advance_demo(self, request: DemoAdvanceInput, principal: Principal) -> dict[str, Any]:
+        if not self.is_demo:
+            raise PermissionDeniedError("Demo replay controls are disabled outside demo mode")
         previous = self.scenario_clock
         current = previous + timedelta(minutes=request.minutes)
         incident_id = self.incident_id
@@ -1540,7 +1895,15 @@ class FloodRiseService:
         }
         scenario_version = int(self.database.get_state("scenario_version", 1)) + 1
         self.database.commit(
-            changes=[EntityChange("incident", incident_id, updated_incident, incident_version)],
+            changes=[
+                EntityChange(
+                    "incident",
+                    incident_id,
+                    updated_incident,
+                    incident_version,
+                    int(incident.get("version", 1)),
+                )
+            ],
             state={
                 "scenario_clock": iso_utc(current),
                 "scenario_version": scenario_version,
@@ -1616,14 +1979,8 @@ class FloodRiseService:
         incident = self.incident(incident_id)
         simulations = self.simulations(incident_id)
         impacts = self.impacts(incident_id)
-        return {
-            "server_time": iso_utc(datetime.now(UTC)),
-            "scenario_clock": iso_utc(self.scenario_clock),
-            "demo_mode": True,
-            "data_label": "DEMO DATA",
-            "incident": incident,
-            "sources": self.sources(),
-            "layers": [
+        layers = (
+            [
                 {
                     "id": "rapid-impact-p50",
                     "incident_id": incident_id,
@@ -1643,7 +2000,18 @@ class FloodRiseService:
                     "representation": "GEOJSON",
                     "is_simulated": True,
                 },
-            ],
+            ]
+            if self.is_demo
+            else []
+        )
+        return {
+            "server_time": iso_utc(datetime.now(UTC)),
+            "scenario_clock": iso_utc(self.scenario_clock),
+            "demo_mode": self.is_demo,
+            "data_label": "DEMO DATA" if self.is_demo else "LIVE",
+            "incident": incident,
+            "sources": self.sources(),
+            "layers": layers,
             "signals": self.signals(incident_id),
             "reports": self.reports(incident_id),
             "simulation": simulations[-1] if simulations else None,

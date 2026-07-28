@@ -2,6 +2,7 @@
 
 import pytest
 
+from app import worker
 from app.config import Settings
 from app.worker import create_celery_app
 
@@ -56,3 +57,21 @@ def test_production_worker_fails_closed_without_an_https_queue() -> None:
 
     with pytest.raises(RuntimeError, match="must be an HTTPS SQS queue URL"):
         create_celery_app(settings.model_copy(update={"jobs_queue_url": "http://queue"}))
+
+
+def test_non_demo_worker_never_seeds_demo_entities(tmp_path, monkeypatch) -> None:
+    settings = Settings(
+        env="development",
+        demo_mode=False,
+        database_url=f"sqlite:///{tmp_path / 'live-worker.sqlite3'}",
+    )
+    monkeypatch.setattr(worker, "get_settings", lambda: settings)
+
+    database, service = worker._service()
+    try:
+        assert database.is_empty() is True
+        assert database.get_state("incident_id") is None
+        assert service.is_demo is False
+        assert service.alert_sink is None
+    finally:
+        database.engine.dispose()

@@ -205,7 +205,9 @@ class AuditActorType(StrEnum):
 class ReportLocation(APIModel):
     latitude: Latitude
     longitude: Longitude
-    accuracy_m: float = Field(ge=0, le=100)
+    # Poor readings are retained for human review. Domain eligibility remains
+    # capped at 100 m and routing rejects imprecise origins.
+    accuracy_m: float = Field(ge=0, le=10_000)
 
 
 class PublicReportLocation(APIModel):
@@ -628,8 +630,8 @@ class RouteRequest(APIModel):
 
     @model_validator(mode="after")
     def origin_is_available(self) -> RouteRequest:
-        if self.origin is None and not self.origin_node:
-            raise ValueError("origin or origin_node is required")
+        if (self.origin is None) == (not self.origin_node):
+            raise ValueError("exactly one of origin or origin_node is required")
         return self
 
 

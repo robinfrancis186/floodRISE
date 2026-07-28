@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.database import Database
+from app.database import Database, EventInput
 from app.domain import CORROBORATION_MESSAGE, EXPIRY_MESSAGE
 from app.main import create_app
 
@@ -132,7 +132,10 @@ def test_seeded_health_and_bootstrap_are_demo_labelled(client: TestClient) -> No
     }
     assert client.get(f"{API}/health").json()["status"] == "ok"
 
-    bootstrap = client.get(f"{API}/incidents/{INCIDENT_ID}/bootstrap")
+    bootstrap = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("incident-lead", "incident_commander"),
+    )
     assert bootstrap.status_code == 200
     body = bootstrap.json()
     assert body["data_label"] == "DEMO DATA"
@@ -172,6 +175,31 @@ def test_seeded_health_and_bootstrap_are_demo_labelled(client: TestClient) -> No
     }
 
 
+def test_bootstrap_omits_operational_approvals_for_non_operational_roles(
+    client: TestClient,
+) -> None:
+    reporter = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("field-reporter", "reporter"),
+    )
+    identity_admin = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("identity-admin", "identity_administrator"),
+    )
+    verifier = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("duty-verifier", "verifier"),
+    )
+
+    assert reporter.status_code == identity_admin.status_code == verifier.status_code == 200
+    assert reporter.json()["approvals"] == []
+    assert identity_admin.json()["approvals"] == []
+    serialized_reporter = json.dumps(reporter.json())
+    assert "demo-requester-area-caution" not in serialized_reporter
+    assert "request_authentication" not in serialized_reporter
+    assert len(verifier.json()["approvals"]) == 3
+
+
 def test_demo_reset_requires_identity_administrator_and_returns_canonical_checkpoint(
     client: TestClient,
 ) -> None:
@@ -196,7 +224,7 @@ def test_demo_reset_requires_identity_administrator_and_returns_canonical_checkp
 
 def test_validation_errors_use_rfc_9457_problem_details(client: TestClient) -> None:
     payload = _report_payload(1)
-    payload["location"]["accuracy_m"] = 101
+    payload["location"]["accuracy_m"] = 10_001
     payload["unexpected"] = "strict contracts reject extra fields"
 
     response = client.post(
@@ -315,7 +343,7 @@ def test_four_independent_reports_create_one_unofficial_caution(client: TestClie
     assert alerts[0]["body"] == CORROBORATION_MESSAGE
     assert alerts[0]["caution_only"] is True
     assert alerts[0]["official"] is False
-    assert alerts[0]["gateway"] == "fake://notification-sink"
+    assert "gateway" not in alerts[0]
 
     fifth = _submit_report(client, 5)
     assert fifth.status_code == 201
@@ -443,6 +471,22 @@ def test_late_report_is_retained_but_cannot_trigger_a_live_signal(client: TestCl
     assert body["signal"]["independent_report_count"] == 0
 
 
+def test_poor_accuracy_report_is_retained_but_not_live_eligible(
+    client: TestClient,
+) -> None:
+    payload = _report_payload(71)
+    payload["location"]["accuracy_m"] = 145
+
+    response = _submit_report(client, 71, payload=payload)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["report"]["disposition"] == "INVALID"
+    assert body["report"]["eligible_for_live_signal"] is False
+    assert "worse than 100 m" in body["report"]["disposition_reasons"][0]
+    assert body["signal"]["independent_report_count"] == 0
+
+
 def test_demo_advance_expires_signal_without_implying_safety(client: TestClient) -> None:
     created = _submit_report(client, 1)
     signal_id = created.json()["signal"]["id"]
@@ -536,12 +580,24 @@ def test_two_person_approval_denies_requester_and_dispatches_for_other_user(
     assert alert["caution_only"] is False
     assert alert["approval_request_id"] == approval["id"]
     assert alert["gateway"] == "fake://notification-sink"
+    reporter_bootstrap = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("field-reporter", "reporter"),
+    )
+    assert approval["id"] not in json.dumps(reporter_bootstrap.json())
+    public_alert = next(
+        item for item in reporter_bootstrap.json()["alerts"] if item["official"] is True
+    )
+    assert "gateway" not in public_alert
 
 
 def test_seeded_evacuation_approval_uses_bound_id_version_and_distinct_approver(
     client: TestClient,
 ) -> None:
-    bootstrap = client.get(f"{API}/incidents/{INCIDENT_ID}/bootstrap").json()
+    bootstrap = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("incident-lead", "incident_commander"),
+    ).json()
     approval = next(
         item
         for item in bootstrap["approvals"]
@@ -594,7 +650,12 @@ def test_identity_administrator_cannot_request_operational_action(client: TestCl
 
 
 def test_audit_chain_and_finite_sse_replay_share_persisted_events(client: TestClient) -> None:
-    initial_stream = client.get(f"{API}/events", params={"once": "true"})
+    stream_headers = _role_headers("audit-reviewer", "auditor")
+    initial_stream = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers=stream_headers,
+    )
     initial_events = _parse_sse(initial_stream.text)
 
     assert initial_stream.status_code == 200
@@ -610,8 +671,8 @@ def test_audit_chain_and_finite_sse_replay_share_persisted_events(client: TestCl
     assert _submit_report(client, 1).status_code == 201
     replay = client.get(
         f"{API}/events",
-        params={"once": "true"},
-        headers={"Last-Event-ID": initial_events[-1]["id"]},
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers={**stream_headers, "Last-Event-ID": initial_events[-1]["id"]},
     )
     replay_events = _parse_sse(replay.text)
     assert [event["event"] for event in replay_events] == [
@@ -628,6 +689,60 @@ def test_audit_chain_and_finite_sse_replay_share_persisted_events(client: TestCl
     assert exported.json()["chain_valid"] is True
     assert exported.json()["event_count"] == len(audit.json()["items"]) == 6
     assert len(exported.json()["sha256"]) == 64
+    assert client.app.state.sse_connection_count == 0
+
+
+def test_sse_requires_operational_auth_filters_incident_and_rejects_bad_cursor(
+    client: TestClient,
+) -> None:
+    default_reporter = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+    )
+    auditor = _role_headers("audit-reviewer", "auditor")
+    malformed = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers={**auditor, "Last-Event-ID": "not-a-persisted-sequence"},
+    )
+    database = client.app.state.database
+    database.commit(
+        events=[
+            EventInput(
+                event_type="approval.requested",
+                aggregate_kind="approval",
+                aggregate_id="approval-other-incident",
+                aggregate_version=1,
+                actor_id="other-incident-user",
+                actor_role="incident_commander",
+                payload={"private": True},
+                incident_id="inc-other-authority-event",
+            )
+        ]
+    )
+    filtered = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers=auditor,
+    )
+
+    assert default_reporter.status_code == 403
+    assert malformed.status_code == 400
+    assert malformed.json()["code"] == "INVALID_EVENT_CURSOR"
+    assert "approval-other-incident" not in filtered.text
+    assert all(event["data"]["incident_id"] == INCIDENT_ID for event in _parse_sse(filtered.text))
+
+    runtime = client.app.state.settings
+    client.app.state.sse_connection_count = runtime.sse_max_connections
+    at_capacity = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers=auditor,
+    )
+    client.app.state.sse_connection_count = 0
+    client.app.state.sse_principal_connections.clear()
+    assert at_capacity.status_code == 429
+    assert at_capacity.json()["code"] == "SSE_CONNECTION_LIMIT"
 
 
 def test_route_and_simulation_endpoints_publish_versioned_estimates(client: TestClient) -> None:
@@ -668,3 +783,78 @@ def test_route_and_simulation_endpoints_publish_versioned_estimates(client: Test
         and item["label"] == "Rapid impact estimate"
         for item in impacts.json()["items"]
     )
+
+
+@pytest.mark.parametrize(
+    ("origin", "reason_code"),
+    [
+        ({"origin_node": "not-on-graph"}, "UNKNOWN_ORIGIN_NODE"),
+        (
+            {
+                "origin": {
+                    "latitude": 40.7128,
+                    "longitude": -74.006,
+                    "accuracy_m": 10,
+                }
+            },
+            "ORIGIN_OUTSIDE_INCIDENT_AREA",
+        ),
+        (
+            {
+                "origin": {
+                    "latitude": 9.93,
+                    "longitude": 76.21,
+                    "accuracy_m": 10,
+                }
+            },
+            "ORIGIN_TOO_FAR_FROM_ROUTABLE_NETWORK",
+        ),
+        (
+            {
+                "origin": {
+                    "latitude": 10.1065,
+                    "longitude": 76.3516,
+                    "accuracy_m": 101,
+                }
+            },
+            "ORIGIN_ACCURACY_TOO_LOW",
+        ),
+    ],
+)
+def test_route_recommendation_fails_closed_for_untrusted_origins(
+    client: TestClient,
+    origin: dict[str, Any],
+    reason_code: str,
+) -> None:
+    response = client.post(
+        f"{API}/routes/recommend",
+        json={"incident_id": INCIDENT_ID, **origin, "max_alternatives": 3},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "NO_ROUTE"
+    assert response.json()["alternatives"] == []
+    assert response.json()["reason_code"] == reason_code
+    assert response.json()["staging_point"] is None
+
+
+def test_route_engine_failure_never_returns_a_seeded_route(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_engine(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise ValueError("corrupt graph fixture")
+
+    monkeypatch.setattr("app.routing.find_lower_risk_routes", fail_engine)
+    response = client.post(
+        f"{API}/routes/recommend",
+        json={
+            "incident_id": INCIDENT_ID,
+            "origin_node": "aluva",
+            "max_alternatives": 3,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "ROUTING_UNAVAILABLE"
+    assert "route-lower-risk-001" not in response.text

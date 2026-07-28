@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
@@ -17,11 +18,11 @@ from pydantic import SecretStr, ValidationError
 
 from app.auth import Principal, audit_actor_id
 from app.config import Settings
-from app.database import Database
+from app.database import Database, EntityChange
 from app.main import create_app
 
 API = "/api/v1"
-INCIDENT_ID = "inc-demo-kerala-flood-2023"
+INCIDENT_ID = "inc-authority-auth-test"
 ISSUER = "https://cognito-idp.ap-south-1.amazonaws.com/ap-south-1_example"
 AUDIENCE = "staff-web-client"
 KEY_ID = "local-test-key"
@@ -42,6 +43,62 @@ def jwks_json(signing_key: rsa.RSAPrivateKey) -> str:
 @pytest.fixture
 def production_client(jwks_json: str) -> Iterator[TestClient]:
     database = Database("sqlite://")
+    database.initialize()
+    now = datetime.now(UTC)
+    now_iso = now.isoformat().replace("+00:00", "Z")
+    database.commit(
+        changes=[
+            EntityChange(
+                "incident",
+                INCIDENT_ID,
+                {
+                    "id": INCIDENT_ID,
+                    "name": "Authority test incident",
+                    "is_demo": False,
+                    "is_simulated": False,
+                    "bounds": [76.2, 9.92, 76.48, 10.24],
+                    "version": 1,
+                },
+                1,
+            ),
+            EntityChange(
+                "signal",
+                "signal-auth-test",
+                {
+                    "id": "signal-auth-test",
+                    "incident_id": INCIDENT_ID,
+                    "cluster_id": "cluster-auth-test",
+                    "state": "COMMUNITY_CORROBORATED",
+                    "location": {
+                        "type": "Point",
+                        "coordinates": [76.3517, 10.1065],
+                    },
+                    "radius_m": 100,
+                    "last_observed_at": now_iso,
+                    "evidence_version": "evidence-auth-test-001",
+                    "version": 1,
+                },
+                1,
+            ),
+            EntityChange(
+                "simulation",
+                "model-auth-test-001",
+                {
+                    "id": "model-auth-test-001",
+                    "incident_id": INCIDENT_ID,
+                    "model_version": "model-auth-test-001",
+                    "status": "PUBLISHED",
+                    "version": 1,
+                },
+                1,
+            ),
+        ],
+        state={
+            "incident_id": INCIDENT_ID,
+            "scenario_clock": now_iso,
+            "demo_mode": False,
+        },
+    )
     settings = Settings(
         env="staging",
         demo_mode=False,
@@ -157,13 +214,26 @@ def test_demo_headers_are_rejected_and_bearer_is_required_in_staging(
     assert missing.headers["www-authenticate"] == "Bearer"
 
 
+def test_non_demo_application_exposes_only_authority_owned_state(
+    production_client: TestClient,
+) -> None:
+    health = production_client.get("/health")
+    incidents = production_client.get(f"{API}/incidents")
+
+    assert health.status_code == incidents.status_code == 200
+    assert health.json()["demo_mode"] is False
+    assert health.json()["data_label"] == "LIVE"
+    assert [item["id"] for item in incidents.json()["items"]] == [INCIDENT_ID]
+    assert all(item.get("is_simulated") is False for item in incidents.json()["items"])
+
+
 def test_static_jwks_validates_signature_audience_and_role_without_network(
     production_client: TestClient,
     signing_key: rsa.RSAPrivateKey,
 ) -> None:
-    valid = _token(signing_key, roles=["auditor"])
-    wrong_audience = _token(signing_key, audience="different-client")
-    unsupported_role = _token(signing_key, roles=["unmapped-superuser"])
+    valid = _token(signing_key, roles=["auditor"], amr=["webauthn"])
+    wrong_audience = _token(signing_key, audience="different-client", amr=["webauthn"])
+    unsupported_role = _token(signing_key, roles=["unmapped-superuser"], amr=["webauthn"])
 
     with patch("app.auth.httpx.AsyncClient", side_effect=AssertionError("network not allowed")):
         response = production_client.get(f"{API}/audit", headers=_bearer(valid))
@@ -179,6 +249,94 @@ def test_static_jwks_validates_signature_audience_and_role_without_network(
     assert role_response.status_code == 403
 
 
+def test_password_and_totp_are_insufficient_for_any_staff_access(
+    production_client: TestClient,
+    signing_key: rsa.RSAPrivateKey,
+) -> None:
+    password_and_totp = _token(
+        signing_key,
+        subject="phishable-auditor",
+        roles=["auditor"],
+        amr=["pwd", "totp"],
+    )
+
+    denied = production_client.get(
+        f"{API}/audit",
+        headers=_bearer(password_and_totp),
+    )
+
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "PERMISSION_DENIED"
+    assert "phishing-resistant" in denied.json()["detail"]
+
+
+def test_report_install_family_comes_from_the_signed_identity_claim(
+    production_client: TestClient,
+    signing_key: rsa.RSAPrivateKey,
+) -> None:
+    observed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    def report_payload(number: int) -> dict[str, Any]:
+        return {
+            "client_report_id": f"live-install-report-{number}",
+            "incident_id": INCIDENT_ID,
+            "reporter_id": f"untrusted-alias-{number}",
+            "device_id": f"forged-device-{number}",
+            "observed_at": observed_at,
+            "location": {
+                "latitude": 10.1065 + number * 0.00001,
+                "longitude": 76.3517 + number * 0.00001,
+                "accuracy_m": 20,
+            },
+            "water_depth": "KNEE",
+            "road_status": "IMPASSABLE",
+            "flood_status": "FLOODED",
+        }
+
+    responses = []
+    for number, account in enumerate(("reporter-a", "reporter-b"), start=1):
+        token = _token(
+            signing_key,
+            subject=account,
+            roles=["reporter"],
+            overrides={"custom:install_id": "idp-managed-shared-install"},
+        )
+        responses.append(
+            production_client.post(
+                f"{API}/reports",
+                json=report_payload(number),
+                headers={
+                    **_bearer(token),
+                    "Idempotency-Key": f"live-install-key-{number}",
+                },
+            )
+        )
+
+    assert [response.status_code for response in responses] == [201, 201]
+    stored = production_client.app.state.database.list("report")
+    assert len({report["device_id"] for report in stored}) == 1
+    assert all(not report["device_id"].startswith("forged-device") for report in stored)
+    by_client_id = {report["client_report_id"]: report for report in stored}
+    assert by_client_id["live-install-report-1"]["disposition"] == "ELIGIBLE"
+    assert by_client_id["live-install-report-2"]["disposition"] == "DUPLICATE"
+
+    missing_claim = _token(
+        signing_key,
+        subject="reporter-without-install",
+        roles=["reporter"],
+    )
+    denied = production_client.post(
+        f"{API}/reports",
+        json=report_payload(3),
+        headers={
+            **_bearer(missing_claim),
+            "Idempotency-Key": "missing-live-install-claim",
+        },
+    )
+    assert denied.status_code == 403
+    assert "signed install identity" in denied.json()["detail"]
+
+
 def test_high_impact_decision_requires_recent_phishing_resistant_step_up(
     production_client: TestClient,
     signing_key: rsa.RSAPrivateKey,
@@ -187,6 +345,7 @@ def test_high_impact_decision_requires_recent_phishing_resistant_step_up(
         signing_key,
         subject="requester",
         roles=["incident-commander"],
+        amr=["webauthn"],
     )
     created = production_client.post(
         f"{API}/approvals",
@@ -236,7 +395,12 @@ def test_stale_step_up_is_not_accepted(
     production_client: TestClient,
     signing_key: rsa.RSAPrivateKey,
 ) -> None:
-    requester_token = _token(signing_key, subject="requester-2", roles=["responder"])
+    requester_token = _token(
+        signing_key,
+        subject="requester-2",
+        roles=["responder"],
+        amr=["webauthn"],
+    )
     payload = _approval_payload()
     payload["reason"] = "A second unique action for stale step-up testing."
     created = production_client.post(

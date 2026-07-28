@@ -1,5 +1,7 @@
 """Seed migration checks for deterministic demo installations."""
 
+import pytest
+
 from app.database import Database, EntityChange
 from app.seed import seed_database
 
@@ -22,7 +24,7 @@ def test_seed_database_replaces_only_the_legacy_chennai_demo() -> None:
         },
     )
 
-    seed_database(database)
+    seed_database(database, is_demo=True)
 
     assert database.get("incident", "inc-demo-michaung-2023") is None
     kerala = database.get("incident", "inc-demo-kerala-flood-2023")
@@ -46,7 +48,25 @@ def test_seed_database_preserves_non_demo_existing_records() -> None:
         state={"scenario_id": "authority-event-v1", "incident_id": incident["id"]},
     )
 
-    seed_database(database)
+    seed_database(database, is_demo=False)
 
     assert database.get("incident", incident["id"]) == incident
     assert database.get("incident", "inc-demo-kerala-flood-2023") is None
+
+
+def test_empty_non_demo_database_remains_empty() -> None:
+    database = Database("sqlite://")
+
+    seed_database(database, is_demo=False)
+
+    assert database.is_empty() is True
+    assert database.get_state("incident_id") is None
+    assert database.list("approval") == []
+
+
+def test_non_demo_runtime_refuses_persisted_demo_storage() -> None:
+    database = Database("sqlite://")
+    seed_database(database, is_demo=True)
+
+    with pytest.raises(RuntimeError, match="cannot open storage containing demo"):
+        seed_database(database, is_demo=False)

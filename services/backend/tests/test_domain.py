@@ -34,7 +34,7 @@ INCIDENT_ID = "inc-demo-kerala-flood-2023"
 @pytest.fixture
 def database() -> Iterator[Database]:
     value = Database("sqlite://")
-    seed_database(value)
+    seed_database(value, is_demo=True)
     try:
         yield value
     finally:
@@ -43,7 +43,11 @@ def database() -> Iterator[Database]:
 
 @pytest.fixture
 def service(database: Database) -> FloodRiseService:
-    return FloodRiseService(database)
+    return FloodRiseService(
+        database,
+        is_demo=True,
+        alert_sink="fake://notification-sink",
+    )
 
 
 def _report_input(
@@ -177,7 +181,18 @@ def test_competing_report_payloads_never_receive_the_wrong_idempotent_receipt(
     database: Database,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    services = [FloodRiseService(database), FloodRiseService(database)]
+    services = [
+        FloodRiseService(
+            database,
+            is_demo=True,
+            alert_sink="fake://notification-sink",
+        ),
+        FloodRiseService(
+            database,
+            is_demo=True,
+            alert_sink="fake://notification-sink",
+        ),
+    ]
     reports = [
         _report_input(62),
         _report_input(62).model_copy(update={"road_status": RoadStatus.OPEN}),
@@ -220,6 +235,93 @@ def test_competing_report_payloads_never_receive_the_wrong_idempotent_receipt(
 
     assert sorted(outcomes) == ["accepted", "conflict"]
     assert len(database.list("report")) == 1
+
+
+def test_two_processes_cannot_commit_conflicting_approval_decisions(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'approval-race.sqlite3'}"
+    first_database = Database(database_url)
+    seed_database(first_database, is_demo=True)
+    second_database = Database(database_url)
+    second_database.initialize()
+    first_service = FloodRiseService(
+        first_database,
+        is_demo=True,
+        alert_sink="fake://notification-sink",
+    )
+    second_service = FloodRiseService(
+        second_database,
+        is_demo=True,
+        alert_sink="fake://notification-sink",
+    )
+    approval = first_service.create_approval(
+        _approval_input().model_copy(update={"reason": "Race exactly one authoritative decision."}),
+        Principal("race-requester", "incident_commander", True),
+    )
+
+    barrier = Barrier(2)
+    original_gets = [first_database.get, second_database.get]
+
+    def synchronized_get(original: Any) -> Any:
+        def read(kind: str, entity_id: str) -> dict[str, Any] | None:
+            value = original(kind, entity_id)
+            if kind == "approval" and entity_id == approval["id"]:
+                barrier.wait(timeout=5)
+            return value
+
+        return read
+
+    first_database.get = synchronized_get(original_gets[0])  # type: ignore[method-assign]
+    second_database.get = synchronized_get(original_gets[1])  # type: ignore[method-assign]
+
+    def decide(index: int) -> str:
+        service = (first_service, second_service)[index]
+        decision = ("APPROVE", "REJECT")[index]
+        try:
+            service.decide_approval(
+                approval["id"],
+                ApprovalDecisionInput(
+                    decision=decision,
+                    reason=f"Independent {decision.lower()} race decision.",
+                    expected_version=1,
+                ),
+                Principal(f"race-reviewer-{index}", "verifier", True),
+            )
+            return decision
+        except ConflictError as exc:
+            assert exc.code == "VERSION_CONFLICT"
+            return "CONFLICT"
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(decide, range(2)))
+    finally:
+        first_database.get = original_gets[0]  # type: ignore[method-assign]
+        second_database.get = original_gets[1]  # type: ignore[method-assign]
+
+    assert outcomes.count("CONFLICT") == 1
+    winner = next(outcome for outcome in outcomes if outcome != "CONFLICT")
+    persisted = first_database.get("approval", approval["id"])
+    assert persisted is not None
+    assert persisted["status"] == ("APPROVED" if winner == "APPROVE" else "REJECTED")
+    alerts = [
+        alert
+        for alert in first_service.alerts(INCIDENT_ID)
+        if alert.get("approval_request_id") == approval["id"]
+    ]
+    assert bool(alerts) is (winner == "APPROVE")
+    decision_events = [
+        event
+        for event in first_database.audit_events(limit=100)
+        if event["aggregate_id"] == approval["id"]
+        and event["event_type"] in {"approval.approved", "approval.rejected"}
+    ]
+    assert len(decision_events) == 1
+    all_events = first_database.audit_events(limit=1_000)
+    assert len({event["previous_hash"] for event in all_events}) == len(all_events)
+    assert first_database.verify_audit_chain() is True
+    assert second_database.verify_audit_chain() is True
+    first_database.engine.dispose()
+    second_database.engine.dispose()
 
 
 def test_database_detects_a_tampered_audit_event(database: Database) -> None:
@@ -331,13 +433,72 @@ def test_same_reporter_and_install_contribute_only_one_vote(
             reporter_id="shared-reporter",
             device_id="shared-device",
         )
-        dispositions.append(_submit(service, number, report=report)[1]["report"]["disposition"])
+        dispositions.append(
+            _submit(
+                service,
+                number,
+                report=report,
+                principal=Principal("shared-account", "reporter", True),
+            )[1]["report"]["disposition"]
+        )
 
     signal = service.signals(INCIDENT_ID)[0]
     assert dispositions == ["ELIGIBLE", "DUPLICATE", "DUPLICATE", "DUPLICATE"]
     assert signal["independent_report_count"] == 1
     assert signal["state"] == "CANDIDATE"
     assert service.alerts(INCIDENT_ID) == []
+
+
+def test_signed_install_identity_overrides_rotated_client_device_ids(
+    service: FloodRiseService,
+) -> None:
+    shared_install = "server-signed-install-family"
+    first = _submit(
+        service,
+        81,
+        report=_report_input(81, device_id="forged-device-a"),
+        principal=Principal(
+            "account-a",
+            "reporter",
+            True,
+            install_id_digest=shared_install,
+        ),
+    )[1]
+    second = _submit(
+        service,
+        82,
+        report=_report_input(82, device_id="forged-device-b"),
+        principal=Principal(
+            "account-b",
+            "reporter",
+            True,
+            install_id_digest=shared_install,
+        ),
+    )[1]
+
+    assert first["report"]["device_id"] == shared_install
+    assert second["report"]["device_id"] == shared_install
+    assert [first["report"]["disposition"], second["report"]["disposition"]] == [
+        "ELIGIBLE",
+        "DUPLICATE",
+    ]
+    assert second["signal"]["independent_report_count"] == 1
+
+
+def test_live_report_requires_a_signed_install_identity(database: Database) -> None:
+    live_service = FloodRiseService(database, is_demo=False, alert_sink=None)
+
+    with pytest.raises(PermissionDeniedError, match="signed install identity"):
+        live_service.create_report(
+            _report_input(91),
+            idempotency_key="missing-live-install",
+            principal=Principal(
+                "live-reporter",
+                "reporter",
+                True,
+                auth_source="oidc_bearer",
+            ),
+        )
 
 
 def test_late_report_and_expired_freshness_never_imply_all_clear(
@@ -431,6 +592,128 @@ def test_two_person_approval_and_identity_admin_boundaries(
     assert alert["official"] is True
     assert alert["gateway"] == "fake://notification-sink"
     assert len(service.alerts(INCIDENT_ID)) == 1
+
+
+def test_approval_requires_existing_bound_versions_and_detects_binding_drift(
+    service: FloodRiseService,
+) -> None:
+    baseline_count = len(service.approvals(INCIDENT_ID))
+    invalid = _approval_input().model_copy(update={"evidence_version": "evidence-does-not-exist"})
+    with pytest.raises(AppError) as caught:
+        service.create_approval(
+            invalid,
+            Principal("invalid-binding-requester", "incident_commander", True),
+        )
+    assert caught.value.status_code == 422
+    assert caught.value.code == "INVALID_EVIDENCE_BINDING"
+    assert len(service.approvals(INCIDENT_ID)) == baseline_count
+    invalid_model = _approval_input().model_copy(update={"model_version": "model-does-not-exist"})
+    with pytest.raises(AppError) as missing_model:
+        service.create_approval(
+            invalid_model,
+            Principal("invalid-model-requester", "incident_commander", True),
+        )
+    assert missing_model.value.status_code == 422
+    assert missing_model.value.code == "INVALID_MODEL_BINDING"
+    assert len(service.approvals(INCIDENT_ID)) == baseline_count
+
+    approval = service.create_approval(
+        _approval_input().model_copy(update={"reason": "Binding drift must invalidate approval."}),
+        Principal("binding-requester", "incident_commander", True),
+    )
+    signal = service.signal("signal-aluva-042")
+    service.decide_signal(
+        signal["id"],
+        SignalDecisionInput(
+            decision="DISPUTE",
+            reason="New field evidence changed the reviewed record.",
+            expected_version=signal["version"],
+        ),
+        Principal("binding-reviewer", "verifier", True),
+    )
+
+    with pytest.raises(ConflictError) as drift:
+        service.decide_approval(
+            approval["id"],
+            ApprovalDecisionInput(
+                decision="APPROVE",
+                reason="Attempt to approve a stale binding.",
+                expected_version=1,
+            ),
+            Principal("binding-approver", "verifier", True),
+        )
+    assert drift.value.code == "APPROVAL_BINDING_CHANGED"
+    assert service.database.get("alert", f"alert-{approval['id']}") is None
+
+    rejected, alert = service.decide_approval(
+        approval["id"],
+        ApprovalDecisionInput(
+            decision="REJECT",
+            reason="Reject the request after its binding changed.",
+            expected_version=1,
+        ),
+        Principal("binding-approver", "verifier", True),
+    )
+    assert rejected["status"] == "REJECTED"
+    assert alert is None
+
+
+def test_shelter_closure_has_one_approved_transition_path(
+    service: FloodRiseService,
+) -> None:
+    shelter = service.shelters(INCIDENT_ID)[0]
+    audit_count = len(service.database.audit_events(limit=1_000))
+    with pytest.raises(PermissionDeniedError, match="two-person approval"):
+        service.update_shelter(
+            shelter["id"],
+            {
+                "expected_version": shelter["version"],
+                "access_status": "IMPASSABLE",
+                "status_reason": "Direct closure attempt",
+            },
+            Principal("shelter-manager", "shelter_manager", True),
+        )
+    assert service.database.get("shelter", shelter["id"]) == shelter
+    assert len(service.database.audit_events(limit=1_000)) == audit_count
+
+    request = ApprovalCreateInput.model_validate(
+        {
+            **_approval_input().model_dump(mode="json"),
+            "action_type": "SHELTER_CLOSURE",
+            "action_payload": {
+                "shelter_id": shelter["id"],
+                "title": "Close inaccessible shelter",
+                "body": "Close shelter access after independent verification.",
+            },
+            "reason": "Verified floodwater blocks the only shelter access.",
+        }
+    )
+    approval = service.create_approval(
+        request,
+        Principal("shelter-closure-requester", "incident_commander", True),
+    )
+    decided, _ = service.decide_approval(
+        approval["id"],
+        ApprovalDecisionInput(
+            decision="APPROVE",
+            reason="Independent shelter access review completed.",
+            expected_version=1,
+        ),
+        Principal("shelter-closure-approver", "verifier", True),
+    )
+
+    closed = service.database.get("shelter", shelter["id"])
+    assert decided["status"] == "APPROVED"
+    assert closed is not None
+    assert closed["activation_status"] == closed["access_status"] == "CLOSED"
+    assert closed["authorized_by_approval"] == approval["id"]
+    closure_events = [
+        event
+        for event in service.database.audit_events(limit=1_000)
+        if event["event_type"] == "shelter.officially_closed"
+        and event["aggregate_id"] == shelter["id"]
+    ]
+    assert len(closure_events) == 1
 
 
 def test_expired_approval_cannot_be_dispatched(service: FloodRiseService) -> None:

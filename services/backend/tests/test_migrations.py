@@ -21,7 +21,7 @@ def test_alembic_upgrade_reaches_the_spatial_schema_head(tmp_path, monkeypatch) 
 
     config = Config("alembic.ini")
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "0002_postgis_operational_schema"
+    assert script.get_current_head() == "0003_concurrency_guards"
 
     command.upgrade(config, "head")
     with sqlite3.connect(database_path) as connection:
@@ -33,6 +33,12 @@ def test_alembic_upgrade_reaches_the_spatial_schema_head(tmp_path, monkeypatch) 
             ).fetchall()
         }
 
-    assert version == ("0002_postgis_operational_schema",)
-    assert {"entities", "audit_events", "outbox_events", "idempotency"} <= tables
+    assert version == ("0003_concurrency_guards",)
+    assert {
+        "entities",
+        "audit_events",
+        "audit_chain_head",
+        "outbox_events",
+        "idempotency",
+    } <= tables
     get_settings.cache_clear()

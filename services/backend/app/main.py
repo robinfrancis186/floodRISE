@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from asyncio import Lock, sleep, to_thread
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Response, status
@@ -54,8 +55,8 @@ class SimulationTriggerInput(BaseModel):
 class ShelterUpdateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_version: int = Field(ge=1)
-    activation_status: str | None = None
-    access_status: str | None = None
+    activation_status: Literal["OPEN", "LIMITED", "FULL", "UNKNOWN"] | None = None
+    access_status: Literal["REACHABLE", "LIMITED", "AT_RISK", "UNKNOWN"] | None = None
     capacity_remaining: int | None = Field(default=None, ge=0)
     status_reason: str = Field(min_length=3, max_length=500)
 
@@ -108,6 +109,49 @@ def _signal_view(signal: dict[str, Any], principal: Principal) -> dict[str, Any]
     return public
 
 
+def _alert_view(alert: dict[str, Any], principal: Principal) -> dict[str, Any]:
+    operational_roles = {
+        "responder",
+        "verifier",
+        "engineer",
+        "incident_commander",
+        "auditor",
+    }
+    if not principal.granted_roles.isdisjoint(operational_roles):
+        return alert
+    projected = dict(alert)
+    if projected.get("approval_request_id"):
+        projected["id"] = (
+            "alert-public-" + hashlib.sha256(str(projected.get("id", "")).encode()).hexdigest()[:16]
+        )
+    projected.pop("approval_request_id", None)
+    projected.pop("gateway", None)
+    return projected
+
+
+def _bootstrap_view(payload: dict[str, Any], principal: Principal) -> dict[str, Any]:
+    """Project the combined incident view through the same role boundaries as list APIs."""
+
+    projected = dict(payload)
+    projected["reports"] = [
+        _report_view(report, principal) for report in payload.get("reports", [])
+    ]
+    projected["signals"] = [
+        _signal_view(signal, principal) for signal in payload.get("signals", [])
+    ]
+    projected["alerts"] = [_alert_view(alert, principal) for alert in payload.get("alerts", [])]
+    approval_roles = {
+        "responder",
+        "verifier",
+        "engineer",
+        "incident_commander",
+        "auditor",
+    }
+    if principal.granted_roles.isdisjoint(approval_roles):
+        projected["approvals"] = []
+    return projected
+
+
 def _database_url_for_sync(url: str) -> str:
     return url.replace("postgresql+asyncpg://", "postgresql+psycopg://").replace(
         "sqlite+aiosqlite://", "sqlite://"
@@ -122,7 +166,12 @@ def create_app(
 ) -> FastAPI:
     runtime = settings or get_settings()
     target_database = database or Database(_database_url_for_sync(runtime.database_url))
-    target_service = FloodRiseService(target_database)
+    target_service = FloodRiseService(
+        target_database,
+        is_demo=runtime.is_demo,
+        route_max_snap_distance_m=runtime.route_max_snap_distance_m,
+        alert_sink=runtime.demo_alert_sink if runtime.is_demo else None,
+    )
     target_metrics = FloodRiseMetrics(is_demo=runtime.is_demo)
     target_media_service = media_service or MediaService(
         target_database,
@@ -136,8 +185,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        target_database.initialize()
-        seed_database(target_database)
+        seed_database(target_database, is_demo=runtime.is_demo)
         application.state.database = target_database
         application.state.service = target_service
         application.state.media_service = target_media_service
@@ -163,6 +211,9 @@ def create_app(
     application.state.service = target_service
     application.state.media_service = target_media_service
     application.state.metrics = target_metrics
+    application.state.sse_connection_lock = Lock()
+    application.state.sse_connection_count = 0
+    application.state.sse_principal_connections = {}
     application.add_middleware(
         CORSMiddleware,
         allow_origins=runtime.allowed_origins,
@@ -258,14 +309,10 @@ def create_app(
         request: Request,
         principal: PrincipalDependency,
     ) -> dict[str, Any]:
-        payload = service(request).bootstrap(service(request).incident_id)
-        payload["reports"] = [
-            _report_view(report, principal) for report in payload.get("reports", [])
-        ]
-        payload["signals"] = [
-            _signal_view(signal, principal) for signal in payload.get("signals", [])
-        ]
-        return payload
+        return _bootstrap_view(
+            service(request).bootstrap(service(request).incident_id),
+            principal,
+        )
 
     @router.get("/incidents/{incident_id}", tags=["incidents"])
     async def get_incident(incident_id: str, request: Request) -> dict[str, Any]:
@@ -277,14 +324,7 @@ def create_app(
         request: Request,
         principal: PrincipalDependency,
     ) -> dict[str, Any]:
-        payload = service(request).bootstrap(incident_id)
-        payload["reports"] = [
-            _report_view(report, principal) for report in payload.get("reports", [])
-        ]
-        payload["signals"] = [
-            _signal_view(signal, principal) for signal in payload.get("signals", [])
-        ]
-        return payload
+        return _bootstrap_view(service(request).bootstrap(incident_id), principal)
 
     @router.get("/sources/status", tags=["sources"])
     @router.get("/layers/source-health", tags=["sources"], include_in_schema=False)
@@ -610,9 +650,12 @@ def create_app(
     @router.get("/alerts", tags=["alerts"])
     async def list_alerts(
         request: Request,
+        principal: PrincipalDependency,
         incident_id: Annotated[str, Query()],
     ) -> dict[str, Any]:
-        return _page(service(request).alerts(incident_id))
+        return _page(
+            [_alert_view(alert, principal) for alert in service(request).alerts(incident_id)]
+        )
 
     @router.get("/audit", tags=["audit"])
     async def list_audit(
@@ -652,53 +695,118 @@ def create_app(
     @router.get("/events", tags=["events"])
     async def events(
         request: Request,
+        principal: PrincipalDependency,
+        incident_id: Annotated[str, Query(min_length=1, max_length=240)],
         once: Annotated[bool, Query()] = False,
         last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
     ) -> StreamingResponse:
+        ensure_role(
+            principal,
+            "responder",
+            "verifier",
+            "engineer",
+            "shelter_manager",
+            "incident_commander",
+            "auditor",
+        )
+        service(request).incident(incident_id)
         database_value: Database = request.app.state.database
         after_sequence = 0
         if last_event_id:
             try:
                 after_sequence = int(last_event_id)
-            except ValueError:
-                historical = database_value.outbox_events(
-                    after_sequence=0, limit=runtime.sse_replay_limit
+            except ValueError as exc:
+                raise AppError(
+                    status_code=400,
+                    title="Invalid event cursor",
+                    detail="Last-Event-ID must be a non-negative persisted event sequence.",
+                    code="INVALID_EVENT_CURSOR",
+                ) from exc
+            if after_sequence < 0:
+                raise AppError(
+                    status_code=400,
+                    title="Invalid event cursor",
+                    detail="Last-Event-ID must be a non-negative persisted event sequence.",
+                    code="INVALID_EVENT_CURSOR",
                 )
-                matching = next(
-                    (event for event in historical if event["id"] == last_event_id), None
+
+        principal_key = principal.user_id
+        connection_lock: Lock = request.app.state.sse_connection_lock
+        async with connection_lock:
+            total = int(request.app.state.sse_connection_count)
+            per_principal = int(request.app.state.sse_principal_connections.get(principal_key, 0))
+            if total >= runtime.sse_max_connections or (
+                per_principal >= runtime.sse_max_connections_per_principal
+            ):
+                raise AppError(
+                    status_code=429,
+                    title="Event stream capacity reached",
+                    detail="Close an existing event stream before opening another.",
+                    code="SSE_CONNECTION_LIMIT",
+                    headers={"Retry-After": "5"},
                 )
-                after_sequence = int(matching["sequence"]) if matching else 0
+            request.app.state.sse_connection_count = total + 1
+            request.app.state.sse_principal_connections[principal_key] = per_principal + 1
+
+        full_event_roles = {
+            "responder",
+            "verifier",
+            "engineer",
+            "incident_commander",
+            "auditor",
+        }
+
+        def event_visible(row: dict[str, Any]) -> bool:
+            if not principal.granted_roles.isdisjoint(full_event_roles):
+                return True
+            return str(row.get("type", "")).startswith(
+                ("shelter.", "signal.", "route.", "simulation.", "alert.")
+            )
 
         async def stream() -> AsyncIterator[str]:
-            import asyncio
-
             cursor = after_sequence
             heartbeat = 0
-            # Flush response headers immediately so browsers can distinguish a
-            # healthy live channel from a connection that is still pending,
-            # even when there are no newer outbox rows yet.
-            yield ": connected\n\n"
-            while True:
-                rows = database_value.outbox_events(
-                    after_sequence=cursor,
-                    limit=runtime.sse_replay_limit,
-                )
-                for row in rows:
-                    cursor = int(row["sequence"])
-                    data = {key: value for key, value in row.items() if key != "sequence"}
-                    yield (
-                        f"id: {cursor}\n"
-                        f"event: {row['type']}\n"
-                        f"data: {json.dumps(data, separators=(',', ':'))}\n\n"
+            try:
+                # Flush response headers immediately so clients can distinguish
+                # a healthy live channel from a still-pending connection.
+                yield ": connected\n\n"
+                while True:
+                    rows = await to_thread(
+                        database_value.outbox_events,
+                        after_sequence=cursor,
+                        limit=runtime.sse_replay_limit,
+                        incident_id=incident_id,
                     )
-                if once:
-                    break
-                if await request.is_disconnected():
-                    break
-                heartbeat += 1
-                if heartbeat % 15 == 0:
-                    yield f": heartbeat {iso_utc(datetime.now(UTC))}\n\n"
-                await asyncio.sleep(1)
+                    for row in rows:
+                        cursor = int(row["sequence"])
+                        if not event_visible(row):
+                            continue
+                        data = {key: value for key, value in row.items() if key != "sequence"}
+                        yield (
+                            f"id: {cursor}\n"
+                            f"event: {row['type']}\n"
+                            f"data: {json.dumps(data, separators=(',', ':'))}\n\n"
+                        )
+                    if once or await request.is_disconnected():
+                        break
+                    heartbeat += 1
+                    if heartbeat % 15 == 0:
+                        yield f": heartbeat {iso_utc(datetime.now(UTC))}\n\n"
+                    await sleep(runtime.sse_poll_interval_seconds)
+            finally:
+                async with connection_lock:
+                    request.app.state.sse_connection_count = max(
+                        0,
+                        int(request.app.state.sse_connection_count) - 1,
+                    )
+                    remaining = max(
+                        0,
+                        int(request.app.state.sse_principal_connections.get(principal_key, 1)) - 1,
+                    )
+                    if remaining:
+                        request.app.state.sse_principal_connections[principal_key] = remaining
+                    else:
+                        request.app.state.sse_principal_connections.pop(principal_key, None)
 
         return StreamingResponse(
             stream(),
