@@ -25,11 +25,13 @@ and environment evidence.
 
 ## Implemented boundary, activation evidence still required
 
-- Terraform describes CloudFront/WAF, ECS, RDS, Redis, S3, SQS, Cognito, KMS,
-  Secrets Manager, backups, and recovery controls, but no AWS plan or apply was
-  performed from this workspace. The worker entry point and spatial bootstrap
-  migration are checked in; application secrets, image publication, production
-  query cutover, and account-level rehearsal remain deployment work.
+- Terraform describes CloudFront/WAF, segmented ECS services, RDS, S3, SQS,
+  Cognito, KMS, Secrets Manager, backups, and recovery controls, but no AWS plan or apply
+  was performed from this workspace. Redis is intentionally absent
+  until an authenticated remote fanout need exists. The worker entry point and
+  spatial bootstrap migration are checked in; application secrets, image
+  publication, production query cutover, and account-level rehearsal remain
+  deployment work.
 - OIDC bearer verification is implemented. The Terraform Cognito client enables
   authorization-code, but the web PKCE exchange, refresh/logout, secure HttpOnly
   session, real Cognito pool, WebAuthn enrollment, DNS/TLS, WAF, secret injection,

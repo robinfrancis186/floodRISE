@@ -38,24 +38,18 @@ variable "enable_nat_gateway" {
   default     = false
 }
 
-variable "allowed_ingress_cidrs" {
-  description = "CIDRs permitted to reach the public application load balancer."
-  type        = list(string)
-  default     = []
-}
-
 variable "api_image" {
-  description = "Immutable API container image reference, preferably an ECR digest."
+  description = "Immutable API container image reference. Deployment guards require a same-account ECR SHA-256 digest."
   type        = string
 }
 
 variable "worker_image" {
-  description = "Immutable worker container image reference, preferably an ECR digest."
+  description = "Immutable worker container image reference. Deployment guards require a same-account ECR SHA-256 digest."
   type        = string
 }
 
 variable "tile_image" {
-  description = "Immutable restricted tile-facade image reference, preferably an ECR digest."
+  description = "Immutable restricted tile-facade image reference. Deployment guards require a same-account ECR SHA-256 digest."
   type        = string
 }
 
@@ -87,13 +81,8 @@ variable "db_instance_class" {
   default = "db.t4g.medium"
 }
 
-variable "redis_node_type" {
-  type    = string
-  default = "cache.t4g.small"
-}
-
 variable "multi_az" {
-  description = "Creates redundant RDS and Redis nodes. Required for production."
+  description = "Creates a redundant RDS deployment. Required for production."
   type        = bool
   default     = false
 }
@@ -148,9 +137,29 @@ variable "notification_driver" {
 }
 
 variable "external_notifications_enabled" {
-  description = "Must remain false in demo. Production enabling requires a separate reviewed change."
+  description = "Must remain false in this scaffold. Enabling a real provider requires a separate authority-reviewed code change."
   type        = bool
   default     = false
+}
+
+variable "live_integrations_enabled" {
+  description = "Fail-closed switch for permitted production source adapters. Staging and demo must keep this false."
+  type        = bool
+  default     = false
+}
+
+variable "approved_adapter_egress_cidrs" {
+  description = "Explicit IPv4 CIDRs for reviewed worker source adapters. Global default routes are rejected."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for cidr in var.approved_adapter_egress_cidrs :
+      can(cidrnetmask(cidr)) && cidr != "0.0.0.0/0"
+    ])
+    error_message = "approved_adapter_egress_cidrs must contain valid, scoped IPv4 CIDRs and may not contain 0.0.0.0/0."
+  }
 }
 
 variable "enable_waf_logging" {

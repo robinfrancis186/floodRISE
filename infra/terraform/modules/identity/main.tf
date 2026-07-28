@@ -18,15 +18,12 @@ resource "aws_cognito_user_pool" "staff" {
 
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
-  mfa_configuration        = "ON"
+  mfa_configuration        = "OFF"
   deletion_protection      = "ACTIVE"
+  user_pool_tier           = "ESSENTIALS"
 
   sign_in_policy {
-    allowed_first_auth_factors = ["PASSWORD", "WEB_AUTHN"]
-  }
-
-  software_token_mfa_configuration {
-    enabled = true
+    allowed_first_auth_factors = ["WEB_AUTHN"]
   }
 
   web_authn_configuration {
@@ -45,7 +42,7 @@ resource "aws_cognito_user_pool" "staff" {
 
   account_recovery_setting {
     recovery_mechanism {
-      name     = "verified_email"
+      name     = "admin_only"
       priority = 1
     }
   }
@@ -76,7 +73,7 @@ resource "aws_cognito_user_pool_client" "staff_web" {
   access_token_validity                = 15
   id_token_validity                    = 15
   refresh_token_validity               = 1
-  explicit_auth_flows                  = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  explicit_auth_flows                  = ["ALLOW_USER_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
 
   token_validity_units {
     access_token  = "minutes"
@@ -86,8 +83,9 @@ resource "aws_cognito_user_pool_client" "staff_web" {
 }
 
 resource "aws_cognito_user_pool_domain" "staff" {
-  domain       = var.cognito_domain_prefix
-  user_pool_id = aws_cognito_user_pool.staff.id
+  domain                = var.cognito_domain_prefix
+  user_pool_id          = aws_cognito_user_pool.staff.id
+  managed_login_version = 2
 }
 
 resource "aws_cognito_user_group" "role" {

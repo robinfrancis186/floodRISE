@@ -5,12 +5,11 @@ locals {
     { name = "FLOODRISE_ENV", value = var.environment },
     { name = "FLOODRISE_DEMO_MODE", value = tostring(var.environment == "demo") },
     { name = "FLOODRISE_IS_SIMULATED", value = tostring(var.environment == "demo") },
-    { name = "FLOODRISE_LIVE_INTEGRATIONS_ENABLED", value = tostring(var.environment != "demo") },
+    { name = "FLOODRISE_LIVE_INTEGRATIONS_ENABLED", value = tostring(var.live_integrations_enabled) },
     { name = "FLOODRISE_DEMO_ALERT_SINK", value = var.environment == "demo" ? "fake://notification-sink" : "disabled://requires-reviewed-provider" },
     { name = "FLOODRISE_EXTERNAL_NOTIFICATIONS_ENABLED", value = tostring(var.external_notifications_enabled) },
     { name = "FLOODRISE_NOTIFICATION_DRIVER", value = var.notification_driver },
     { name = "FLOODRISE_DATABASE_HOST", value = var.database_host },
-    { name = "FLOODRISE_REDIS_URL", value = "rediss://${var.redis_endpoint}:6379/0" },
     { name = "FLOODRISE_JOBS_QUEUE_URL", value = var.jobs_queue_url },
     { name = "FLOODRISE_JOBS_QUEUE_NAME", value = "${var.name}-jobs" },
     { name = "FLOODRISE_TILE_API_BASE_URL", value = "http://tile-api:8790" },
@@ -24,6 +23,7 @@ locals {
     { name = "FLOODRISE_COG_TTL_SECONDS", value = "300" },
     { name = "FLOODRISE_USER_POOL_ID", value = var.user_pool_id }
   ]
+  task_services = toset(["api", "worker", "tile-api"])
 }
 
 resource "aws_ecs_cluster" "this" {
@@ -57,8 +57,8 @@ resource "aws_iam_role_policy_attachment" "execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_iam_role_policy" "execution_secrets" {
-  name = "runtime-secrets"
+resource "aws_iam_role_policy" "execution_application_secret" {
+  name = "runtime-application-secret"
   role = aws_iam_role.execution.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -66,7 +66,7 @@ resource "aws_iam_role_policy" "execution_secrets" {
       {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
-        Resource = [var.application_secret_arn, var.database_master_secret_arn]
+        Resource = [var.application_secret_arn]
       },
       {
         Effect   = "Allow"
@@ -78,7 +78,9 @@ resource "aws_iam_role_policy" "execution_secrets" {
 }
 
 resource "aws_iam_role" "task" {
-  name = "${var.name}-ecs-task"
+  for_each = local.task_services
+
+  name = "${var.name}-${each.key}-task"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -89,30 +91,120 @@ resource "aws_iam_role" "task" {
   })
 }
 
-resource "aws_iam_role_policy" "task" {
-  name = "least-privilege-data-access"
-  role = aws_iam_role.task.id
+resource "aws_iam_role_policy" "api_task" {
+  name = "api-data-plane"
+  role = aws_iam_role.task["api"].id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid      = "EvidenceObjects"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload"]
-        Resource = ["${var.raw_bucket_arn}/*", "${var.processed_bucket_arn}/*", "${var.audit_bucket_arn}/*"]
+        Resource = ["${var.raw_bucket_arn}/quarantine/*", "${var.raw_bucket_arn}/raw/*"]
       },
       {
+        Sid      = "ReadPublishedArtifacts"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = ["${var.processed_bucket_arn}/*"]
+      },
+      {
+        Sid      = "AppendAuditExports"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = ["${var.audit_bucket_arn}/*"]
+      },
+      {
+        Sid      = "ListScopedBuckets"
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
         Resource = [var.raw_bucket_arn, var.processed_bucket_arn, var.audit_bucket_arn]
       },
       {
+        Sid      = "SubmitJobs"
         Effect   = "Allow"
-        Action   = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"]
+        Action   = ["sqs:SendMessage", "sqs:GetQueueAttributes"]
         Resource = [var.jobs_queue_arn]
       },
       {
+        Sid      = "UseDataKey"
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"]
+        Resource = [var.kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "worker_task" {
+  name = "worker-data-plane"
+  role = aws_iam_role.task["worker"].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadEvidenceObjects"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = ["${var.raw_bucket_arn}/quarantine/*", "${var.raw_bucket_arn}/raw/*"]
+      },
+      {
+        Sid      = "PublishArtifacts"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload"]
+        Resource = ["${var.processed_bucket_arn}/*"]
+      },
+      {
+        Sid      = "AppendAuditExports"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = ["${var.audit_bucket_arn}/*"]
+      },
+      {
+        Sid      = "ListScopedBuckets"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [var.raw_bucket_arn, var.processed_bucket_arn, var.audit_bucket_arn]
+      },
+      {
+        Sid      = "ConsumeJobs"
+        Effect   = "Allow"
+        Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"]
+        Resource = [var.jobs_queue_arn]
+      },
+      {
+        Sid      = "UseDataKey"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"]
+        Resource = [var.kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "tile_task" {
+  name = "tile-read-only"
+  role = aws_iam_role.task["tile-api"].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadPublishedArtifacts"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = ["${var.processed_bucket_arn}/*"]
+      },
+      {
+        Sid      = "ListPublishedArtifacts"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [var.processed_bucket_arn]
+      },
+      {
+        Sid      = "DecryptPublishedArtifacts"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
         Resource = [var.kms_key_arn]
       }
     ]
@@ -152,8 +244,30 @@ resource "aws_lb_listener" "api" {
   ssl_policy        = var.api_origin_certificate_arn == null ? null : "ELBSecurityPolicy-TLS13-1-2-2021-06"
 
   default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "application/json"
+      message_body = "{\"detail\":\"origin access denied\"}"
+      status_code  = "403"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "cloudfront_origin" {
+  listener_arn = aws_lb_listener.api.arn
+  priority     = 1
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-FloodRISE-Origin-Verify"
+      values           = [var.origin_verify_header_value]
+    }
   }
 }
 
@@ -182,7 +296,7 @@ resource "aws_ecs_task_definition" "api" {
   cpu                      = 1024
   memory                   = 2048
   execution_role_arn       = aws_iam_role.execution.arn
-  task_role_arn            = aws_iam_role.task.arn
+  task_role_arn            = aws_iam_role.task["api"].arn
 
   container_definitions = jsonencode([{
     name        = "api"
@@ -190,8 +304,7 @@ resource "aws_ecs_task_definition" "api" {
     essential   = true
     environment = local.common_environment
     secrets = [
-      { name = "FLOODRISE_APPLICATION_CONFIG_JSON", valueFrom = var.application_secret_arn },
-      { name = "FLOODRISE_DATABASE_MASTER_SECRET_JSON", valueFrom = var.database_master_secret_arn }
+      { name = "FLOODRISE_APPLICATION_CONFIG_JSON", valueFrom = var.application_secret_arn }
     ]
     portMappings = [{ containerPort = 8787, hostPort = 8787, protocol = "tcp" }]
     healthCheck = {
@@ -219,7 +332,7 @@ resource "aws_ecs_task_definition" "worker" {
   cpu                      = 2048
   memory                   = 4096
   execution_role_arn       = aws_iam_role.execution.arn
-  task_role_arn            = aws_iam_role.task.arn
+  task_role_arn            = aws_iam_role.task["worker"].arn
 
   container_definitions = jsonencode([{
     name        = "worker"
@@ -228,8 +341,7 @@ resource "aws_ecs_task_definition" "worker" {
     command     = ["celery", "-A", "app.worker:celery_app", "worker", "--loglevel=INFO"]
     environment = local.common_environment
     secrets = [
-      { name = "FLOODRISE_APPLICATION_CONFIG_JSON", valueFrom = var.application_secret_arn },
-      { name = "FLOODRISE_DATABASE_MASTER_SECRET_JSON", valueFrom = var.database_master_secret_arn }
+      { name = "FLOODRISE_APPLICATION_CONFIG_JSON", valueFrom = var.application_secret_arn }
     ]
     logConfiguration = {
       logDriver = "awslogs"
@@ -249,7 +361,7 @@ resource "aws_ecs_task_definition" "tile_api" {
   cpu                      = 512
   memory                   = 1024
   execution_role_arn       = aws_iam_role.execution.arn
-  task_role_arn            = aws_iam_role.task.arn
+  task_role_arn            = aws_iam_role.task["tile-api"].arn
 
   container_definitions = jsonencode([{
     name      = "tile-api"
@@ -284,7 +396,7 @@ resource "aws_ecs_service" "api" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.application_security_group_id]
+    security_groups  = [var.api_security_group_id]
     assign_public_ip = false
   }
 
@@ -294,7 +406,7 @@ resource "aws_ecs_service" "api" {
     container_port   = 8787
   }
 
-  depends_on = [aws_lb_listener.api]
+  depends_on = [aws_lb_listener_rule.cloudfront_origin]
 }
 
 resource "aws_ecs_service" "worker" {
@@ -307,7 +419,7 @@ resource "aws_ecs_service" "worker" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.application_security_group_id]
+    security_groups  = [var.worker_security_group_id]
     assign_public_ip = false
   }
 }
@@ -316,13 +428,13 @@ resource "aws_ecs_service" "tile_api" {
   name                   = "${var.name}-tile-api"
   cluster                = aws_ecs_cluster.this.id
   task_definition        = aws_ecs_task_definition.tile_api.arn
-  desired_count          = 1
+  desired_count          = var.runtime_config_ready ? 1 : 0
   launch_type            = "FARGATE"
   enable_execute_command = false
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.application_security_group_id]
+    security_groups  = [var.tile_security_group_id]
     assign_public_ip = false
   }
 

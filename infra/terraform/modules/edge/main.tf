@@ -165,8 +165,8 @@ resource "aws_cloudfront_distribution" "this" {
     domain_name = var.api_origin_dns
     origin_id   = "api"
     custom_header {
-      name  = "X-FloodRISE-Origin"
-      value = var.api_origin_id
+      name  = "X-FloodRISE-Origin-Verify"
+      value = var.origin_verify_header_value
     }
     custom_origin_config {
       http_port              = 80

@@ -18,6 +18,7 @@
     "test:tile": "cd services/tile-api && uv run pytest",
     "test:contracts": "pnpm test:scripts && pnpm fixtures:validate && pnpm api:source-check && pnpm api:check",
     "test:scripts": "node --test scripts/*.test.mjs",
+    "test:security-conformance": "node --test scripts/security-conformance.test.mjs",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
     "lint": "pnpm -r --if-present lint && pnpm lint:backend && pnpm lint:tile",

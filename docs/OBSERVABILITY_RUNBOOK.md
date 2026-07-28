@@ -48,9 +48,9 @@ records; logs are not the audit trail.
 ### API or SSE unavailable
 
 Check ALB/health, task desired/running counts, recent deployment, CPU/memory,
-database/Redis reachability, and error codes. Redis/SSE loss must cause refetch or
-reconnect with `Last-Event-ID`, not lost authority. Keep cached UI timestamps and
-disable claims needing fresh verification.
+database reachability, persisted outbox age, and error codes. SSE loss must cause
+refetch or reconnect with `Last-Event-ID`, not lost authority. Keep cached UI
+timestamps and disable claims needing fresh verification.
 
 ### Corroboration or route latency high
 

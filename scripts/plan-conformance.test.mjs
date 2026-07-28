@@ -203,7 +203,7 @@ test("AWS and local infrastructure retain every planned service and safety guard
   ]);
   includesEvery(root, ["ap-south-1", "multi_az", "cross_region_backup_enabled", "target_rpo_minutes", "target_rto_minutes"], "Terraform root guard");
   includesEvery(compute, ["aws_ecs_task_definition", "app.worker:celery_app", "FLOODRISE_JOBS_QUEUE_URL", "assign_public_ip = false"], "ECS compute");
-  includesEvery(data, ["aws_db_instance", "aws_elasticache_replication_group", "aws_s3_bucket", "aws_sqs_queue", "aws_kms_key", "aws_secretsmanager_secret", "aws_backup_plan"], "AWS data services");
+  includesEvery(data, ["aws_db_instance", "aws_s3_bucket", "aws_sqs_queue", "aws_kms_key", "aws_secretsmanager_secret", "aws_backup_plan"], "AWS data services");
   includesEvery(identity, ["aws_cognito_user_pool", 'allowed_oauth_flows                  = ["code"]', "WEB_AUTHN", "web_authn_configuration"], "Cognito identity");
   includesEvery(edge, ["aws_cloudfront_distribution", "aws_wafv2_web_acl", "aws_cloudfront_origin_access_control"], "edge services");
   includesEvery(compose, ["postgis", "redis", "minio", "localstack", "internal: true", "fake://notification-sink"], "local Compose");

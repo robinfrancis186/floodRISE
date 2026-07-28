@@ -3,15 +3,20 @@
 ## Preconditions
 
 - All CI and security gates pass from an immutable commit.
-- Container images are scanned and referenced by digest, not a mutable tag.
+- Container images are scanned and referenced by a full SHA-256 digest in ECR
+  in the target AWS account; Terraform rejects tags, other registries, and
+  cross-account references.
 - Production has a reviewed ACM certificate for the CloudFront-to-ALB origin;
-  the demo has no NAT gateway or public task egress.
+  CloudFront carries the generated origin-verification value and the ALB default
+  action remains a fixed 403. Demo and staging have no NAT gateway or public
+  task egress.
 - The target AWS account, role, region `ap-south-1`, environment, state key, and
   DNS names are read back by two operators. Demo and production never share them.
 - Data licences/permissions, privacy schedule, incident contacts, on-call owner,
   restore evidence, and security threat review are approved.
 - External notifications remain disabled. Enabling a real provider is a separate
-  authority-reviewed change and is never performed for the competition demo.
+  authority-reviewed code change and is never performed for the competition
+  demo. The checked-in Terraform cannot enable a real notification destination.
 
 ## Local deployment
 
@@ -32,20 +37,25 @@ notification integration remain activation work. Close the gaps listed in
 terraform -chdir=infra/terraform fmt -check -recursive
 terraform -chdir=infra/terraform init -backend=false
 terraform -chdir=infra/terraform validate
+pnpm test:security-conformance
 ```
 
 For an authorized deployment, copy the relevant example tfvars outside Git and
 replace image digests and DNS placeholders. Initialize a dedicated encrypted
-remote backend, then create and peer-review a saved plan. Review every IAM action,
-network route/rule, deletion/force-destroy flag, WAF behavior, bucket policy,
-retention value, task environment, and notification setting. There is deliberately
-no CI auto-apply workflow.
+remote backend, then create and peer-review a saved plan. Review every
+service-specific IAM action and security-group rule, network route,
+deletion/force-destroy flag, WAF/origin-header behavior, bucket policy,
+retention value, task environment, and notification setting. There is
+deliberately no CI auto-apply workflow.
 
 The first infrastructure plan uses `runtime_config_ready=false`. This creates the
-secret envelope while keeping API/worker desired counts at zero. Populate the
-application secret through the approved secret manager without exposing values,
-verify its metadata, then set `runtime_config_ready=true`, create a second plan,
-and obtain a second review before starting services.
+secret envelope while keeping API, worker, and tile desired counts at zero.
+Create a least-privilege application database role with the RDS master bootstrap
+credential, populate only that application credential and reviewed settings in
+the application secret, verify its metadata, then remove bootstrap access from
+the runtime process. Set `runtime_config_ready=true`, create a second plan, and
+obtain a second review before starting services. No runtime task receives the
+RDS master secret.
 
 ## Database and application release
 
@@ -58,8 +68,10 @@ and obtain a second review before starting services.
    extensions, but Terraform and the checked-in Alembic migration do not. Run
    Alembic as a separate release task only after the extension bootstrap; it
    currently creates the generic application repository tables.
-3. Start one new API task, run private health/readiness, OpenAPI, OIDC, database,
-   Redis, SQS, object, tile-artifact allowlist, and audit/outbox smoke checks.
+3. Complete passkey enrollment and recovery rehearsal for two separate staff
+   accounts. Start one new API task, run private health/readiness, OpenAPI, OIDC,
+   database, SQS, object, tile-artifact allowlist, origin-bypass denial, and
+   audit/outbox smoke checks.
 4. After implementing and validating the missing `app.worker` entry point and
    SQS/Celery transport, deploy workers, then API tasks with 100% minimum healthy
    capacity. Confirm SSE replay and one synthetic non-delivery action before
@@ -69,7 +81,7 @@ and obtain a second review before starting services.
 6. Exercise reporter, responder, approver-as-different-user, auditor, stale source,
    no-route, and denied arbitrary tile URL. Verify security headers and WAF logs.
 
-The target production configuration requires origin TLS, Multi-AZ RDS/Redis,
+The target production configuration requires origin TLS, Multi-AZ RDS,
 deletion protection, 35-day PITR, and cross-region recovery points, with RPO
 ≤5 minutes and RTO ≤30 minutes as objectives. Terraform preconditions do not
 prove those outcomes or replace a quarterly restore exercise.
@@ -87,6 +99,15 @@ Rollback success requires health/readiness, correct demo/live label, prior schem
 compatibility, authorization, audit-chain verification, zero duplicate dispatch,
 and a full critical user journey. Keep the incident open until data products and
 queued jobs are reconciled.
+
+## Source-adapter egress
+
+Live integrations are false by default. If a later authority-reviewed release
+enables them, only worker tasks receive HTTPS rules and each destination must be
+listed as a scoped IPv4 CIDR in `approved_adapter_egress_cidrs`; `0.0.0.0/0` is
+rejected. Confirm the provider's stable address ownership, TLS,
+licence, and incident-data handling before planning. Staging remains
+non-live regardless of credentials.
 
 ## Recovery exercise
 

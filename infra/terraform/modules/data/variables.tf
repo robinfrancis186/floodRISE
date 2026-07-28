@@ -4,7 +4,6 @@ variable "vpc_id" { type = string }
 variable "private_subnet_ids" { type = list(string) }
 variable "data_security_group_id" { type = string }
 variable "db_instance_class" { type = string }
-variable "redis_node_type" { type = string }
 variable "multi_az" { type = bool }
 variable "deletion_protection" { type = bool }
 variable "backup_retention_days" { type = number }

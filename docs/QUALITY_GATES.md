@@ -15,6 +15,7 @@ merge-blocking; repository files alone cannot enforce that setting.
 | `pnpm build` | Production builds for both React applications and shared packages | No |
 | `pnpm test:e2e` | Deterministic API replay, all-route desktop/mobile sweep, operations journey, offline field journey, and axe smoke scans | Chromium |
 | `pnpm test:a11y` | axe smoke scans for the operations console and 360 px field workflow | Chromium |
+| `pnpm test:security-conformance` | Immutable Actions, dependency overrides, fail-closed environments, service isolation, origin enforcement, retention, and passkey-only infrastructure contracts | No |
 
 `pnpm test:e2e` starts isolated services on ports 8787, 55173, and 55174 and
 uses a disposable ignored SQLite database. It does not contact production alert

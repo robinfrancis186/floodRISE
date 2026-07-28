@@ -20,7 +20,7 @@ floodRISE has two clients and one authoritative application boundary:
 ## Target production topology
 
 The following diagram is the intended production boundary. CloudFront, WAF,
-Cognito, PostgreSQL/PostGIS/pgRouting, SQS workers, Redis, S3, and a production
+Cognito, PostgreSQL/PostGIS/pgRouting, SQS workers, S3, and a production
 COG service are not part of the local judging request path. Terraform contains
 a partial, un-applied scaffold for this topology; see
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
@@ -37,7 +37,6 @@ flowchart LR
   Tiles["Restricted tile facade"]
   DB[("PostgreSQL / PostGIS / pgRouting")]
   Queue["SQS + DLQ"]
-  Cache[("Redis: cache and SSE fanout only")]
   Objects[("Private S3: raw, processed, audit")]
   Identity["Cognito / OIDC"]
 
@@ -50,7 +49,6 @@ flowchart LR
   Queue --> Worker
   Worker --> DB
   Worker --> Objects
-  API --> Cache
   API --> Tiles
   Tiles --> Objects
 ```
@@ -95,9 +93,11 @@ The intended production sequence is:
 7. Write the domain change, hash-chained audit event, and outbox event in one
    transaction. SSE is an invalidation hint; clients refetch authoritative data.
 
-Redis loss may slow delivery but must not lose authoritative state. S3 artifacts
-are private. The tile facade accepts an allow-listed artifact identifier, not an
-arbitrary URL, and is not attached to a public load balancer.
+SSE invalidations remain database-backed and authoritative state does not depend
+on a remote cache. The AWS target deliberately omits Redis until an authenticated,
+service-scoped use is implemented. S3 artifacts are private. The tile facade
+accepts an allow-listed artifact identifier, not an arbitrary URL, and is not
+attached to a public load balancer.
 
 The repository provides normalized PostGIS source/snapshot/route tables and
 Celery simulation/route worker entry points for the deployment scaffold. The
@@ -169,7 +169,7 @@ expiry, or a no-route result. It never describes a route as safe.
 
 The local judging path is deterministic and has no upstream data-provider
 dependency. The Terraform target has variables and preconditions for origin TLS,
-Multi-AZ RDS/Redis, RDS continuous recovery, 35-day retention, deletion
+Multi-AZ RDS, RDS continuous recovery, 35-day retention, deletion
 protection, and cross-region recovery points. Those resources have not been
 applied or restored. RPO 5 minutes and RTO 30 minutes remain objectives;
 measured restore exercises—not HCL values—would be the acceptance evidence.

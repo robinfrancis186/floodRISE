@@ -46,7 +46,7 @@ is removed.
 | PostgreSQL spatial extensions and normalized operational tables | Scaffolded | Alembic `0002_postgis_operational_schema`; production query migration still requires an authorized database rehearsal. |
 | Celery worker over an allow-listed SQS queue | Scaffolded | `app.worker:celery_app`, eager offline demo tasks, predefined SQS queue transport and ECS command. |
 | Reproducible backend container image | Scaffolded | Non-root, frozen-uv `services/backend/Dockerfile`; immutable registry build requires the deployment account. |
-| AWS Mumbai CloudFront, WAF, ECS, RDS, S3, SQS, Redis, Cognito, KMS and Secrets Manager | Scaffolded | Terraform modules and hosted validation; no AWS apply is claimed. |
+| AWS Mumbai CloudFront, WAF, ECS, RDS, S3, SQS, Cognito, KMS and Secrets Manager | Scaffolded | Terraform modules and hosted validation; Redis is intentionally omitted until an authenticated remote fanout need exists. No AWS apply is claimed. |
 | Multi-AZ, PITR, cross-region backup, RPO 5 and RTO 30 controls | Scaffolded | Terraform production preconditions and backup resources; measured restoration remains external evidence. |
 | Cognito/OIDC and phishing-resistant step-up | Scaffolded | Resource-server verification, claim enforcement and Cognito resources. Real web PKCE/session enrollment needs the authority’s identity environment. |
 | Private production object storage, approved malware scanner and COG service | External activation | Interfaces and locked tile boundary exist; provider, scanner and production COG adapter require credentials, licences and infrastructure. |

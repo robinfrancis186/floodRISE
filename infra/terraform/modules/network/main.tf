@@ -10,6 +10,11 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
 
 locals {
   availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
+  service_security_groups = {
+    api    = aws_security_group.api.id
+    worker = aws_security_group.worker.id
+    tile   = aws_security_group.tile.id
+  }
 }
 
 resource "aws_vpc" "this" {
@@ -101,25 +106,43 @@ resource "aws_route_table_association" "private" {
 
 resource "aws_security_group" "alb" {
   name_prefix = "${var.name}-alb-"
-  description = "Public ingress to floodRISE edge"
+  description = "CloudFront-only ingress to the floodRISE API origin"
   vpc_id      = aws_vpc.this.id
   tags        = { Name = "${var.name}-alb" }
 
   lifecycle { create_before_destroy = true }
 }
 
-resource "aws_security_group" "application" {
-  name_prefix = "${var.name}-app-"
-  description = "ECS application tasks"
+resource "aws_security_group" "api" {
+  name_prefix = "${var.name}-api-"
+  description = "API tasks only"
   vpc_id      = aws_vpc.this.id
-  tags        = { Name = "${var.name}-application" }
+  tags        = { Name = "${var.name}-api" }
+
+  lifecycle { create_before_destroy = true }
+}
+
+resource "aws_security_group" "worker" {
+  name_prefix = "${var.name}-worker-"
+  description = "Worker tasks only"
+  vpc_id      = aws_vpc.this.id
+  tags        = { Name = "${var.name}-worker" }
+
+  lifecycle { create_before_destroy = true }
+}
+
+resource "aws_security_group" "tile" {
+  name_prefix = "${var.name}-tile-"
+  description = "Restricted raster tile tasks only"
+  vpc_id      = aws_vpc.this.id
+  tags        = { Name = "${var.name}-tile" }
 
   lifecycle { create_before_destroy = true }
 }
 
 resource "aws_security_group" "data" {
   name_prefix = "${var.name}-data-"
-  description = "RDS and Redis access from application tasks only"
+  description = "PostgreSQL access from API and worker tasks only"
   vpc_id      = aws_vpc.this.id
   tags        = { Name = "${var.name}-data" }
 
@@ -128,31 +151,20 @@ resource "aws_security_group" "data" {
 
 resource "aws_security_group" "endpoints" {
   name_prefix = "${var.name}-endpoints-"
-  description = "Private AWS service endpoints for application tasks"
+  description = "Private AWS service endpoints for scoped application tasks"
   vpc_id      = aws_vpc.this.id
   tags        = { Name = "${var.name}-endpoints" }
 
   lifecycle { create_before_destroy = true }
 }
 
-resource "aws_vpc_security_group_ingress_rule" "alb_http" {
-  for_each = toset(var.allowed_ingress_cidrs)
-
-  security_group_id = aws_security_group.alb.id
-  cidr_ipv4         = each.value
-  from_port         = 80
-  to_port           = 80
-  ip_protocol       = "tcp"
-  description       = "CloudFront/origin ingress; restrict to managed prefix list before production"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "alb_cloudfront" {
+resource "aws_vpc_security_group_ingress_rule" "alb_cloudfront_http" {
   security_group_id = aws_security_group.alb.id
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
   from_port         = 80
   to_port           = 80
   ip_protocol       = "tcp"
-  description       = "CloudFront origin-facing network only"
+  description       = "CloudFront origin-facing network for demo HTTP origins"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_cloudfront_https" {
@@ -161,115 +173,99 @@ resource "aws_vpc_security_group_ingress_rule" "alb_cloudfront_https" {
   from_port         = 443
   to_port           = 443
   ip_protocol       = "tcp"
-  description       = "CloudFront origin-facing TLS"
+  description       = "CloudFront origin-facing network for TLS origins"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "alb_https" {
-  for_each = toset(var.allowed_ingress_cidrs)
-
-  security_group_id = aws_security_group.alb.id
-  cidr_ipv4         = each.value
-  from_port         = 443
-  to_port           = 443
-  ip_protocol       = "tcp"
-  description       = "Optional reviewed direct TLS ingress"
-}
-
-resource "aws_vpc_security_group_egress_rule" "alb_to_app" {
+resource "aws_vpc_security_group_egress_rule" "alb_to_api" {
   security_group_id            = aws_security_group.alb.id
-  referenced_security_group_id = aws_security_group.application.id
+  referenced_security_group_id = aws_security_group.api.id
   from_port                    = 8787
   to_port                      = 8787
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "app_from_alb" {
-  security_group_id            = aws_security_group.application.id
+resource "aws_vpc_security_group_ingress_rule" "api_from_alb" {
+  security_group_id            = aws_security_group.api.id
   referenced_security_group_id = aws_security_group.alb.id
   from_port                    = 8787
   to_port                      = 8787
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_egress_rule" "app_https" {
-  count = var.allow_public_egress ? 1 : 0
-
-  security_group_id = aws_security_group.application.id
-  cidr_ipv4         = "0.0.0.0/0"
-  from_port         = 443
-  to_port           = 443
-  ip_protocol       = "tcp"
-  description       = "Image pulls and explicitly permitted source adapters"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "endpoints_from_app" {
-  security_group_id            = aws_security_group.endpoints.id
-  referenced_security_group_id = aws_security_group.application.id
-  from_port                    = 443
-  to_port                      = 443
-  ip_protocol                  = "tcp"
-}
-
-resource "aws_vpc_security_group_egress_rule" "app_to_endpoints" {
-  security_group_id            = aws_security_group.application.id
-  referenced_security_group_id = aws_security_group.endpoints.id
-  from_port                    = 443
-  to_port                      = 443
-  ip_protocol                  = "tcp"
-  description                  = "PrivateLink access without public egress"
-}
-
-resource "aws_vpc_security_group_egress_rule" "app_to_postgres" {
-  security_group_id            = aws_security_group.application.id
-  referenced_security_group_id = aws_security_group.data.id
-  from_port                    = 5432
-  to_port                      = 5432
-  ip_protocol                  = "tcp"
-}
-
-resource "aws_vpc_security_group_egress_rule" "app_to_redis" {
-  security_group_id            = aws_security_group.application.id
-  referenced_security_group_id = aws_security_group.data.id
-  from_port                    = 6379
-  to_port                      = 6379
-  ip_protocol                  = "tcp"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "app_internal_tiles" {
-  security_group_id            = aws_security_group.application.id
-  referenced_security_group_id = aws_security_group.application.id
+resource "aws_vpc_security_group_ingress_rule" "tile_from_api" {
+  security_group_id            = aws_security_group.tile.id
+  referenced_security_group_id = aws_security_group.api.id
   from_port                    = 8790
   to_port                      = 8790
   ip_protocol                  = "tcp"
   description                  = "API to restricted raster tile tasks"
 }
 
-resource "aws_vpc_security_group_egress_rule" "app_internal_tiles" {
-  security_group_id            = aws_security_group.application.id
-  referenced_security_group_id = aws_security_group.application.id
+resource "aws_vpc_security_group_egress_rule" "api_to_tile" {
+  security_group_id            = aws_security_group.api.id
+  referenced_security_group_id = aws_security_group.tile.id
   from_port                    = 8790
   to_port                      = 8790
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "data_postgres" {
+resource "aws_vpc_security_group_ingress_rule" "data_postgres_from_api" {
   security_group_id            = aws_security_group.data.id
-  referenced_security_group_id = aws_security_group.application.id
+  referenced_security_group_id = aws_security_group.api.id
   from_port                    = 5432
   to_port                      = 5432
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "data_redis" {
+resource "aws_vpc_security_group_ingress_rule" "data_postgres_from_worker" {
   security_group_id            = aws_security_group.data.id
-  referenced_security_group_id = aws_security_group.application.id
-  from_port                    = 6379
-  to_port                      = 6379
+  referenced_security_group_id = aws_security_group.worker.id
+  from_port                    = 5432
+  to_port                      = 5432
   ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "api_to_postgres" {
+  security_group_id            = aws_security_group.api.id
+  referenced_security_group_id = aws_security_group.data.id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "worker_to_postgres" {
+  security_group_id            = aws_security_group.worker.id
+  referenced_security_group_id = aws_security_group.data.id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "endpoints_from_service" {
+  for_each = local.service_security_groups
+
+  security_group_id            = aws_security_group.endpoints.id
+  referenced_security_group_id = each.value
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+  description                  = "${each.key} task access to private AWS service endpoints"
+}
+
+resource "aws_vpc_security_group_egress_rule" "service_to_endpoints" {
+  for_each = local.service_security_groups
+
+  security_group_id            = each.value
+  referenced_security_group_id = aws_security_group.endpoints.id
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+  description                  = "${each.key} task PrivateLink access"
 }
 
 resource "aws_vpc_endpoint" "interface" {
   for_each = toset([
+    "cognito-idp",
     "ecr.api",
     "ecr.dkr",
     "kms",
@@ -299,11 +295,24 @@ resource "aws_vpc_endpoint" "s3" {
   tags = { Name = "${var.name}-s3" }
 }
 
-resource "aws_vpc_security_group_egress_rule" "app_to_s3" {
-  security_group_id = aws_security_group.application.id
+resource "aws_vpc_security_group_egress_rule" "service_to_s3" {
+  for_each = local.service_security_groups
+
+  security_group_id = each.value
   prefix_list_id    = aws_vpc_endpoint.s3.prefix_list_id
   from_port         = 443
   to_port           = 443
   ip_protocol       = "tcp"
-  description       = "Private S3 gateway endpoint"
+  description       = "${each.key} task access to the private S3 gateway endpoint"
+}
+
+resource "aws_vpc_security_group_egress_rule" "worker_to_approved_adapter" {
+  for_each = toset(var.approved_adapter_egress_cidrs)
+
+  security_group_id = aws_security_group.worker.id
+  cidr_ipv4         = each.value
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+  description       = "Reviewed source-adapter HTTPS destination"
 }
