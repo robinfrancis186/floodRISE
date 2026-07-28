@@ -10,6 +10,9 @@ export function DecisionDialog({
   confirmLabel,
   destructive = false,
   requireNote = false,
+  noteLabel = "Decision note",
+  noteDescription = "The decision and bound evidence/model versions will be recorded.",
+  notePlaceholder = "Add context for the audit trail…",
   onClose,
   onConfirm,
 }: {
@@ -19,6 +22,9 @@ export function DecisionDialog({
   confirmLabel: string;
   destructive?: boolean;
   requireNote?: boolean;
+  noteLabel?: string;
+  noteDescription?: string;
+  notePlaceholder?: string;
   onClose: () => void;
   onConfirm: (note: string) => boolean | void | Promise<boolean | void>;
 }) {
@@ -78,9 +84,9 @@ export function DecisionDialog({
           <Button autoFocus variant="ghost" size="icon" aria-label="Close decision dialog" onClick={onClose}><X /></Button>
         </div>
         <Field>
-          <FieldLabel htmlFor={noteId}>Decision note {requireNote ? "(required)" : "(optional)"}</FieldLabel>
-          <Textarea id={noteId} maxLength={250} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add context for the audit trail…" />
-          <FieldDescription>{note.length}/250 · The decision and bound evidence/model versions will be recorded.</FieldDescription>
+          <FieldLabel htmlFor={noteId}>{noteLabel} {requireNote ? "(required)" : "(optional)"}</FieldLabel>
+          <Textarea id={noteId} maxLength={250} value={note} onChange={(event) => setNote(event.target.value)} placeholder={notePlaceholder} />
+          <FieldDescription>{note.length}/250 · {noteDescription}</FieldDescription>
         </Field>
         <div className="dialog-actions">
           <Button variant="outline" disabled={submitting} onClick={onClose}>Cancel</Button>

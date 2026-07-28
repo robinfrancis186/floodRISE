@@ -33,6 +33,8 @@ from .metrics import FloodRiseMetrics
 from .schemas import (
     ApprovalCreateInput,
     ApprovalDecisionInput,
+    ApprovalDecisionResponse,
+    ApprovalRecord,
     DemoAdvanceInput,
     MediaUploadGrant,
     MediaUploadMetadata,
@@ -610,7 +612,12 @@ def create_app(
     ) -> dict[str, Any]:
         return _page(service(request).resilience(incident_id))
 
-    @router.post("/approvals", status_code=status.HTTP_201_CREATED, tags=["approvals"])
+    @router.post(
+        "/approvals",
+        status_code=status.HTTP_201_CREATED,
+        response_model=ApprovalRecord,
+        tags=["approvals"],
+    )
     async def create_approval(
         body: ApprovalCreateInput,
         request: Request,
@@ -635,7 +642,11 @@ def create_app(
         )
         return _page(service(request).approvals(incident_id))
 
-    @router.post("/approvals/{approval_id}/decisions", tags=["approvals"])
+    @router.post(
+        "/approvals/{approval_id}/decisions",
+        response_model=ApprovalDecisionResponse,
+        tags=["approvals"],
+    )
     async def decide_approval(
         approval_id: str,
         body: ApprovalDecisionInput,

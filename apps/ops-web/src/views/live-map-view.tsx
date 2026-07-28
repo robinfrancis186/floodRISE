@@ -81,12 +81,11 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
       <aside className="inspector live-inspector" aria-label="Selected cluster details">
         <div className="inspector-title-row">
           <div><h2>{selected.name} Cluster <span>{selected.id}</span></h2><div className="inline-status"><StatusPill tone="danger">Severe</StatusPill><Confidence value={selected.confidence} /><span>{selected.updatedMinutesAgo} min ago</span></div></div>
-          <button type="button" className="icon-quiet" aria-label="More cluster options">•••</button>
         </div>
 
         <section className="inspector-section">
           <h3>Why this changed</h3>
-          <div className="reason-list">{confidenceReason.map(({ icon: Icon, label, value }) => <button key={label} type="button"><Icon aria-hidden /><span>{label}</span><small>{value}</small><ChevronRight aria-hidden /></button>)}</div>
+          <div className="reason-list">{confidenceReason.map(({ icon: Icon, label, value }) => <div className="reason-item" key={label}><Icon aria-hidden /><span>{label}</span><small>{value}</small></div>)}</div>
         </section>
 
         <section className="inspector-section">
@@ -111,7 +110,7 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
           <p><strong>Two-person approval</strong><span>{reviewable ? `${role} · request v${action.approvalVersion}` : "Authoritative request unavailable"}</span></p>
           <div className="decision-buttons">
             <Button disabled={!reviewable} onClick={() => setDecision("APPROVE")}>Approve action</Button>
-            <Button disabled={!reviewable} variant="outline" onClick={() => setDecision("MODIFY")}>Modify</Button>
+            <Button disabled={!reviewable} variant="outline" onClick={() => setDecision("MODIFY")}>Request changes</Button>
             <Button disabled={!reviewable} variant="destructive-outline" onClick={() => setDecision("REJECT")}>Reject</Button>
           </div>
         </section>
@@ -119,9 +118,9 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
 
       <DecisionDialog
         open={decision !== null}
-        title={decision === "APPROVE" ? "Approve operational action" : decision === "MODIFY" ? "Modify operational action" : "Reject operational action"}
-        description="This decision is bound to the displayed evidence and model versions. Official actions require authorized human approval."
-        confirmLabel={decision === "APPROVE" ? "Approve action" : decision === "MODIFY" ? "Save modifications" : "Reject action"}
+        title={decision === "APPROVE" ? "Approve operational action" : decision === "MODIFY" ? "Return action for changes" : "Reject operational action"}
+        description={decision === "MODIFY" ? "This closes the current bound request without dispatch. The requester must submit a revised action for a new independent approval." : "This decision is bound to the displayed evidence and model versions. Official actions require authorized human approval."}
+        confirmLabel={decision === "APPROVE" ? "Approve action" : decision === "MODIFY" ? "Return for changes" : "Reject action"}
         destructive={decision === "REJECT"}
         requireNote={decision !== "APPROVE"}
         onClose={() => setDecision(null)}

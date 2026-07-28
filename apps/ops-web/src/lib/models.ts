@@ -109,6 +109,10 @@ export type ResiliencePriority = {
   rank: number;
   id: string;
   location: string;
+  ward: string;
+  assetType: "Drainage" | "Road" | "Shelter";
+  eventYears: number[];
+  hasOfficialEvidence: boolean;
   evidence: string;
   impact: string;
   confidence: number;

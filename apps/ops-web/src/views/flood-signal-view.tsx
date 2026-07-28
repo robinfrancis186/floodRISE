@@ -25,7 +25,7 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DecisionDialog } from "../components/decision-dialog";
 import { Confidence, StatusPill } from "../components/status-pill";
 import type { SignalDecision } from "../lib/models";
@@ -34,54 +34,72 @@ import { useOperations } from "../state/operations-context";
 export function FloodSignalView() {
   const { snapshot, selectedSignalId, setSelectedSignalId, decideSignal, horizon, setHorizon } = useOperations();
   const [status, setStatus] = useState("all");
+  const [ward, setWard] = useState("all");
   const [freshness, setFreshness] = useState("3h");
   const [confidence, setConfidence] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [decision, setDecision] = useState<SignalDecision | null>(null);
-  const selected = snapshot.signals.find((signal) => signal.id === selectedSignalId) ?? snapshot.signals[0];
+  const wardOptions = useMemo(
+    () => [...new Set(snapshot.signals.map((signal) => signal.ward))],
+    [snapshot.signals],
+  );
 
   const filteredSignals = useMemo(() => snapshot.signals.filter((signal) => {
     const statusMatch = status === "all" || (status === "review" && signal.decision === "UNREVIEWED") || (status === "verified" && signal.decision === "VERIFIED") || (status === "field" && signal.decision === "FIELD_CHECK");
+    const wardMatch = ward === "all" || signal.ward === ward;
+    const freshnessMinutes = freshness === "5m" ? 5 : freshness === "1h" ? 60 : freshness === "3h" ? 180 : 1_440;
+    const freshnessMatch = signal.updatedMinutesAgo <= freshnessMinutes;
     const confidenceMatch = confidence === "all" || (confidence === "high" && signal.confidence >= 80) || (confidence === "medium" && signal.confidence >= 65 && signal.confidence < 80);
-    return statusMatch && confidenceMatch;
-  }), [snapshot.signals, status, confidence]);
+    return statusMatch && wardMatch && freshnessMatch && confidenceMatch;
+  }), [snapshot.signals, status, ward, freshness, confidence]);
+  const selected = filteredSignals.find((signal) => signal.id === selectedSignalId) ?? filteredSignals[0] ?? null;
 
-  const verificationRows = [
+  useEffect(() => {
+    if (selected && selected.id !== selectedSignalId) setSelectedSignalId(selected.id);
+  }, [selected, selectedSignalId, setSelectedSignalId]);
+
+  useEffect(() => {
+    setDecision(null);
+  }, [selected?.id]);
+
+  const verificationRows = selected ? [
     ["Spatial match (within 250 m)", `${selected.independentReports} / ${selected.receivedReports}`],
     ["Time window (within 30 min)", "8 / 30 min"],
     ["Identity / device independence", `${selected.independentReports} unique`],
     ["Evidence consistency", selected.status === "DISPUTED" ? "Conflict" : "High"],
-  ];
-  const excludedReports = Math.max(0, selected.receivedReports - selected.independentReports);
-  const mapFeatureId = selected.id === "ALV-042" ? "cluster-aluva" : selected.id === "ELO-018" ? "cluster-eloor" : selected.id === "KDG-031" ? "cluster-kadungalloor" : null;
+  ] : [];
+  const excludedReports = selected ? Math.max(0, selected.receivedReports - selected.independentReports) : 0;
+  const mapFeatureId = selected?.id === "ALV-042" ? "cluster-aluva" : selected?.id === "ELO-018" ? "cluster-eloor" : selected?.id === "KDG-031" ? "cluster-kadungalloor" : null;
   const handleMapSelection = (selection: FloodMapSelection) => {
     if (selection.kind !== "cluster") return;
-    const match = snapshot.signals.find((signal) => selection.name.includes(signal.id) || selection.name.toLowerCase().includes(signal.name.toLowerCase()));
+    const match = filteredSignals.find((signal) => selection.name.includes(signal.id) || selection.name.toLowerCase().includes(signal.name.toLowerCase()));
     if (match) setSelectedSignalId(match.id);
   };
 
   return (
     <div className="workspace signal-workspace">
       <section className="cluster-queue" aria-label="Report cluster queue">
-        <div className="queue-heading"><h2>Report clusters</h2><Button variant="ghost" size="sm"><Filter />Filters</Button></div>
-        <div className="filter-grid">
+        <div className="queue-heading"><h2>Report clusters</h2><Button variant="ghost" size="sm" aria-expanded={filtersOpen} aria-controls="signal-filters" onClick={() => setFiltersOpen((open) => !open)}><Filter />{filtersOpen ? "Hide filters" : "Show filters"}</Button></div>
+        <div className="filter-grid" id="signal-filters" hidden={!filtersOpen}>
           <label>Status<Select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option><option value="review">Needs review</option><option value="verified">Verified</option><option value="field">Field check</option></Select></label>
-          <label>Ward<Select><option>All wards</option><option>Ward 110</option><option>Ward 121</option></Select></label>
-          <label>Freshness<Select value={freshness} onChange={(event) => setFreshness(event.target.value)}><option value="1h">Last hour</option><option value="3h">Last 3 hours</option><option value="day">Today</option></Select></label>
+          <label>Ward<Select value={ward} onChange={(event) => setWard(event.target.value)}><option value="all">All wards</option>{wardOptions.map((item) => <option key={item} value={item}>{item}</option>)}</Select></label>
+          <label>Freshness<Select value={freshness} onChange={(event) => setFreshness(event.target.value)}><option value="5m">Last 5 minutes</option><option value="1h">Last hour</option><option value="3h">Last 3 hours</option><option value="day">Today</option></Select></label>
           <label>Confidence<Select value={confidence} onChange={(event) => setConfidence(event.target.value)}><option value="all">All</option><option value="high">High (80%+)</option><option value="medium">Medium</option></Select></label>
         </div>
         <div className="queue-columns"><span>Cluster</span><span>Reports</span><span>Last update</span></div>
         <div className="cluster-list">
-          {filteredSignals.map((signal) => <button key={signal.id} className="cluster-row" data-selected={signal.id === selected.id || undefined} onClick={() => setSelectedSignalId(signal.id)}>
+          {filteredSignals.map((signal) => <button key={signal.id} className="cluster-row" data-selected={signal.id === selected?.id || undefined} onClick={() => setSelectedSignalId(signal.id)}>
             <span className={`signal-dot signal-${signal.decision.toLowerCase()}`} aria-hidden />
             <span className="cluster-main"><strong>{signal.id} · {signal.name}</strong><small>{signal.ward} · {signal.area}</small><span><MessageSquareText aria-hidden />{signal.receivedReports}<Smartphone aria-hidden />{signal.authenticatedReports}<Globe2 aria-hidden />1<UserCheck aria-hidden />{signal.independentReports}</span></span>
             <span className="cluster-meta"><time>{signal.updatedMinutesAgo} min ago</time><Confidence value={signal.confidence} /><small>{signal.decision === "UNREVIEWED" ? "Pending approval" : signal.decision.replaceAll("_", " ")}</small></span>
           </button>)}
           {!filteredSignals.length && <div className="empty-state"><Filter /><strong>No clusters match</strong><span>Change a filter to see available evidence.</span></div>}
         </div>
-        <div className="queue-footer">Showing {filteredSignals.length} of {snapshot.signals.length} clusters</div>
+        <div className="queue-footer" aria-live="polite">Showing {filteredSignals.length} of {snapshot.signals.length} clusters</div>
       </section>
 
       <section className="signal-map-pane" aria-label="Selected FloodSignal map">
+        {selected ? <>
         <div className="map-layer-key">
           <span><i className="key-flood" />Current flooding</span>
           <span><i className="key-predicted" />Predicted {horizon}</span>
@@ -90,9 +108,11 @@ export function FloodSignalView() {
           <span><i className="key-excluded" />Excluded evidence</span>
         </div>
         <FloodMap variant="signals" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={mapFeatureId} onFeatureSelect={handleMapSelection} showLegend={false} className="shared-map" height="100%" ariaLabel={`Evidence map for ${selected.name} cluster`} />
+        </> : <div className="empty-state signal-empty-state"><Filter /><strong>No cluster selected</strong><span>No evidence review is available for the current filters.</span></div>}
       </section>
 
-      <aside className="signal-review" aria-label={`${selected.name} evidence review`}>
+      <aside className="signal-review" aria-label={selected ? `${selected.name} evidence review` : "No FloodSignal evidence selected"}>
+        {selected ? <>
         <header className="review-header">
           <div><span className="signal-dot signal-unreviewed" aria-hidden /><h2>{selected.id} · {selected.name}</h2></div>
           <p>{selected.independentReports} independent of {selected.receivedReports} received <span>•</span> {selected.confidence}% confidence <span>•</span> <strong>Expires in {selected.expiresInMinutes} min</strong></p>
@@ -134,17 +154,18 @@ export function FloodSignalView() {
           <p><FileClockIcon />Decision and evidence hashes will be written to the audit trail.</p>
           <div><Button onClick={() => setDecision("VERIFIED")}><Check />Verify flooding</Button><Button variant="outline" onClick={() => setDecision("FIELD_CHECK")}><RadioTower />Request field check</Button><Button variant="destructive-outline" onClick={() => setDecision("REJECTED")}>Reject cluster</Button></div>
         </footer>
+        </> : <div className="empty-state signal-empty-state"><Filter /><strong>No actionable cluster</strong><span>Broaden the filters before making an evidence decision.</span></div>}
       </aside>
 
       <DecisionDialog
-        open={decision !== null}
+        open={decision !== null && selected !== null}
         title={decision === "VERIFIED" ? "Verify community corroboration" : decision === "FIELD_CHECK" ? "Request a field check" : "Reject this cluster"}
         description={decision === "VERIFIED" ? "This records community-corroborated flooding. It is not an official confirmation or an evacuation order." : "Evidence is retained and the decision is appended to the audit trail."}
         confirmLabel={decision === "VERIFIED" ? "Verify flooding" : decision === "FIELD_CHECK" ? "Request field check" : "Reject cluster"}
         destructive={decision === "REJECTED"}
         requireNote={decision !== "VERIFIED"}
         onClose={() => setDecision(null)}
-        onConfirm={(note) => decision ? decideSignal(selected.id, decision, note, selected.apiId, selected.apiVersion) : false}
+        onConfirm={(note) => decision && selected ? decideSignal(selected.id, decision, note, selected.apiId, selected.apiVersion) : false}
       />
     </div>
   );

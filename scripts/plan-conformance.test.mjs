@@ -17,10 +17,12 @@ function includesEvery(source, values, label) {
 }
 
 test("the two planned products expose every competition workflow", async () => {
-  const [operations, field] = await Promise.all([
+  const [operationsApp, operationsPaths, field] = await Promise.all([
     text("apps/ops-web/src/App.tsx"),
+    text("apps/ops-web/src/lib/app-paths.ts"),
     text("apps/field-web/src/router.tsx"),
   ]);
+  const operations = `${operationsApp}\n${operationsPaths}`;
 
   includesEvery(
     operations,

@@ -173,6 +173,18 @@ def test_seeded_health_and_bootstrap_are_demo_labelled(client: TestClient) -> No
         "ACT-198",
         "ACT-204",
     }
+    road_closure = next(
+        approval
+        for approval in body["approvals"]
+        if approval["action_payload"]["presentation_id"] == "ACT-198"
+    )
+    assert road_closure["action_payload"]["road_id"] == "road-aluva-main"
+    assert road_closure["binding"]["action_target"] == {
+        "kind": "road",
+        "id": "road-aluva-main",
+        "record_version": 1,
+        "incident_id": INCIDENT_ID,
+    }
 
 
 def test_bootstrap_omits_operational_approvals_for_non_operational_roles(
@@ -548,6 +560,36 @@ def test_signal_decision_requires_the_current_expected_version(client: TestClien
     assert accepted.json()["human_review"]["reviewed_by"] == "field-verifier"
 
 
+def test_field_check_http_decision_returns_corroborated_signal_to_review(
+    client: TestClient,
+) -> None:
+    headers = _role_headers("field-verifier", "verifier")
+    signal = client.get(f"{API}/signals/signal-aluva-042", headers=headers).json()
+    corroborated = client.post(
+        f"{API}/signals/{signal['id']}/decisions",
+        json={
+            "decision": "VERIFY",
+            "reason": "Independent review supports community corroboration.",
+            "expected_version": signal["version"],
+        },
+        headers=headers,
+    )
+    assert corroborated.status_code == 200
+    reviewed = client.post(
+        f"{API}/signals/{signal['id']}/decisions",
+        json={
+            "decision": "FIELD_CHECK",
+            "reason": "A responder field check is required before operational use.",
+            "expected_version": corroborated.json()["version"],
+        },
+        headers=headers,
+    )
+
+    assert reviewed.status_code == 200
+    assert reviewed.json()["state"] == "NEEDS_REVIEW"
+    assert reviewed.json()["human_review"]["decision"] == "FIELD_CHECK"
+
+
 def test_two_person_approval_denies_requester_and_dispatches_for_other_user(
     client: TestClient,
 ) -> None:
@@ -635,6 +677,167 @@ def test_seeded_evacuation_approval_uses_bound_id_version_and_distinct_approver(
     assert accepted.json()["approval"]["status"] == "APPROVED"
     assert accepted.json()["approval"]["decided_by"] == "ops-verifier"
     assert accepted.json()["alert"]["approval_request_id"] == approval["id"]
+
+
+def test_approved_road_closure_persists_and_is_excluded_from_new_routes(
+    client: TestClient,
+) -> None:
+    route_request = {
+        "incident_id": INCIDENT_ID,
+        "origin_node": "aluva",
+        "max_alternatives": 3,
+    }
+    before = client.post(f"{API}/routes/recommend", json=route_request)
+    assert before.status_code == 200
+    assert any(
+        "e-aluva-school-shelter" in route["edge_ids"] for route in before.json()["alternatives"]
+    )
+
+    payload = {
+        **_approval_payload(),
+        "action_type": "ROAD_CLOSURE",
+        "action_payload": {
+            "road_id": "road-nh-544",
+            "title": "Close reviewed NH 544 segment",
+            "body": "Close only the exact bound segment after independent review.",
+        },
+        "reason": "The road target, evidence and model are bound for review.",
+    }
+    created = client.post(
+        f"{API}/approvals",
+        json=payload,
+        headers=_role_headers("road-requester", "incident_commander"),
+    )
+    assert created.status_code == 201
+    approval = created.json()
+    assert approval["binding"]["action_target"]["id"] == "road-nh-544"
+
+    decision = client.post(
+        f"{API}/approvals/{approval['id']}/decisions",
+        json={
+            "decision": "APPROVE",
+            "reason": "Independent review confirms the exact road closure target.",
+            "expected_version": approval["version"],
+        },
+        headers=_role_headers("road-approver", "verifier"),
+    )
+    assert decision.status_code == 200
+    assert decision.json()["approval"]["status"] == "APPROVED"
+
+    after = client.post(f"{API}/routes/recommend", json=route_request)
+    assert after.status_code == 200
+    body = after.json()
+    assert all("e-aluva-school-shelter" not in route["edge_ids"] for route in body["alternatives"])
+    exclusion = next(
+        item for item in body["excluded_edges"] if item["edge_id"] == "e-aluva-school-shelter"
+    )
+    assert exclusion["reasons"] == ["AUTHORIZED_OR_CONFIRMED_CLOSURE"]
+    audit = client.get(
+        f"{API}/audit",
+        headers=_role_headers("audit-reviewer", "auditor"),
+    ).json()
+    assert any(
+        event["event_type"] == "road.officially_closed" and event["aggregate_id"] == "road-nh-544"
+        for event in audit["items"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("update", "expected_reason"),
+    [
+        (
+            {
+                "activation_status": "FULL",
+                "access_status": "REACHABLE",
+                "capacity_remaining": 0,
+                "status_reason": "The shelter reached its verified capacity.",
+            },
+            "SHELTER_FULL",
+        ),
+        (
+            {
+                "activation_status": "OPEN",
+                "access_status": "AT_RISK",
+                "capacity_remaining": 120,
+                "status_reason": "The only verified access is currently at risk.",
+            },
+            "SHELTER_ACCESS_NOT_CONFIRMED_REACHABLE",
+        ),
+    ],
+)
+def test_shelter_status_change_withholds_stale_route_from_list_and_bootstrap(
+    client: TestClient,
+    update: dict[str, Any],
+    expected_reason: str,
+) -> None:
+    staff_headers = _role_headers("incident-lead", "incident_commander")
+    before = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=staff_headers,
+    ).json()
+    shelter = next(item for item in before["shelters"] if item["id"] == "shelter-aluva-school")
+    initial_route = next(item for item in before["routes"] if item["shelter_id"] == shelter["id"])
+    assert initial_route["shelter_detail"]["status"] == "OPEN"
+    assert initial_route["shelter_detail"]["access_status"] == "REACHABLE"
+    assert initial_route["shelter_detail"]["capacity_remaining"] == 186
+
+    changed = client.patch(
+        f"{API}/shelters/{shelter['id']}",
+        json={"expected_version": shelter["version"], **update},
+        headers=_role_headers("shelter-manager", "shelter_manager"),
+    )
+    assert changed.status_code == 200
+
+    stored_routes = client.get(
+        f"{API}/routes",
+        params={"incident_id": INCIDENT_ID},
+        headers=staff_headers,
+    ).json()
+    after = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=staff_headers,
+    ).json()
+    assert all(route.get("shelter_id") != shelter["id"] for route in stored_routes["items"])
+    assert all(route.get("shelter_id") != shelter["id"] for route in after["routes"])
+    exclusion = next(
+        item
+        for item in after["route_recommendation"]["excluded_shelters"]
+        if item["shelter_id"] == shelter["id"]
+    )
+    assert expected_reason in exclusion["reasons"]
+
+
+def test_limited_reachable_shelter_route_preserves_current_capacity_and_status(
+    client: TestClient,
+) -> None:
+    staff_headers = _role_headers("incident-lead", "incident_commander")
+    before = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=staff_headers,
+    ).json()
+    shelter = next(item for item in before["shelters"] if item["id"] == "shelter-aluva-school")
+    changed = client.patch(
+        f"{API}/shelters/{shelter['id']}",
+        json={
+            "expected_version": shelter["version"],
+            "activation_status": "LIMITED",
+            "access_status": "REACHABLE",
+            "capacity_remaining": 24,
+            "status_reason": "Capacity is limited but verified access remains reachable.",
+        },
+        headers=_role_headers("shelter-manager", "shelter_manager"),
+    )
+    assert changed.status_code == 200
+
+    after = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=staff_headers,
+    ).json()
+    route = next(item for item in after["routes"] if item["shelter_id"] == shelter["id"])
+    assert route["shelter_detail"]["status"] == "LIMITED"
+    assert route["shelter_detail"]["access_status"] == "REACHABLE"
+    assert route["shelter_detail"]["capacity_remaining"] == 24
+    assert route["shelter_detail"]["version"] == shelter["version"] + 1
 
 
 def test_identity_administrator_cannot_request_operational_action(client: TestClient) -> None:
@@ -759,6 +962,14 @@ def test_route_and_simulation_endpoints_publish_versioned_estimates(client: Test
     assert "safe" not in route_body["disclaimer"].lower()
     assert all(
         alternative["model_version"] == route_body["model_version"]
+        for alternative in route_body["alternatives"]
+    )
+    assert {alternative["shelter_id"] for alternative in route_body["alternatives"]} == {
+        "shelter-aluva-school"
+    }
+    assert all(
+        alternative["shelter_detail"]["access_status"] == "REACHABLE"
+        and alternative["shelter_detail"]["version"] is not None
         for alternative in route_body["alternatives"]
     )
 

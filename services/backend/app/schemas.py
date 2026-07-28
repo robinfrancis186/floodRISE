@@ -141,6 +141,7 @@ class ShelterAvailability(StrEnum):
 class ApprovalStatus(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
+    MODIFIED = "MODIFIED"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
     CANCELLED = "CANCELLED"
@@ -757,6 +758,17 @@ class ApprovalRequest(ApprovalRequestCreate):
     version: int = Field(default=1, ge=1)
 
 
+class ApprovalRecord(ApprovalRequest):
+    payload_digest: str
+    requested_role: str
+    request_authentication: dict[str, Any] | None = None
+    binding: dict[str, Any]
+    decided_role: str | None = None
+    decision_authentication: dict[str, Any] | None = None
+    execution_status: Literal["NOT_STARTED", "SUCCEEDED", "FAILED"]
+    is_simulated: bool = False
+
+
 class ApprovalDecision(APIModel):
     decision: ApprovalDecisionType
     reason: str = Field(min_length=3, max_length=1_000)
@@ -780,8 +792,14 @@ class Alert(APIModel):
     approved_at: UtcDateTime | None = None
     dispatched_at: UtcDateTime | None = None
     expires_at: UtcDateTime
+    gateway: str | None = None
     is_demo: bool = True
     version: int = Field(default=1, ge=1)
+
+
+class ApprovalDecisionResponse(APIModel):
+    approval: ApprovalRecord
+    alert: Alert | None = None
 
 
 class DeliveryAttempt(APIModel):
@@ -903,10 +921,12 @@ __all__ = [
     "ApprovalCreate",
     "ApprovalCreateInput",
     "ApprovalDecision",
+    "ApprovalDecisionResponse",
     "ApprovalDecisionInput",
     "ApprovalDecisionType",
     "ApprovalRequest",
     "ApprovalRequestCreate",
+    "ApprovalRecord",
     "ApprovalStatus",
     "AuditActorType",
     "AuditEvent",

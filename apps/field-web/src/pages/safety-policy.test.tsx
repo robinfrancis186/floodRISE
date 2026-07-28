@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { demoRoutes } from "../data/demo";
+import { DEMO_SCENARIO_TIME, demoAlerts, demoRoutes } from "../data/demo";
 import { AlertsPage } from "./AlertsPage";
 import { LowerRiskRoutePage } from "./LowerRiskRoutePage";
 import { ReportFloodingPage } from "./ReportFloodingPage";
@@ -23,8 +23,19 @@ const {
 }));
 
 vi.mock("@floodrise/map", () => ({
-  FloodMap: ({ ariaLabel }: { ariaLabel?: string }) => (
-    <div aria-label={ariaLabel}>Detailed Kerala map</div>
+  FloodMap: ({
+    ariaLabel,
+    showRouteGeometry,
+  }: {
+    ariaLabel?: string;
+    showRouteGeometry?: boolean;
+  }) => (
+    <div
+      aria-label={ariaLabel}
+      data-route-geometry={showRouteGeometry ? "visible" : "hidden"}
+    >
+      Detailed Kerala map
+    </div>
   ),
 }));
 
@@ -88,7 +99,12 @@ function mockGeolocation(accuracy: number) {
 }
 
 beforeEach(() => {
-  fetchAlertsMock.mockResolvedValue([]);
+  fetchAlertsMock.mockResolvedValue({
+    items: [],
+    source: "API",
+    referenceTime: DEMO_SCENARIO_TIME,
+    message: "Current alerts loaded from the incident API.",
+  });
   fetchRoutesMock.mockResolvedValue({
     alternatives: demoRoutes,
     availability: "CURRENT",
@@ -170,6 +186,75 @@ describe("field location safety policy", () => {
       accuracy_m: 42.7,
     });
   });
+
+  it("selects one route for review and updates the announced route details", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<LowerRiskRoutePage />);
+
+    const firstRoute = demoRoutes[0]!;
+    const secondRoute = demoRoutes[1]!;
+    const firstReview = await screen.findByRole("button", {
+      name: `Review ${firstRoute.label} to ${firstRoute.shelter}`,
+    });
+    const secondReview = screen.getByRole("button", {
+      name: `Review ${secondRoute.label} to ${secondRoute.shelter}`,
+    });
+
+    expect(firstReview).toHaveAttribute("aria-pressed", "false");
+    expect(secondReview).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("status", { name: "Selected route details" })).not.toBeInTheDocument();
+
+    await user.click(secondReview);
+
+    expect(firstReview).toHaveAttribute("aria-pressed", "false");
+    expect(secondReview).toHaveAttribute("aria-pressed", "true");
+    expect(secondReview).toHaveTextContent("Selected for review");
+    expect(screen.getByRole("status", { name: "Selected route details" })).toHaveTextContent(
+      `${secondRoute.duration_min} min · ${secondRoute.distance_km.toFixed(1)} km to ${secondRoute.shelter}`,
+    );
+    expect(screen.getByRole("status", { name: "Selected route details" })).toHaveTextContent(
+      secondRoute.model_version,
+    );
+    expect(screen.getByRole("status", { name: "Selected route details" })).toHaveTextContent(
+      secondRoute.evidence_version,
+    );
+
+    await user.click(firstReview);
+
+    expect(firstReview).toHaveAttribute("aria-pressed", "true");
+    expect(secondReview).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("status", { name: "Selected route details" })).toHaveTextContent(
+      `${firstRoute.duration_min} min · ${firstRoute.distance_km.toFixed(1)} km to ${firstRoute.shelter}`,
+    );
+
+    await user.click(firstReview);
+
+    expect(firstReview).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("status", { name: "Selected route details" })).not.toBeInTheDocument();
+  });
+
+  it("withholds packaged route geometry when the API returns no current route", async () => {
+    fetchRoutesMock.mockResolvedValueOnce({
+      alternatives: [],
+      availability: "UNAVAILABLE",
+      source: "API",
+      referenceTime: "2023-12-04T14:10:00.000Z",
+      message: "No compliant route exists. Await responder guidance.",
+    });
+    renderWithQuery(<LowerRiskRoutePage />);
+
+    expect(await screen.findByText("No compliant route exists. Await responder guidance.")).toBeInTheDocument();
+    const contextMap = screen.getByLabelText(
+      /Non-navigational demo context map showing flood estimates, road risk, and nearby shelters/i,
+    );
+
+    expect(contextMap).toHaveAttribute("data-route-geometry", "hidden");
+    expect(screen.queryByLabelText(/Map of lower-risk route alternatives/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("note", { name: "Route map safety boundary" })).toHaveTextContent(
+      /Context only.*Route geometry is not provided by the recommendation API and is not shown/i,
+    );
+    expect(screen.queryByRole("button", { name: /Review .* to /i })).not.toBeInTheDocument();
+  });
 });
 
 describe("field alert empty state", () => {
@@ -179,5 +264,57 @@ describe("field alert empty state", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       /No current alerts for the demo scenario time/i,
     );
+  });
+
+  it("visibly discloses deterministic fallback data when the online alert API fails", async () => {
+    fetchAlertsMock.mockResolvedValueOnce({
+      items: demoAlerts,
+      source: "DEMO_FALLBACK",
+      referenceTime: DEMO_SCENARIO_TIME,
+      message:
+        "The alert API could not be reached. Showing deterministic DEMO DATA for the scenario checkpoint; this is not a current alert feed.",
+    });
+    renderWithQuery(<AlertsPage />);
+
+    expect(await screen.findByText("Alert API unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Alert API unavailable").closest("[role=alert]")).toHaveTextContent(
+      /deterministic DEMO DATA.*not a current alert feed/i,
+    );
+    expect(screen.getByText(demoAlerts[0]!.title)).toBeInTheDocument();
+  });
+
+  it("derives official demo and official labels from each alert's simulation metadata", async () => {
+    const officialBase = {
+      kind: "OFFICIAL" as const,
+      description: "Follow instructions from authorized emergency officials.",
+      area: "Periyar basin",
+      issuedAt: "2023-12-04T13:50:00.000Z",
+      validUntil: "2023-12-04T15:10:00.000Z",
+      severity: "DANGER" as const,
+    };
+    fetchAlertsMock.mockResolvedValueOnce({
+      items: [
+        {
+          ...officialBase,
+          id: "official-demo",
+          title: "Official simulated warning",
+          isSimulated: true,
+        },
+        {
+          ...officialBase,
+          id: "official-live",
+          title: "Official authority warning",
+          isSimulated: false,
+        },
+      ],
+      source: "API",
+      referenceTime: DEMO_SCENARIO_TIME,
+      message: "Current alerts loaded from the incident API.",
+    });
+    renderWithQuery(<AlertsPage />);
+
+    expect(await screen.findByText("Official simulated warning")).toBeInTheDocument();
+    expect(screen.getByText("Official demo")).toBeInTheDocument();
+    expect(screen.getByText("Official", { exact: true })).toBeInTheDocument();
   });
 });

@@ -11,6 +11,7 @@ import {
 import { demoSnapshot } from "../data/demo";
 import {
   advanceDemo as advanceDemoApi,
+  actionStatusFromApproval,
   apiIdentityForRole,
   describeApiError,
   fetchOperationsSnapshot,
@@ -18,6 +19,8 @@ import {
   submitApprovalDecision,
   submitShelterUpdate,
   submitSignalDecision,
+  signalDecisionFromState,
+  signalStatusFromState,
   API_ROOT,
 } from "../lib/api";
 import {
@@ -148,8 +151,11 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         signals: current.signals.map((candidate) => candidate.id === id ? {
           ...candidate,
           apiVersion: updated.version,
-          decision,
-          status: decision === "VERIFIED" ? "COMMUNITY_CORROBORATED" : decision === "REJECTED" ? "DISPUTED" : "NEEDS_REVIEW",
+          decision: signalDecisionFromState(
+            updated.state,
+            updated.human_review?.decision ?? updated.human_decision ?? undefined,
+          ),
+          status: signalStatusFromState(updated.state),
         } : candidate),
       }));
       announce(copy, decision === "REJECTED" ? "warning" : "success");
@@ -173,7 +179,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       );
       return false;
     }
-    const verb = decision === "APPROVE" ? "approved" : decision === "MODIFY" ? "returned with modifications" : "rejected";
+    const verb = decision === "APPROVE" ? "approved" : decision === "MODIFY" ? "returned for changes" : "rejected";
     try {
       const response = await submitApprovalDecision(
         action.approvalId,
@@ -187,7 +193,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         actions: current.actions.map((candidate) => candidate.id === id ? {
           ...candidate,
           approvalVersion: response.approval.version,
-          status: decision === "APPROVE" ? "APPROVED" : decision === "MODIFY" ? "MODIFIED" : "REJECTED",
+          status: actionStatusFromApproval(response.approval.status),
           detail: note || candidate.detail,
           decidedById: response.approval.decided_by ?? apiIdentityForRole(role).userId,
           decisionReason: response.approval.decision_reason ?? (note || `Action ${verb}`),

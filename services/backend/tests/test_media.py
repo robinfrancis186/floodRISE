@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from threading import Barrier
 from typing import Any
 
 import pytest
@@ -15,7 +17,7 @@ from starlette.requests import Request
 
 from app.auth import Principal
 from app.config import Settings
-from app.database import Database
+from app.database import ConcurrentWriteError, Database, EntityChange
 from app.errors import AppError
 from app.main import create_app
 from app.media import (
@@ -70,6 +72,34 @@ def _image_bytes(
 
 def _headers(user: str = "demo-reporter", role: str = "reporter") -> dict[str, str]:
     return {"X-Demo-User": user, "X-Demo-Role": role}
+
+
+def _seed_authority_owned_incident(database: Database) -> None:
+    """Create the minimum live-owned parent record without using demo fixtures."""
+
+    database.initialize()
+    database.commit(
+        changes=[
+            EntityChange(
+                "incident",
+                INCIDENT_ID,
+                {
+                    "id": INCIDENT_ID,
+                    "name": "Authority-managed media pipeline test",
+                    "status": "ACTIVE",
+                    "is_demo": False,
+                    "is_simulated": False,
+                    "version": 1,
+                },
+                1,
+            )
+        ],
+        state={
+            "incident_id": INCIDENT_ID,
+            "scenario_clock": FIXED_TIME.isoformat().replace("+00:00", "Z"),
+            "demo_mode": False,
+        },
+    )
 
 
 def _grant(
@@ -433,6 +463,144 @@ def test_clean_blob_rolls_back_but_quarantine_remains_when_ready_commit_fails(
     assert store.read_quarantine(grant["upload_id"]) == payload
 
 
+def test_cross_instance_upload_loser_cannot_delete_winner_quarantine(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _image_bytes()
+    grant = _grant(client, payload, key="cross-instance-upload-grant")
+    database = client.app.state.database
+    store = client.app.state.media_service.blob_store
+    first = client.app.state.media_service
+    second = MediaService(
+        database,
+        blob_store=store,
+        scanner=first.scanner,
+        clock=first.clock,
+    )
+    second.bind_runtime(is_demo=True)
+    commit_barrier = Barrier(2)
+    original_commit = database.commit
+
+    def synchronize_quarantine_commits(*args: Any, **kwargs: Any) -> Any:
+        events = kwargs.get("events", ())
+        if any(event.event_type == "media.quarantined" for event in events):
+            commit_barrier.wait(timeout=5)
+        return original_commit(*args, **kwargs)
+
+    monkeypatch.setattr(database, "commit", synchronize_quarantine_commits)
+    principal = Principal(
+        user_id="demo-reporter",
+        role="reporter",
+        authenticated=True,
+    )
+
+    def upload(service: MediaService, key: str) -> Any:
+        try:
+            return service.upload_content(
+                grant["upload_id"],
+                payload,
+                content_type="image/jpeg",
+                content_length=len(payload),
+                checksum_header=hashlib.sha256(payload).hexdigest(),
+                idempotency_key=key,
+                principal=principal,
+            )
+        except Exception as exc:  # noqa: BLE001 - the result is asserted below
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                upload,
+                (first, second),
+                ("cross-instance-upload-first", "cross-instance-upload-second"),
+            )
+        )
+
+    assert sum(isinstance(result, tuple) and result[0] == 202 for result in results) == 1
+    assert sum(isinstance(result, ConcurrentWriteError) for result in results) == 1
+    stored = database.get("media_upload", grant["upload_id"])
+    assert stored["status"] == "QUARANTINED_PENDING_SCAN"
+    assert (
+        store.read_quarantine(
+            grant["upload_id"],
+            blob_ref=stored["quarantine_blob_ref"],
+        )
+        == payload
+    )
+    assert store.read_quarantine(grant["upload_id"]) == payload
+    assert store.object_count == 1
+
+
+def test_cross_instance_completion_loser_cannot_delete_winner_clean_blob(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _image_bytes()
+    grant = _grant(client, payload, key="cross-instance-complete-grant")
+    assert _upload(client, grant, payload, key="cross-instance-complete-content").status_code == 202
+    database = client.app.state.database
+    store = client.app.state.media_service.blob_store
+    first = client.app.state.media_service
+    second = MediaService(
+        database,
+        blob_store=store,
+        scanner=first.scanner,
+        clock=first.clock,
+    )
+    second.bind_runtime(is_demo=True)
+    commit_barrier = Barrier(2)
+    original_commit = database.commit
+
+    def synchronize_ready_commits(*args: Any, **kwargs: Any) -> Any:
+        events = kwargs.get("events", ())
+        if any(event.event_type == "media.ready_private" for event in events):
+            commit_barrier.wait(timeout=5)
+        return original_commit(*args, **kwargs)
+
+    monkeypatch.setattr(database, "commit", synchronize_ready_commits)
+    principal = Principal(
+        user_id="demo-reporter",
+        role="reporter",
+        authenticated=True,
+    )
+
+    def complete(service: MediaService, key: str) -> Any:
+        try:
+            return service.complete_upload(
+                grant["upload_id"],
+                idempotency_key=key,
+                principal=principal,
+            )
+        except Exception as exc:  # noqa: BLE001 - the result is asserted below
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                complete,
+                (first, second),
+                ("cross-instance-complete-first", "cross-instance-complete-second"),
+            )
+        )
+
+    assert sum(isinstance(result, tuple) and result[0] == 200 for result in results) == 1
+    assert sum(isinstance(result, ConcurrentWriteError) for result in results) == 1
+    stored = database.get("media_upload", grant["upload_id"])
+    assert stored["status"] == "READY_PRIVATE"
+    assert (
+        store.read_clean(
+            grant["upload_id"],
+            blob_ref=stored["clean_blob_ref"],
+        )
+        is not None
+    )
+    assert store.read_clean(grant["upload_id"]) is not None
+    assert store.read_quarantine(grant["upload_id"]) is None
+    assert store.object_count == 1
+
+
 def test_scanner_outage_retains_quarantine_and_blocks_evidence_use() -> None:
     database = Database("sqlite://")
     store = MemoryMediaBlobStore()
@@ -508,6 +676,7 @@ def test_non_demo_pipeline_rejects_before_reading_or_storing_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database = Database("sqlite://")
+    _seed_authority_owned_incident(database)
     application = create_app(
         Settings(env="test", demo_mode=False, database_url="sqlite://"),
         database=database,
@@ -591,11 +760,16 @@ class _ApprovedExternalBlobStore:
         payload: bytes,
         *,
         delete_after: datetime,
-    ) -> None:
-        self.delegate.put_quarantine(upload_id, payload, delete_after=delete_after)
+    ) -> str:
+        return self.delegate.put_quarantine(upload_id, payload, delete_after=delete_after)
 
-    def read_quarantine(self, upload_id: str) -> bytes | None:
-        return self.delegate.read_quarantine(upload_id)
+    def read_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str | None = None,
+    ) -> bytes | None:
+        return self.delegate.read_quarantine(upload_id, blob_ref=blob_ref)
 
     def put_clean(
         self,
@@ -603,17 +777,32 @@ class _ApprovedExternalBlobStore:
         payload: bytes,
         *,
         delete_after: datetime,
+    ) -> str:
+        return self.delegate.put_clean(upload_id, payload, delete_after=delete_after)
+
+    def read_clean(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str | None = None,
+    ) -> bytes | None:
+        return self.delegate.read_clean(upload_id, blob_ref=blob_ref)
+
+    def delete_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
     ) -> None:
-        self.delegate.put_clean(upload_id, payload, delete_after=delete_after)
+        self.delegate.delete_quarantine(upload_id, blob_ref=blob_ref)
 
-    def read_clean(self, upload_id: str) -> bytes | None:
-        return self.delegate.read_clean(upload_id)
-
-    def delete_quarantine(self, upload_id: str) -> None:
-        self.delegate.delete_quarantine(upload_id)
-
-    def delete_clean(self, upload_id: str) -> None:
-        self.delegate.delete_clean(upload_id)
+    def delete_clean(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
+    ) -> None:
+        self.delegate.delete_clean(upload_id, blob_ref=blob_ref)
 
     def cleanup_expired(self, now: datetime) -> int:
         return self.delegate.cleanup_expired(now)
@@ -632,6 +821,7 @@ class _ApprovedExternalScanner:
 
 def test_non_demo_pipeline_accepts_injected_approved_external_adapters() -> None:
     database = Database("sqlite://")
+    _seed_authority_owned_incident(database)
     store = _ApprovedExternalBlobStore()
     media = MediaService(
         database,
@@ -670,6 +860,12 @@ def test_non_demo_pipeline_accepts_injected_approved_external_adapters() -> None
         assert uploaded.status_code == 202
         assert completed.status_code == 200
         assert completed.json()["scanner_status"] == "CLEAN"
+        assert grant["is_simulated"] is False
+        assert uploaded.json()["is_simulated"] is False
+        assert completed.json()["is_simulated"] is False
+        assert grant["retention_status"] == "ACTIVE_AUTHORITY_POLICY"
+        assert uploaded.json()["retention_status"] == "ACTIVE_AUTHORITY_POLICY"
+        assert completed.json()["retention_status"] == "ACTIVE_AUTHORITY_POLICY"
         assert store.read_clean(grant["upload_id"]) is not None
     finally:
         database.engine.dispose()

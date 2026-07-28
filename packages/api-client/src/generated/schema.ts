@@ -577,6 +577,69 @@ export interface components {
          * @enum {string}
          */
         ActionType: "AREA_CAUTION" | "ROAD_CLOSURE" | "SHELTER_CLOSURE" | "EVACUATION_GUIDANCE" | "EVACUATION_INSTRUCTION" | "OFFICIAL_WARNING" | "ALL_CLEAR";
+        /** Alert */
+        Alert: {
+            /** Approval Request Id */
+            approval_request_id?: string | null;
+            /** Approved At */
+            approved_at?: string | null;
+            /** Audience */
+            audience: string;
+            /** Body */
+            body: string;
+            /**
+             * Caution Only
+             * @default false
+             */
+            caution_only: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dispatched At */
+            dispatched_at?: string | null;
+            /** Evidence Version */
+            evidence_version: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Gateway */
+            gateway?: string | null;
+            /** Geometry */
+            geometry?: components["schemas"]["PointGeometry"] | components["schemas"]["LineStringGeometry"] | components["schemas"]["PolygonGeometry"] | null;
+            /** Id */
+            id: string;
+            /** Incident Id */
+            incident_id: string;
+            /**
+             * Is Demo
+             * @default true
+             */
+            is_demo: boolean;
+            /** Model Version */
+            model_version?: string | null;
+            /**
+             * Official
+             * @default false
+             */
+            official: boolean;
+            status: components["schemas"]["AlertStatus"];
+            /** Title */
+            title: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
+        /**
+         * AlertStatus
+         * @enum {string}
+         */
+        AlertStatus: "DRAFT" | "AWAITING_APPROVAL" | "APPROVED" | "DISPATCHING" | "DISPATCHED" | "FAILED" | "CANCELLED";
         /** ApprovalDecision */
         ApprovalDecision: {
             decision: components["schemas"]["ApprovalDecisionType"];
@@ -585,11 +648,90 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ApprovalDecisionResponse */
+        ApprovalDecisionResponse: {
+            alert?: components["schemas"]["Alert"] | null;
+            approval: components["schemas"]["ApprovalRecord"];
+        };
         /**
          * ApprovalDecisionType
          * @enum {string}
          */
         ApprovalDecisionType: "APPROVE" | "MODIFY" | "REJECT";
+        /** ApprovalRecord */
+        ApprovalRecord: {
+            /** Action Payload */
+            action_payload: {
+                [key: string]: unknown;
+            };
+            action_type: components["schemas"]["ActionType"];
+            /** Audience */
+            audience: string;
+            /** Binding */
+            binding: {
+                [key: string]: unknown;
+            };
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decided Role */
+            decided_role?: string | null;
+            /** Decision Authentication */
+            decision_authentication?: {
+                [key: string]: unknown;
+            } | null;
+            /** Decision Reason */
+            decision_reason?: string | null;
+            /** Evidence Version */
+            evidence_version: string;
+            /**
+             * Execution Status
+             * @enum {string}
+             */
+            execution_status: "NOT_STARTED" | "SUCCEEDED" | "FAILED";
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Geometry */
+            geometry?: components["schemas"]["PointGeometry"] | components["schemas"]["LineStringGeometry"] | components["schemas"]["PolygonGeometry"] | null;
+            /** Id */
+            id: string;
+            /** Incident Id */
+            incident_id: string;
+            /**
+             * Is Simulated
+             * @default false
+             */
+            is_simulated: boolean;
+            /** Model Version */
+            model_version: string;
+            /** Payload Digest */
+            payload_digest: string;
+            /** Reason */
+            reason: string;
+            /** Request Authentication */
+            request_authentication?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Requested By */
+            requested_by: string;
+            /** Requested Role */
+            requested_role: string;
+            status: components["schemas"]["ApprovalStatus"];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
         /** ApprovalRequestCreate */
         ApprovalRequestCreate: {
             /** Action Payload */
@@ -610,6 +752,11 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * ApprovalStatus
+         * @enum {string}
+         */
+        ApprovalStatus: "PENDING" | "APPROVED" | "MODIFIED" | "REJECTED" | "EXPIRED" | "CANCELLED";
         /** DemoAdvanceRequest */
         DemoAdvanceRequest: {
             /** Inject Report Ids */
@@ -991,9 +1138,9 @@ export interface components {
         /** ShelterUpdateInput */
         ShelterUpdateInput: {
             /** Access Status */
-            access_status?: string | null;
+            access_status?: ("REACHABLE" | "LIMITED" | "AT_RISK" | "UNKNOWN") | null;
             /** Activation Status */
-            activation_status?: string | null;
+            activation_status?: ("OPEN" | "LIMITED" | "FULL" | "UNKNOWN") | null;
             /** Capacity Remaining */
             capacity_remaining?: number | null;
             /** Expected Version */
@@ -1035,7 +1182,10 @@ export interface operations {
             query: {
                 incident_id: string;
             };
-            header?: never;
+            header?: {
+                "X-Demo-User"?: string | null;
+                "X-Demo-Role"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1123,9 +1273,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ApprovalRecord"];
                 };
             };
             /** @description RFC 9457 problem detail */
@@ -1164,9 +1312,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ApprovalDecisionResponse"];
                 };
             };
             /** @description RFC 9457 problem detail */
@@ -1364,11 +1510,14 @@ export interface operations {
     };
     events_api_v1_events_get: {
         parameters: {
-            query?: {
+            query: {
+                incident_id: string;
                 once?: boolean;
             };
             header?: {
                 "Last-Event-ID"?: string | null;
+                "X-Demo-User"?: string | null;
+                "X-Demo-Role"?: string | null;
             };
             path?: never;
             cookie?: never;

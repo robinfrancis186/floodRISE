@@ -12,7 +12,7 @@ merge-blocking; repository files alone cannot enforce that setting.
 | `pnpm lint` | TypeScript package checks and Ruff for both Python services | No |
 | `pnpm format:check` | Ruff formatting for both Python services | No |
 | `pnpm typecheck` | Every TypeScript workspace package | No |
-| `pnpm build` | Production builds for both React applications and shared packages | No |
+| `pnpm build` | Production builds for both React applications/shared packages plus exact `/ops/` and `/field/` CloudFront artifact checks | No |
 | `pnpm test:e2e` | Deterministic API replay, all-route desktop/mobile sweep, operations journey, offline field journey, and axe smoke scans | Chromium |
 | `pnpm test:a11y` | axe smoke scans for the operations console and 360 px field workflow | Chromium |
 | `pnpm test:security-conformance` | Immutable Actions, dependency overrides, fail-closed environments, service isolation, origin enforcement, retention, and passkey-only infrastructure contracts | No |
@@ -21,8 +21,8 @@ merge-blocking; repository files alone cannot enforce that setting.
 uses a disposable ignored SQLite database. It does not contact production alert
 destinations or require upstream disaster-data providers.
 
-The dated local result and its environment limitations are recorded in
-`docs/RELEASE_VERIFICATION_2026-07-20.md`.
+The current dated local result and its environment limitations are recorded in
+`docs/RELEASE_VERIFICATION_2026-07-28.md`.
 
 ## CI workflow
 
@@ -42,10 +42,10 @@ The dated local result and its environment limitations are recorded in
 `.github/workflows/security.yml` provides CodeQL `security-extended` analysis
 for TypeScript/JavaScript and Python, Gitleaks history scanning, Trivy filesystem
 scanning that fails on fixed high/critical findings, retained SARIF evidence,
-and pull-request dependency review. The private competition repository retains
-CodeQL and Trivy SARIF as workflow artifacts without requiring GitHub Advanced
-Security write access. Dependabot covers npm, both uv projects, the tile
-Dockerfile, Terraform providers, and GitHub Actions.
+and pull-request dependency review. A portable SARIF check fails CodeQL results
+with numeric security severity 7 or higher, or SARIF error level, without
+requiring GitHub Advanced Security write access. Dependabot covers npm, both uv
+projects, the tile Dockerfile, Terraform providers, and GitHub Actions.
 
 ## Checks that remain manual or environment-specific
 

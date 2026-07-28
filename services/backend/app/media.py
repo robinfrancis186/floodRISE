@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from threading import RLock
 from typing import Any, Literal, Protocol
+from uuid import uuid4
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -53,6 +54,13 @@ def _parse_utc(value: str) -> datetime:
 
 
 class MediaBlobStore(Protocol):
+    """Private storage contract with immutable, operation-owned blob references.
+
+    Every put must create a distinct immutable object and return an opaque
+    reference for that exact write. Reads and deletes with a reference must
+    address only that object, even when concurrent writers share an upload ID.
+    """
+
     production_approved: bool
 
     def put_quarantine(
@@ -61,18 +69,38 @@ class MediaBlobStore(Protocol):
         payload: bytes,
         *,
         delete_after: datetime,
-    ) -> None: ...
-    def read_quarantine(self, upload_id: str) -> bytes | None: ...
+    ) -> str: ...
+    def read_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str | None = None,
+    ) -> bytes | None: ...
     def put_clean(
         self,
         upload_id: str,
         payload: bytes,
         *,
         delete_after: datetime,
+    ) -> str: ...
+    def read_clean(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str | None = None,
+    ) -> bytes | None: ...
+    def delete_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
     ) -> None: ...
-    def read_clean(self, upload_id: str) -> bytes | None: ...
-    def delete_quarantine(self, upload_id: str) -> None: ...
-    def delete_clean(self, upload_id: str) -> None: ...
+    def delete_clean(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
+    ) -> None: ...
     def cleanup_expired(self, now: datetime) -> int: ...
     def clear(self) -> None: ...
 
@@ -87,11 +115,19 @@ class MemoryMediaBlobStore:
 
     max_objects: int = DEMO_MEDIA_MAX_OBJECTS
     max_bytes: int = DEMO_MEDIA_MAX_BYTES
-    quarantine: dict[str, bytes] = field(default_factory=dict)
-    clean: dict[str, bytes] = field(default_factory=dict)
+    quarantine: dict[tuple[str, str], bytes] = field(default_factory=dict)
+    clean: dict[tuple[str, str], bytes] = field(default_factory=dict)
     production_approved: bool = field(default=False, init=False)
-    _quarantine_delete_after: dict[str, datetime] = field(default_factory=dict, repr=False)
-    _clean_delete_after: dict[str, datetime] = field(default_factory=dict, repr=False)
+    _quarantine_delete_after: dict[tuple[str, str], datetime] = field(
+        default_factory=dict,
+        repr=False,
+    )
+    _clean_delete_after: dict[tuple[str, str], datetime] = field(
+        default_factory=dict,
+        repr=False,
+    )
+    _latest_quarantine_ref: dict[str, str] = field(default_factory=dict, repr=False)
+    _latest_clean_ref: dict[str, str] = field(default_factory=dict, repr=False)
     _lock: RLock = field(default_factory=RLock, repr=False)
 
     def __post_init__(self) -> None:
@@ -110,24 +146,76 @@ class MemoryMediaBlobStore:
 
     def _put(
         self,
-        bucket: dict[str, bytes],
-        deadlines: dict[str, datetime],
+        bucket: dict[tuple[str, str], bytes],
+        deadlines: dict[tuple[str, str], datetime],
+        latest: dict[str, str],
         upload_id: str,
         payload: bytes,
         *,
         delete_after: datetime,
-    ) -> None:
+    ) -> str:
         stored = bytes(payload)
+        blob_ref = f"blob-{uuid4()}"
+        key = (upload_id, blob_ref)
         with self._lock:
-            existing = bucket.get(upload_id)
-            projected_objects = self.object_count + (0 if existing is not None else 1)
-            projected_bytes = self.byte_count - len(existing or b"") + len(stored)
+            projected_objects = self.object_count + 1
+            projected_bytes = self.byte_count + len(stored)
             if projected_objects > self.max_objects or projected_bytes > self.max_bytes:
                 raise MediaStoreCapacityError(
                     "the deterministic media store has reached its aggregate capacity"
                 )
-            bucket[upload_id] = stored
-            deadlines[upload_id] = delete_after.astimezone(UTC)
+            bucket[key] = stored
+            deadlines[key] = delete_after.astimezone(UTC)
+            latest[upload_id] = blob_ref
+        return blob_ref
+
+    @staticmethod
+    def _previous_ref(
+        bucket: dict[tuple[str, str], bytes],
+        upload_id: str,
+    ) -> str | None:
+        return next(
+            (
+                candidate_ref
+                for candidate_upload_id, candidate_ref in reversed(bucket)
+                if candidate_upload_id == upload_id
+            ),
+            None,
+        )
+
+    def _read(
+        self,
+        bucket: dict[tuple[str, str], bytes],
+        latest: dict[str, str],
+        upload_id: str,
+        *,
+        blob_ref: str | None,
+    ) -> bytes | None:
+        with self._lock:
+            selected_ref = blob_ref or latest.get(upload_id)
+            if selected_ref is None:
+                return None
+            return bucket.get((upload_id, selected_ref))
+
+    def _delete(
+        self,
+        bucket: dict[tuple[str, str], bytes],
+        deadlines: dict[tuple[str, str], datetime],
+        latest: dict[str, str],
+        upload_id: str,
+        *,
+        blob_ref: str,
+    ) -> None:
+        with self._lock:
+            key = (upload_id, blob_ref)
+            bucket.pop(key, None)
+            deadlines.pop(key, None)
+            if latest.get(upload_id) == blob_ref:
+                previous = self._previous_ref(bucket, upload_id)
+                if previous is None:
+                    latest.pop(upload_id, None)
+                else:
+                    latest[upload_id] = previous
 
     def put_quarantine(
         self,
@@ -135,18 +223,28 @@ class MemoryMediaBlobStore:
         payload: bytes,
         *,
         delete_after: datetime,
-    ) -> None:
-        self._put(
+    ) -> str:
+        return self._put(
             self.quarantine,
             self._quarantine_delete_after,
+            self._latest_quarantine_ref,
             upload_id,
             payload,
             delete_after=delete_after,
         )
 
-    def read_quarantine(self, upload_id: str) -> bytes | None:
-        with self._lock:
-            return self.quarantine.get(upload_id)
+    def read_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str | None = None,
+    ) -> bytes | None:
+        return self._read(
+            self.quarantine,
+            self._latest_quarantine_ref,
+            upload_id,
+            blob_ref=blob_ref,
+        )
 
     def put_clean(
         self,
@@ -154,46 +252,84 @@ class MemoryMediaBlobStore:
         payload: bytes,
         *,
         delete_after: datetime,
-    ) -> None:
-        self._put(
+    ) -> str:
+        return self._put(
             self.clean,
             self._clean_delete_after,
+            self._latest_clean_ref,
             upload_id,
             payload,
             delete_after=delete_after,
         )
 
-    def read_clean(self, upload_id: str) -> bytes | None:
-        with self._lock:
-            return self.clean.get(upload_id)
+    def read_clean(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str | None = None,
+    ) -> bytes | None:
+        return self._read(
+            self.clean,
+            self._latest_clean_ref,
+            upload_id,
+            blob_ref=blob_ref,
+        )
 
-    def delete_quarantine(self, upload_id: str) -> None:
-        with self._lock:
-            self.quarantine.pop(upload_id, None)
-            self._quarantine_delete_after.pop(upload_id, None)
+    def delete_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
+    ) -> None:
+        self._delete(
+            self.quarantine,
+            self._quarantine_delete_after,
+            self._latest_quarantine_ref,
+            upload_id,
+            blob_ref=blob_ref,
+        )
 
-    def delete_clean(self, upload_id: str) -> None:
-        with self._lock:
-            self.clean.pop(upload_id, None)
-            self._clean_delete_after.pop(upload_id, None)
+    def delete_clean(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
+    ) -> None:
+        self._delete(
+            self.clean,
+            self._clean_delete_after,
+            self._latest_clean_ref,
+            upload_id,
+            blob_ref=blob_ref,
+        )
 
     def cleanup_expired(self, now: datetime) -> int:
         current = now.astimezone(UTC)
         removed = 0
         with self._lock:
-            for bucket, deadlines in (
-                (self.quarantine, self._quarantine_delete_after),
-                (self.clean, self._clean_delete_after),
+            for bucket, deadlines, latest in (
+                (
+                    self.quarantine,
+                    self._quarantine_delete_after,
+                    self._latest_quarantine_ref,
+                ),
+                (self.clean, self._clean_delete_after, self._latest_clean_ref),
             ):
                 expired = [
-                    upload_id
-                    for upload_id, delete_after in deadlines.items()
-                    if delete_after <= current
+                    key for key, delete_after in deadlines.items() if delete_after <= current
                 ]
-                for upload_id in expired:
-                    bucket.pop(upload_id, None)
-                    deadlines.pop(upload_id, None)
+                affected_upload_ids: set[str] = set()
+                for key in expired:
+                    affected_upload_ids.add(key[0])
+                    bucket.pop(key, None)
+                    deadlines.pop(key, None)
                     removed += 1
+                for upload_id in affected_upload_ids:
+                    previous = self._previous_ref(bucket, upload_id)
+                    if previous is None:
+                        latest.pop(upload_id, None)
+                    else:
+                        latest[upload_id] = previous
         return removed
 
     def clear(self) -> None:
@@ -202,6 +338,8 @@ class MemoryMediaBlobStore:
             self.clean.clear()
             self._quarantine_delete_after.clear()
             self._clean_delete_after.clear()
+            self._latest_quarantine_ref.clear()
+            self._latest_clean_ref.clear()
 
 
 ScannerResult = Literal["DEMO_CLEAN", "CLEAN", "MALICIOUS", "UNAVAILABLE"]
@@ -403,6 +541,16 @@ class MediaService:
         return record
 
     @staticmethod
+    def _required_blob_ref(record: dict[str, Any], field_name: str) -> str:
+        blob_ref = record.get(field_name)
+        if not isinstance(blob_ref, str) or not blob_ref:
+            raise ConflictError(
+                "Private evidence storage reference is unavailable",
+                code="MEDIA_BLOB_REFERENCE_MISSING",
+            )
+        return blob_ref
+
+    @staticmethod
     def _idempotency_scope(operation: str, *identifiers: str) -> str:
         digest = hashlib.sha256(":".join(identifiers).encode()).hexdigest()[:24]
         return f"{operation}:{digest}"
@@ -470,10 +618,12 @@ class MediaService:
                     code="IDEMPOTENCY_KEY_REUSED",
                 )
             return replay
-        if not self.database.get("incident", body.incident_id):
+        incident = self.database.get("incident", body.incident_id)
+        if not incident:
             raise NotFoundError("incident", body.incident_id)
 
         now = self._now()
+        is_simulated = bool(incident.get("is_simulated", self.runtime_is_demo))
         upload_digest = hashlib.sha256(
             f"{principal.user_id}:{idempotency_key}:{body.sha256.lower()}".encode()
         ).hexdigest()[:20]
@@ -498,6 +648,8 @@ class MediaService:
             "independence_hash": None,
             "duplicate_of_upload_id": None,
             "perceptual_distance": None,
+            "quarantine_blob_ref": None,
+            "clean_blob_ref": None,
             "status": "AWAITING_UPLOAD",
             "scanner_status": "NOT_RUN",
             "failure_code": None,
@@ -510,9 +662,11 @@ class MediaService:
             "quarantine_delete_after": _iso(now + timedelta(days=7)),
             "evidence_delete_after": _iso(now + timedelta(days=30)),
             "identity_link_delete_after": _iso(now + timedelta(days=365)),
-            "retention_status": "ACTIVE_DEMO_POLICY",
+            "retention_status": (
+                "ACTIVE_DEMO_POLICY" if is_simulated else "ACTIVE_AUTHORITY_POLICY"
+            ),
             "attached_report_ids": [],
-            "is_simulated": True,
+            "is_simulated": is_simulated,
             "version": 1,
         }
         response = self.public_metadata(record)
@@ -649,7 +803,7 @@ class MediaService:
                 )
 
             try:
-                self.blob_store.put_quarantine(
+                quarantine_blob_ref = self.blob_store.put_quarantine(
                     upload_id,
                     payload,
                     delete_after=_parse_utc(record["quarantine_delete_after"]),
@@ -668,6 +822,7 @@ class MediaService:
                 **record,
                 "actual_size_bytes": len(payload),
                 "actual_sha256": computed,
+                "quarantine_blob_ref": quarantine_blob_ref,
                 "status": "QUARANTINED_PENDING_SCAN",
                 "updated_at": _iso(self._now()),
                 "version": int(record["version"]) + 1,
@@ -691,7 +846,10 @@ class MediaService:
                     idempotency=(idempotency_scope, idempotency_key, 202, response),
                 )
             except Exception:
-                self.blob_store.delete_quarantine(upload_id)
+                self.blob_store.delete_quarantine(
+                    upload_id,
+                    blob_ref=quarantine_blob_ref,
+                )
                 raise
             return 202, response
 
@@ -735,7 +893,11 @@ class MediaService:
                     "Media must be uploaded into quarantine before completion",
                     code="MEDIA_NOT_QUARANTINED",
                 )
-            payload = self.blob_store.read_quarantine(upload_id)
+            quarantine_blob_ref = self._required_blob_ref(record, "quarantine_blob_ref")
+            payload = self.blob_store.read_quarantine(
+                upload_id,
+                blob_ref=quarantine_blob_ref,
+            )
             if payload is None:
                 raise ConflictError(
                     "Private quarantine bytes are unavailable",
@@ -784,7 +946,10 @@ class MediaService:
                     idempotency_scope=idempotency_scope,
                     idempotency_key=idempotency_key,
                 )
-                self.blob_store.delete_quarantine(upload_id)
+                self.blob_store.delete_quarantine(
+                    upload_id,
+                    blob_ref=quarantine_blob_ref,
+                )
                 raise _image_error(
                     "MEDIA_MALWARE_DETECTED",
                     detail,
@@ -802,7 +967,10 @@ class MediaService:
                     idempotency_scope=idempotency_scope,
                     idempotency_key=idempotency_key,
                 )
-                self.blob_store.delete_quarantine(upload_id)
+                self.blob_store.delete_quarantine(
+                    upload_id,
+                    blob_ref=quarantine_blob_ref,
+                )
                 raise
 
             duplicate: dict[str, Any] | None = None
@@ -835,7 +1003,7 @@ class MediaService:
 
             clean_payload = processed.pop("payload")
             try:
-                self.blob_store.put_clean(
+                clean_blob_ref = self.blob_store.put_clean(
                     upload_id,
                     clean_payload,
                     delete_after=_parse_utc(record["evidence_delete_after"]),
@@ -864,6 +1032,7 @@ class MediaService:
             updated = {
                 **record,
                 **processed,
+                "clean_blob_ref": clean_blob_ref,
                 "independence_hash": independence_hash,
                 "duplicate_of_upload_id": duplicate.get("upload_id") if duplicate else None,
                 "perceptual_distance": duplicate_distance,
@@ -898,9 +1067,15 @@ class MediaService:
                     idempotency=(idempotency_scope, idempotency_key, 200, response),
                 )
             except Exception:
-                self.blob_store.delete_clean(upload_id)
+                self.blob_store.delete_clean(
+                    upload_id,
+                    blob_ref=clean_blob_ref,
+                )
                 raise
-            self.blob_store.delete_quarantine(upload_id)
+            self.blob_store.delete_quarantine(
+                upload_id,
+                blob_ref=quarantine_blob_ref,
+            )
             return 200, response, {}
 
     def _reject(

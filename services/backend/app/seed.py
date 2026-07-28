@@ -40,17 +40,22 @@ def _pending_approval(
     evidence_version: str,
     model_version: str,
     requested_by: str,
+    action_target: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build a contract-faithful, versioned approval for the judging replay."""
 
+    action_payload = {
+        "presentation_id": presentation_id,
+        "title": title,
+        "body": body,
+    }
+    if action_target:
+        target_kind, target_id = action_target
+        action_payload[f"{target_kind}_id"] = target_id
     request = {
         "incident_id": incident_id,
         "action_type": action_type,
-        "action_payload": {
-            "presentation_id": presentation_id,
-            "title": title,
-            "body": body,
-        },
+        "action_payload": action_payload,
         "audience": audience,
         "geometry": {"type": "Point", "coordinates": [76.3517000, 10.1065000]},
         "evidence_version": evidence_version,
@@ -443,6 +448,7 @@ def build_seed_bundle(
             evidence_version=evidence_version,
             model_version=model_version,
             requested_by="demo-requester-road-closure",
+            action_target=("road", "road-aluva-main"),
         ),
         _pending_approval(
             incident_id=incident_id,
@@ -469,6 +475,23 @@ def build_seed_bundle(
             "model_version": model_version,
             "incident_id": incident_id,
         }
+        target_kind = (
+            "road"
+            if approval["action_type"] == "ROAD_CLOSURE"
+            else "shelter"
+            if approval["action_type"] == "SHELTER_CLOSURE"
+            else None
+        )
+        if target_kind:
+            target_id = approval["action_payload"][f"{target_kind}_id"]
+            collection = roads if target_kind == "road" else shelters
+            target = next(item for item in collection if item["id"] == target_id)
+            approval["binding"]["action_target"] = {
+                "kind": target_kind,
+                "id": target_id,
+                "record_version": target["version"],
+                "incident_id": incident_id,
+            }
 
     timeline = _read_json(fixture_root / "timeline.json", [])
     fixture_reports = _read_json(fixture_root / "reports.json", [])
@@ -534,10 +557,16 @@ def seed_database(database: Database, *, is_demo: bool) -> None:
 
     database.initialize()
     stored_demo_mode = database.get_state("demo_mode")
+    incidents = database.list("incident")
     simulated_incidents = [
         incident
-        for incident in database.list("incident")
+        for incident in incidents
         if incident.get("is_demo") is True or incident.get("is_simulated") is True
+    ]
+    authority_owned_incidents = [
+        incident
+        for incident in incidents
+        if incident.get("is_demo") is not True or incident.get("is_simulated") is False
     ]
     if not is_demo:
         if stored_demo_mode is True or simulated_incidents:
@@ -546,7 +575,7 @@ def seed_database(database: Database, *, is_demo: bool) -> None:
             )
         return
 
-    if stored_demo_mode is False and not database.is_empty():
+    if authority_owned_incidents or (stored_demo_mode is False and not database.is_empty()):
         raise RuntimeError("A demo runtime cannot open authority-owned live storage")
     persisted_demo = (
         database.get_state("scenario_id"),

@@ -79,12 +79,23 @@ export type FloodMapSelection = {
   properties: Readonly<MapFeatureProperties>;
 };
 
+export type ResilienceLayerVisibility = {
+  recurringFlooding: boolean;
+  drainageIssues: boolean;
+  roadIsolation: boolean;
+  shelterGaps: boolean;
+};
+
 export type FloodMapProps = {
   variant: FloodMapVariant;
   horizon?: MapHorizon;
   onHorizonChange?: (horizon: MapHorizon) => void;
   selectedFeatureId?: string | null;
   onFeatureSelect?: (selection: FloodMapSelection) => void;
+  visibleFeatureIds?: readonly string[];
+  resilienceLayers?: ResilienceLayerVisibility;
+  /** Shows the packaged demo route fixture on operations maps. Field maps never render it. */
+  showRouteGeometry?: boolean;
   className?: string;
   height?: CSSProperties["height"];
   showSummary?: boolean;

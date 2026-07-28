@@ -51,6 +51,8 @@ test("evacuation approval uses the seeded request and a distinct authorized revi
 
   await page.goto("http://127.0.0.1:55173/evacuation", { waitUntil: "domcontentloaded" });
   await expect(page.getByText("API synced", { exact: true })).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByText(/Route geometry is not displayed.*do not infer a path/i)).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Map legend" }).getByText("Lower-risk route", { exact: true })).toHaveCount(0);
   const reviewButton = page.getByRole("button", { name: "Review guidance approval" });
   await expect(reviewButton).toBeEnabled();
   await page.getByLabel("Active role").selectOption("Verifier");
@@ -71,5 +73,43 @@ test("evacuation approval uses the seeded request and a distinct authorized revi
   await expect(page.getByText(/server recorded the decision and bound versions/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Guidance approved" })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath("evacuation-approval.png"), fullPage: false });
+  expect(pageErrors).toEqual([]);
+});
+
+test("operations controls filter, export, navigate, and preserve authority boundaries", async ({ page }) => {
+  await page.setViewportSize({ width: 1570, height: 1000 });
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.goto("http://127.0.0.1:55173/incidents", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Create incident unavailable in demo" })).toBeDisabled();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export incident brief" }).click();
+  expect((await download).suggestedFilename()).toContain("inc-kerala-flood-2023-demo-brief-demo.txt");
+  await expect(page.getByText(/Demo brief downloaded.*not an official public warning/i)).toBeVisible();
+  await page.getByRole("button", { name: "Open command workspace" }).click();
+  await expect(page).toHaveURL("http://127.0.0.1:55173/");
+
+  await page.getByRole("button", { name: "FloodSignal" }).click();
+  await page.getByLabel("Ward").selectOption("Ward 121");
+  await expect(page.getByRole("complementary", { name: /Kadungalloor evidence review/ })).toBeVisible();
+  await page.getByLabel("Freshness").selectOption("5m");
+  await expect(page.getByText("No actionable cluster")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Verify flooding" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Resilience Audit" }).click();
+  await page.getByLabel("Event range").selectOption("2026");
+  await page.getByLabel("Asset type").selectOption("Road");
+  await expect(page.getByText("No priorities match")).toBeVisible();
+  await page.getByLabel("Asset type").selectOption("All");
+  await page.getByLabel("Recurring flooding").uncheck();
+  await expect(page.getByLabel("Recurring flooding")).not.toBeChecked();
+  await page.getByRole("button", { name: "Add engineer note" }).click();
+  const noteDialog = page.getByRole("dialog", { name: "Add engineer note" });
+  await noteDialog.getByLabel(/Engineer note/).fill("Inspect the upstream grate before the next monsoon drill.");
+  await noteDialog.getByRole("button", { name: "Save local note" }).click();
+  await expect(page.getByText("Inspect the upstream grate before the next monsoon drill.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request authority review" })).toBeDisabled();
+
   expect(pageErrors).toEqual([]);
 });

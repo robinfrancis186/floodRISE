@@ -55,19 +55,19 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
       <DemoBanner />
       <header className="topbar">
         <div className="topbar-brand"><FloodRiseLogo /><span className="topbar-divider" aria-hidden /><h1>{viewConfig[view].title}</h1></div>
-        <button className="incident-select" type="button" aria-label="Selected incident: Ernakulam Kerala extreme-rainfall replay">
-          Ernakulam <span aria-hidden>•</span> Kerala extreme-rainfall <span aria-hidden>⌄</span>
-        </button>
+        <div className="incident-select" role="status" aria-label="Selected incident: Ernakulam Kerala extreme-rainfall replay">
+          Ernakulam <span aria-hidden>•</span> Kerala extreme-rainfall
+        </div>
         <div className="topbar-sync" aria-live="polite">
           <span>Scenario {time} IST</span><span className={liveUpdatesConnected ? "sync-dot connected" : "sync-dot"} aria-hidden />
           <span>{syncLabel}</span>
         </div>
-        <label className="global-search">
+        <label className="global-search" title="Cross-incident search is unavailable in the deterministic demo.">
           <Search aria-hidden />
-          <span className="sr-only">Search locations, assets, or identifiers</span>
-          <input type="search" placeholder="Search locations, assets, IDs…" />
+          <span className="sr-only">Search unavailable in demo mode</span>
+          <input type="search" disabled aria-label="Search unavailable in demo mode" placeholder="Search unavailable in demo" />
         </label>
-        <Button className="notification-button" variant="ghost" size="icon" aria-label="7 unread notifications"><Bell /><span>7</span></Button>
+        <Button className="notification-button" variant="ghost" size="icon" disabled title="Notification delivery is unavailable in this deterministic demo." aria-label="Notifications unavailable in demo"><Bell /></Button>
         <label className="role-select">
           <span className="sr-only">Active role</span>
           <Select value={role} onChange={(event) => setRole(event.target.value as StaffRole)}>{roles.map((item) => <option key={item}>{item}</option>)}</Select>
@@ -95,7 +95,7 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
         <StatusItem icon={Waves} label="CWC river feed" value="Periyar River: Rising" />
         <StatusItem icon={Gauge} label="Simulation run" value={snapshot.modelVersion} />
         <StatusItem icon={ClipboardList} label="Pending reports" value={`${snapshot.signals.filter((signal) => signal.decision === "UNREVIEWED").length} clusters`} />
-        <StatusItem icon={HeartHandshake} label="Shelters" value={`${snapshot.shelters.filter((shelter) => shelter.status === "OPEN").length} confirmed open`} tone="success" />
+        <StatusItem icon={HeartHandshake} label="Shelters" value={`${snapshot.shelters.filter((shelter) => shelter.status === "OPEN").length} records open`} tone="success" />
         <StatusItem icon={CheckCircle2} label="Offline packets" value="3,142 records ready" tone="success" />
         <button type="button" className="rail-refresh" onClick={advanceDemo} disabled={role !== "Incident commander" && role !== "Resilience engineer"}><RefreshCcw aria-hidden />Refresh</button>
       </footer>

@@ -1,7 +1,7 @@
 import { FloodMap } from "@floodrise/map";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle, Badge, Button } from "@floodrise/ui";
-import { Clock3, MapPin, Navigation, Route, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Clock3, MapPin, Navigation, Route, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { fetchRoutes } from "../lib/api";
 import { formatDateTime } from "../lib/format";
@@ -21,6 +21,7 @@ export function LowerRiskRoutePage() {
     label: "Aluva–Paravur Road"
   });
   const [locating, setLocating] = useState(false);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const originIsEligible = isLiveEligibleLocationAccuracy(origin.accuracy_m);
   const routes = useQuery({
     queryKey: ["field-routes", origin.latitude, origin.longitude, origin.accuracy_m],
@@ -28,6 +29,9 @@ export function LowerRiskRoutePage() {
     enabled: isOnline && originIsEligible
   });
   const guidanceAvailable = originIsEligible && routes.data?.availability === "CURRENT";
+  const selectedRoute = guidanceAvailable
+    ? routes.data?.alternatives.find((route) => route.id === selectedRouteId) ?? null
+    : null;
 
   function useCurrentOrigin() {
     if (!navigator.geolocation || !isOnline) return;
@@ -35,6 +39,7 @@ export function LowerRiskRoutePage() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         queryClient.removeQueries({ queryKey: ["field-routes"] });
+        setSelectedRouteId(null);
         setOrigin({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
@@ -58,15 +63,22 @@ export function LowerRiskRoutePage() {
             height="clamp(260px, 37vh, 370px)"
             showSummary={false}
             interactive={isOnline}
-            ariaLabel="Map of lower-risk route alternatives to nearby shelters"
+            showRouteGeometry={false}
+            ariaLabel="Non-navigational demo context map showing flood estimates, road risk, and nearby shelters; route geometry is not shown"
           />
         ) : (
           <div className="route-map-paused" role="status">
             <MapPin aria-hidden />
             <strong>Route map paused</strong>
-            <span>Improve the device location fix before showing route geometry.</span>
+            <span>Improve the device location fix before showing flood and shelter context.</span>
           </div>
         )}
+        {originIsEligible ? (
+          <div className="route-map-context-note" role="note" aria-label="Route map safety boundary">
+            <Route aria-hidden />
+            <span><strong>Context only</strong>Route geometry is not provided by the recommendation API and is not shown.</span>
+          </div>
+        ) : null}
       </section>
       <div className="page-content route-content">
         <div className="page-title-row">
@@ -133,27 +145,65 @@ export function LowerRiskRoutePage() {
               <span><Clock3 aria-hidden />Demo estimate</span>
             </div>
             <div className="route-list" aria-busy={routes.isLoading}>
-              {(routes.data?.alternatives ?? []).map((route, index) => (
-                <article className="route-option" key={route.id} data-selected={index === 0 || undefined}>
-                  <div className="route-option-head">
-                    <span className="route-number"><Route aria-hidden />{index + 1}</span>
-                    <Badge variant={route.risk === "LOWER" ? "success" : "warning"}>
-                      {route.risk === "LOWER" ? "Lower risk" : "Elevated uncertainty"}
-                    </Badge>
-                  </div>
-                  <h3>{route.label}</h3>
-                  <p className="route-destination">To {route.shelter}</p>
-                  <div className="route-metrics">
-                    <strong>{route.duration_min} min</strong><span>{route.distance_km.toFixed(1)} km</span>
-                  </div>
-                  <ul>{route.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-                  <p className="route-validity">Estimate valid until {formatDateTime(route.valid_until)}</p>
-                  <Button type="button" variant={index === 0 ? "default" : "outline"} className="route-action">
-                    Review this route
-                  </Button>
-                </article>
-              ))}
+              {(routes.data?.alternatives ?? []).map((route, index) => {
+                const isSelected = route.id === selectedRouteId;
+                return (
+                  <article className="route-option" key={route.id} data-selected={isSelected || undefined}>
+                    <div className="route-option-head">
+                      <span className="route-number"><Route aria-hidden />{index + 1}</span>
+                      <Badge variant={route.risk === "LOWER" ? "success" : "warning"}>
+                        {route.risk === "LOWER" ? "Lower risk" : "Elevated uncertainty"}
+                      </Badge>
+                    </div>
+                    <h3>{route.label}</h3>
+                    <p className="route-destination">To {route.shelter}</p>
+                    <div className="route-metrics">
+                      <strong>{route.duration_min} min</strong><span>{route.distance_km.toFixed(1)} km</span>
+                    </div>
+                    <ul>{route.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                    <p className="route-validity">Estimate valid until {formatDateTime(route.valid_until)}</p>
+                    <Button
+                      type="button"
+                      variant={isSelected ? "default" : "outline"}
+                      className="route-action"
+                      aria-label={`Review ${route.label} to ${route.shelter}`}
+                      aria-pressed={isSelected}
+                      onClick={() => setSelectedRouteId((current) => current === route.id ? null : route.id)}
+                    >
+                      {isSelected ? <CheckCircle2 aria-hidden /> : null}
+                      {isSelected ? "Selected for review" : "Review this route"}
+                    </Button>
+                  </article>
+                );
+              })}
             </div>
+            {selectedRoute ? (
+              <section
+                className="route-review-panel"
+                role="status"
+                aria-label="Selected route details"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                <CheckCircle2 aria-hidden />
+                <div>
+                  <span className="route-review-kicker">Selected for review</span>
+                  <h3>{selectedRoute.label}</h3>
+                  <p className="route-review-summary">
+                    {selectedRoute.duration_min} min · {selectedRoute.distance_km.toFixed(1)} km to{" "}
+                    {selectedRoute.shelter}
+                  </p>
+                  <dl className="route-review-versions">
+                    <div><dt>Valid until</dt><dd>{formatDateTime(selectedRoute.valid_until)}</dd></div>
+                    <div><dt>Model</dt><dd>{selectedRoute.model_version}</dd></div>
+                    <div><dt>Evidence</dt><dd>{selectedRoute.evidence_version}</dd></div>
+                  </dl>
+                  <p className="route-review-boundary">
+                    Review only. This does not start navigation or guarantee that the route is safe.
+                  </p>
+                </div>
+              </section>
+            ) : null}
           </section>
         ) : (
           <div className="route-disabled-state" aria-disabled="true">

@@ -22,11 +22,16 @@ export function SheltersView() {
     if (shelter) setSelectedId(shelter.id);
   };
   return <div className="page-workspace shelters-page">
-    <ViewHeader title="Shelter Operations" description="Capacity and route access are source-timestamped; unknown conditions remain explicitly unknown." actions={<StatusPill tone="success">{snapshot.shelters.filter((shelter) => shelter.status === "OPEN").length} confirmed open</StatusPill>} />
+    <ViewHeader title="Shelter Operations" description="Capacity and route access are source-timestamped; unknown conditions remain explicitly unknown." actions={<StatusPill tone="success">{snapshot.shelters.filter((shelter) => shelter.status === "OPEN").length} records open</StatusPill>} />
     <div className="shelter-layout">
       <section className="table-panel shelter-table"><div className="panel-heading"><h3>Kerala shelters</h3><span>{snapshot.shelters.length} in incident area</span></div>
         <Table><TableHeader><TableRow><TableHead>Shelter</TableHead><TableHead>Status</TableHead><TableHead>Occupancy</TableHead><TableHead>Access</TableHead><TableHead>Freshness</TableHead></TableRow></TableHeader>
-          <TableBody>{snapshot.shelters.map((shelter) => <TableRow key={shelter.id} data-state={shelter.id === selected.id ? "selected" : undefined} onClick={() => setSelectedId(shelter.id)}>
+          <TableBody>{snapshot.shelters.map((shelter) => <TableRow key={shelter.id} data-state={shelter.id === selected.id ? "selected" : undefined} onClick={() => setSelectedId(shelter.id)} tabIndex={0} onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setSelectedId(shelter.id);
+            }
+          }}>
             <TableCell><strong>{shelter.name}</strong><small className="cell-subtitle">{shelter.ward} · {shelter.id}</small></TableCell><TableCell><StatusPill tone={shelter.status === "OPEN" ? "success" : shelter.status === "LIMITED" ? "warning" : "danger"}>{shelter.status}</StatusPill></TableCell><TableCell>{shelter.occupancy} / {shelter.capacity}</TableCell><TableCell>{shelter.access}</TableCell><TableCell>{shelter.updatedMinutesAgo} min ago</TableCell>
           </TableRow>)}</TableBody>
         </Table>

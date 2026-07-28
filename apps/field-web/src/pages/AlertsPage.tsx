@@ -26,8 +26,18 @@ export function AlertsPage() {
         </Alert>
       ) : null}
 
+      {alerts.data?.source === "DEMO_FALLBACK" ? (
+        <Alert variant="warning" className="alert-source-warning" role="alert">
+          <ShieldAlert aria-hidden className="alert-leading-icon" />
+          <div>
+            <AlertTitle>Alert API unavailable</AlertTitle>
+            <AlertDescription>{alerts.data.message}</AlertDescription>
+          </div>
+        </Alert>
+      ) : null}
+
       <div className="alert-list" aria-live="polite" aria-busy={alerts.isLoading}>
-        {(alerts.data ?? []).map((item) => {
+        {(alerts.data?.items ?? []).map((item) => {
           const Icon = item.kind === "OFFICIAL" ? ShieldAlert : item.kind === "COMMUNITY_CAUTION" ? UsersRound : Info;
           return (
             <article key={item.id} className={`alert-item alert-${item.severity.toLowerCase()}`}>
@@ -35,7 +45,9 @@ export function AlertsPage() {
               <div className="alert-item-body">
                 <div className="alert-item-meta">
                   <Badge variant={item.kind === "OFFICIAL" ? "destructive" : item.kind === "COMMUNITY_CAUTION" ? "warning" : "secondary"}>
-                    {item.kind === "OFFICIAL" ? "Official demo" : item.kind === "COMMUNITY_CAUTION" ? "Community caution" : "System"}
+                    {item.kind === "OFFICIAL"
+                      ? item.isSimulated ? "Official demo" : "Official"
+                      : item.kind === "COMMUNITY_CAUTION" ? "Community caution" : "System"}
                   </Badge>
                   <span><Clock3 aria-hidden />{formatDateTime(item.issuedAt)}</span>
                 </div>
@@ -49,7 +61,7 @@ export function AlertsPage() {
             </article>
           );
         })}
-        {!alerts.isLoading && (alerts.data?.length ?? 0) === 0 ? (
+        {!alerts.isLoading && (alerts.data?.items.length ?? 0) === 0 ? (
           <div className="alerts-empty-state" role="status">
             <BellOff aria-hidden />
             <strong>No current alerts for the demo scenario time</strong>

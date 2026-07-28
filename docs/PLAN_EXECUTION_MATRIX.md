@@ -33,8 +33,8 @@ is removed.
 | Deterministic nine-member rapid-impact model and four horizons | Executed | `app/intelligence.py` with deterministic numerical tests. |
 | Bounded same-catchment assimilation | Executed | 500 m decay, +/-0.5 m cap and acceptance tests. |
 | Threshold-aware lower-risk routing, bridge handling and no-route staging | Executed | `app/routing.py` and deterministic routing tests. |
-| Server-enforced roles and two-person approvals | Executed | OIDC/demo principals, role checks, optimistic concurrency, expiry and distinct-reviewer browser journey. |
-| Hash-chained audit, transactional outbox and replayable SSE | Executed | SQLAlchemy repository, audit export, Last-Event-ID tests and client invalidation handling. |
+| Server-enforced roles and two-person approvals | Executed | OIDC/demo principals, staff phishing resistance, immutable evidence/model binding, cross-process compare-and-swap, expiry and distinct-reviewer browser journey. |
+| Hash-chained audit, transactional outbox and replayable SSE | Executed | Serialized audit head, SQLAlchemy repository, audit export, authenticated incident-scoped replay, admission caps and client invalidation handling. |
 | Resilience audit with cautious recommendations | Executed | API seed/domain plus Operations Resilience Audit view and route sweep. |
 
 ## Platform and delivery
@@ -62,5 +62,5 @@ is removed.
 | Desktop/mobile cross-app journeys | Executed | Ten Playwright journeys cover routes, reports, media, reset, corroboration and approval. |
 | WCAG automated gate | Executed | axe serious/critical WCAG A/AA/2.2 AA scans. |
 | Three reset rehearsals and degraded-network journey | Executed | Dated release evidence plus deterministic reset and offline browser tests. |
-| Hosted CodeQL, Trivy, secret and dependency gates | Executed | GitHub security workflow on the exact release commit. |
+| Hosted CodeQL, Trivy, secret and dependency gates | Configured; release run pending | Immutable GitHub workflows are checked in. The exact pushed release commit must pass them before publication. |
 | Hydraulic benchmark tolerances, VoiceOver device review, ZAP, k6, backup restore and AWS smoke | External activation | Require accepted reference data or the authorized judging/deployment environment; deterministic checks and repository configuration are not substituted for that evidence. |

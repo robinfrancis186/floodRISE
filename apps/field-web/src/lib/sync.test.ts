@@ -88,4 +88,37 @@ describe("offline queue synchronization", () => {
       draft.client_report_id
     );
   });
+
+  it("replays an imprecise offline fix unchanged for authoritative human review", async () => {
+    const reviewDraft: OfflineReportDraft = {
+      ...draft,
+      client_report_id: "sync-report-location-review-0002",
+      location: { ...draft.location, accuracy_m: 850 }
+    };
+    const reviewReceipt: ReportReceipt = {
+      ...receipt,
+      id: "report-authoritative-review-0002",
+      clientReportId: reviewDraft.client_report_id,
+      reference: "report-authoritative-review-0002",
+      status: "UNDER_REVIEW",
+      message: "Location accuracy exceeds 100 m; retained for human review."
+    };
+    await enqueueReport(reviewDraft);
+    vi.mocked(submitReport).mockResolvedValue(reviewReceipt);
+
+    await expect(syncQueuedReports()).resolves.toMatchObject({
+      synced: 1,
+      failed: 0,
+      needsAction: 0
+    });
+
+    expect(submitReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client_report_id: reviewDraft.client_report_id,
+        location: expect.objectContaining({ accuracy_m: 850 })
+      })
+    );
+    expect(await fieldDb.queue.get(reviewDraft.client_report_id)).toBeUndefined();
+    expect(await fieldDb.receipts.get(reviewReceipt.id)).toEqual(reviewReceipt);
+  });
 });

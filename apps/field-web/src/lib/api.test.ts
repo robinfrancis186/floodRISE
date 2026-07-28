@@ -146,6 +146,44 @@ describe("private evidence upload", () => {
     expect(reportBody.media_upload_ids).toEqual([]);
   });
 
+  it("preserves a poor-accuracy fix so the server can retain it for human review", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      report: { id: "report-review-location" },
+      receipt: {
+        report_id: "report-review-location",
+        client_report_id: "report-client-media-0001",
+        accepted_at: DEMO_SCENARIO_TIME,
+        disposition: "INVALID",
+        sync_message: "Location accuracy exceeds 100 m; retained for human review."
+      }
+    }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    const draft = reportDraft(false);
+    draft.location.accuracy_m = 850;
+
+    await expect(submitReport(draft)).resolves.toMatchObject({
+      id: "report-review-location",
+      status: "UNDER_REVIEW"
+    });
+
+    const reportBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      location: { accuracy_m: number };
+    };
+    expect(reportBody.location.accuracy_m).toBe(850);
+  });
+
+  it("rejects impossible accuracy values before contacting the report API", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const draft = reportDraft(false);
+    draft.location.accuracy_m = 10_000.01;
+
+    await expect(submitReport(draft)).rejects.toMatchObject({ name: "ZodError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("never turns a report API outage into a synthetic receipt", async () => {
     Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
@@ -275,8 +313,13 @@ describe("deterministic field freshness", () => {
 
     const alerts = await fetchAlerts();
 
-    expect(alerts).toHaveLength(demoAlerts.length);
-    expect(alerts.every((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME))).toBe(true);
+    expect(alerts).toMatchObject({
+      source: "DEMO_FALLBACK",
+      referenceTime: DEMO_SCENARIO_TIME,
+      message: expect.stringMatching(/could not be reached.*deterministic DEMO DATA.*not a current alert feed/i)
+    });
+    expect(alerts.items).toHaveLength(demoAlerts.length);
+    expect(alerts.items.every((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME))).toBe(true);
   });
 
   it("normalizes authoritative API alerts before rendering the field feed", async () => {
@@ -298,17 +341,22 @@ describe("deterministic field freshness", () => {
 
     const alerts = await fetchAlerts();
 
-    expect(alerts).toEqual([{
-      id: "caution-signal-1-v1",
-      kind: "COMMUNITY_CAUTION",
-      title: "Community-corroborated flooding nearby",
-      description: "Corroborated by 4 independent recent reports; not an official confirmation.",
-      area: "Opted-in users inside the hazard footprint plus 1 km",
-      issuedAt: DEMO_SCENARIO_TIME,
-      validUntil: "2023-12-04T14:40:00.000Z",
-      severity: "CAUTION",
-      isSimulated: true
-    }]);
+    expect(alerts).toEqual({
+      items: [{
+        id: "caution-signal-1-v1",
+        kind: "COMMUNITY_CAUTION",
+        title: "Community-corroborated flooding nearby",
+        description: "Corroborated by 4 independent recent reports; not an official confirmation.",
+        area: "Opted-in users inside the hazard footprint plus 1 km",
+        issuedAt: DEMO_SCENARIO_TIME,
+        validUntil: "2023-12-04T14:40:00.000Z",
+        severity: "CAUTION",
+        isSimulated: true
+      }],
+      source: "API",
+      referenceTime: DEMO_SCENARIO_TIME,
+      message: "Current alerts loaded from the incident API."
+    });
   });
 
   it("withholds expired and not-yet-issued authoritative alerts at the scenario reference time", async () => {
@@ -356,6 +404,7 @@ describe("deterministic field freshness", () => {
 
     const alerts = await fetchAlerts();
 
-    expect(alerts.map((alert) => alert.id)).toEqual(["active-alert"]);
+    expect(alerts.source).toBe("API");
+    expect(alerts.items.map((alert) => alert.id)).toEqual(["active-alert"]);
   });
 });

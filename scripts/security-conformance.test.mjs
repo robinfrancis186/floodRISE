@@ -36,6 +36,21 @@ test("all GitHub Actions are pinned to immutable full commit SHAs", async () => 
   }
 });
 
+test("CodeQL SARIF findings are enforced without requiring private-repository GHAS", async () => {
+  const workflow = await text(".github/workflows/security.yml");
+
+  includesEvery(
+    workflow,
+    [
+      "upload: never",
+      "output: codeql-results/${{ matrix.language }}",
+      "node scripts/check-sarif.mjs codeql-results/${{ matrix.language }} 7",
+      "if: always()",
+    ],
+    "portable CodeQL enforcement",
+  );
+});
+
 test("dependency overrides and lockfile use the reviewed fixed versions", async () => {
   const [workspace, lockfile] = await Promise.all([
     text("pnpm-workspace.yaml"),
@@ -140,6 +155,38 @@ test("runtime services have isolated IAM and network boundaries", async () => {
   assert.equal(compute.includes("database_master_secret_arn"), false);
 });
 
+test("the API reaches the restricted tile service through its private Cloud Map name", async () => {
+  const [compute, tileImage] = await Promise.all([
+    text("infra/terraform/modules/compute/main.tf"),
+    text("services/tile-api/Dockerfile"),
+  ]);
+
+  includesEvery(
+    compute,
+    [
+      'name = "${var.environment}.floodrise.internal"',
+      'name = "tile-api"',
+      '"http://tile-api.${var.environment}.floodrise.internal:8790"',
+      '{ name = "FLOODRISE_RASTER_MANIFEST", value = "/app/artifacts/manifest.json" }',
+      'urllib.request.urlopen(\\"http://127.0.0.1:8790/health\\", timeout=2)',
+    ],
+    "private tile-service discovery",
+  );
+  includesEvery(
+    tileImage,
+    [
+      "COPY fixtures/kerala-demo/rasters ./artifacts",
+      'CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8790"]',
+    ],
+    "tile image artifact contract",
+  );
+  assert.equal(
+    compute.includes('"http://tile-api:8790"'),
+    false,
+    "the short tile hostname is not resolvable without ECS Service Connect",
+  );
+});
+
 test("the public ALB forwards only requests with the generated CloudFront origin secret", async () => {
   const [root, compute, edge] = await Promise.all([
     text("infra/terraform/main.tf"),
@@ -170,6 +217,71 @@ test("the public ALB forwards only requests with the generated CloudFront origin
       "value = var.origin_verify_header_value",
     ],
     "CloudFront origin header",
+  );
+});
+
+test("the edge CSP permits only the reviewed public OpenStreetMap tile origin", async () => {
+  const [edge, mapStyle] = await Promise.all([
+    text("infra/terraform/modules/edge/main.tf"),
+    text("packages/map/src/style.ts"),
+  ]);
+  const reviewedTileOrigin = "https://tile.openstreetmap.org";
+
+  assert.ok(
+    mapStyle.includes(`${reviewedTileOrigin}/{z}/{x}/{y}.png`),
+    "map default must use the reviewed OpenStreetMap tile endpoint",
+  );
+  assert.match(
+    edge,
+    new RegExp(`img-src [^;]*${reviewedTileOrigin.replaceAll(".", "\\.")}[^;]*;`),
+    "CloudFront img-src must allow the reviewed tile endpoint",
+  );
+  assert.match(
+    edge,
+    new RegExp(`connect-src [^;]*${reviewedTileOrigin.replaceAll(".", "\\.")}[^;]*;`),
+    "CloudFront connect-src must allow MapLibre tile requests",
+  );
+  assert.equal(
+    edge.includes("*.openstreetmap.org"),
+    false,
+    "CSP must not broaden access to unreviewed OpenStreetMap subdomains",
+  );
+});
+
+test("WAF admits representative evidence above 8 KiB only through the bounded PUT route", async () => {
+  const edge = await text("infra/terraform/modules/edge/main.tf");
+  const representativePhotoBytes = 5 * 1024 * 1024;
+  const apiLimitBytes = 10_000_000;
+
+  assert.ok(representativePhotoBytes > 8 * 1024, "fixture must exercise the managed 8 KiB boundary");
+  assert.ok(representativePhotoBytes <= apiLimitBytes, "fixture must remain inside the API limit");
+  includesEvery(
+    edge,
+    [
+      'name     = "PrivateEvidenceRateLimit"',
+      'priority = 4',
+      "limit              = 200",
+      'name     = "AllowBoundedPrivateEvidenceContent"',
+      'priority = 5',
+      'regex_string = "^/api/v1/media/uploads/upload-[a-f0-9]{20}/content$"',
+      'search_string         = "PUT"',
+      'search_string         = "image/"',
+      'name = "content-length"',
+      'regex_string = "^([0-9]{1,7}|10000000)$"',
+      'name        = "AWSManagedRulesCommonRuleSet"',
+      'priority = 10',
+    ],
+    "bounded WAF media exception",
+  );
+  assert.equal(
+    edge.includes('excluded_rule {\n          name = "SizeRestrictions_BODY"'),
+    false,
+    "the managed body-size rule must not be disabled globally",
+  );
+  assert.ok(
+    edge.indexOf('name     = "PrivateEvidenceRateLimit"')
+      < edge.indexOf('name     = "AllowBoundedPrivateEvidenceContent"'),
+    "the media-specific rate limit must run before the terminal bounded exception",
   );
 });
 

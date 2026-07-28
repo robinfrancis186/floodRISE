@@ -658,10 +658,171 @@ def test_approval_requires_existing_bound_versions_and_detects_binding_drift(
     assert alert is None
 
 
+@pytest.mark.parametrize("decision_value", ["FIELD_CHECK", "MODIFY"])
+def test_field_check_decisions_authoritatively_return_signal_to_review(
+    service: FloodRiseService,
+    decision_value: str,
+) -> None:
+    signal = service.signal("signal-aluva-042")
+    corroborated = service.decide_signal(
+        signal["id"],
+        SignalDecisionInput(
+            decision="VERIFY",
+            reason="Independent evidence review supports community corroboration.",
+            expected_version=signal["version"],
+        ),
+        Principal("initial-reviewer", "verifier", True),
+    )
+
+    returned = service.decide_signal(
+        signal["id"],
+        SignalDecisionInput(
+            decision=decision_value,
+            reason="A field check is required before further operational use.",
+            expected_version=corroborated["version"],
+        ),
+        Principal("field-check-reviewer", "verifier", True),
+    )
+
+    assert returned["state"] == "NEEDS_REVIEW"
+    assert returned["human_review"]["decision"] == decision_value
+    assert service.signal(signal["id"])["state"] == "NEEDS_REVIEW"
+    reviewed_event = service.database.audit_events(limit=1)[0]
+    assert reviewed_event["payload"]["previous_state"] == "COMMUNITY_CORROBORATED"
+    assert reviewed_event["payload"]["next_state"] == "NEEDS_REVIEW"
+
+
+def test_modify_approval_is_a_terminal_return_for_changes_without_dispatch(
+    service: FloodRiseService,
+) -> None:
+    approval = service.create_approval(
+        _approval_input().model_copy(
+            update={"reason": "Return-for-changes semantics need an independent decision."}
+        ),
+        Principal("modification-requester", "incident_commander", True),
+    )
+
+    modified, alert = service.decide_approval(
+        approval["id"],
+        ApprovalDecisionInput(
+            decision="MODIFY",
+            reason="Narrow the audience and submit a newly bound request.",
+            expected_version=approval["version"],
+        ),
+        Principal("modification-reviewer", "verifier", True),
+    )
+
+    assert modified["status"] == "MODIFIED"
+    assert modified["execution_status"] == "NOT_STARTED"
+    assert alert is None
+    assert service.database.get("alert", f"alert-{approval['id']}") is None
+    assert service.database.audit_events(limit=1)[0]["event_type"] == (
+        "approval.modification_requested"
+    )
+    with pytest.raises(ConflictError) as terminal:
+        service.decide_approval(
+            approval["id"],
+            ApprovalDecisionInput(
+                decision="APPROVE",
+                reason="The unchanged action must not be approved after return.",
+                expected_version=modified["version"],
+            ),
+            Principal("second-reviewer", "verifier", True),
+        )
+    assert terminal.value.code == "ALREADY_DECIDED"
+
+
+def test_road_closure_requires_a_bound_target_and_changes_route_output(
+    service: FloodRiseService,
+) -> None:
+    unbound_request = ApprovalCreateInput.model_validate(
+        {
+            **_approval_input().model_dump(mode="json"),
+            "action_type": "ROAD_CLOSURE",
+            "action_payload": {
+                "title": "Close NH 544 segment",
+                "body": "Close the reviewed segment after independent approval.",
+            },
+            "reason": "The target must be exact and versioned.",
+        }
+    )
+    with pytest.raises(AppError) as unbound:
+        service.create_approval(
+            unbound_request,
+            Principal("unbound-road-requester", "incident_commander", True),
+        )
+    assert unbound.value.code == "INVALID_ACTION_TARGET"
+
+    before = service.recommend_routes(
+        INCIDENT_ID,
+        origin_node="aluva",
+        max_alternatives=3,
+        principal=Principal("route-reviewer", "responder", True),
+    )
+    assert any("e-aluva-school-shelter" in route["edge_ids"] for route in before["alternatives"])
+
+    request = ApprovalCreateInput.model_validate(
+        {
+            **_approval_input().model_dump(mode="json"),
+            "action_type": "ROAD_CLOSURE",
+            "action_payload": {
+                "road_id": "road-nh-544",
+                "title": "Close NH 544 segment",
+                "body": "Close the reviewed segment after independent approval.",
+            },
+            "reason": "Independent evidence identifies an impassable segment.",
+        }
+    )
+    approval = service.create_approval(
+        request,
+        Principal("road-closure-requester", "incident_commander", True),
+    )
+    assert approval["binding"]["action_target"] == {
+        "kind": "road",
+        "id": "road-nh-544",
+        "record_version": 1,
+        "incident_id": INCIDENT_ID,
+    }
+    decided, _ = service.decide_approval(
+        approval["id"],
+        ApprovalDecisionInput(
+            decision="APPROVE",
+            reason="The exact road, evidence and model versions were independently reviewed.",
+            expected_version=approval["version"],
+        ),
+        Principal("road-closure-approver", "verifier", True),
+    )
+
+    road = service.database.get("road", "road-nh-544")
+    after = service.recommend_routes(
+        INCIDENT_ID,
+        origin_node="aluva",
+        max_alternatives=3,
+        principal=Principal("route-reviewer", "responder", True),
+    )
+    assert decided["status"] == "APPROVED"
+    assert road is not None
+    assert road["status"] == "CLOSED"
+    assert road["authorized_by_approval"] == approval["id"]
+    assert before["graph_version"] != after["graph_version"]
+    assert all("e-aluva-school-shelter" not in route["edge_ids"] for route in after["alternatives"])
+    exclusion = next(
+        item for item in after["excluded_edges"] if item["edge_id"] == "e-aluva-school-shelter"
+    )
+    assert exclusion["reasons"] == ["AUTHORIZED_OR_CONFIRMED_CLOSURE"]
+
+
 def test_shelter_closure_has_one_approved_transition_path(
     service: FloodRiseService,
 ) -> None:
     shelter = service.shelters(INCIDENT_ID)[0]
+    before_routes = service.recommend_routes(
+        INCIDENT_ID,
+        origin_node="aluva",
+        max_alternatives=3,
+        principal=Principal("route-reviewer", "responder", True),
+    )
+    assert any(route["shelter_id"] == shelter["id"] for route in before_routes["alternatives"])
     audit_count = len(service.database.audit_events(limit=1_000))
     with pytest.raises(PermissionDeniedError, match="two-person approval"):
         service.update_shelter(
@@ -707,6 +868,17 @@ def test_shelter_closure_has_one_approved_transition_path(
     assert closed is not None
     assert closed["activation_status"] == closed["access_status"] == "CLOSED"
     assert closed["authorized_by_approval"] == approval["id"]
+    after_routes = service.recommend_routes(
+        INCIDENT_ID,
+        origin_node="aluva",
+        max_alternatives=3,
+        principal=Principal("route-reviewer", "responder", True),
+    )
+    assert all(route["shelter_id"] != shelter["id"] for route in after_routes["alternatives"])
+    shelter_exclusion = next(
+        item for item in after_routes["excluded_shelters"] if item["shelter_id"] == shelter["id"]
+    )
+    assert "AUTHORIZED_SHELTER_CLOSURE" in shelter_exclusion["reasons"]
     closure_events = [
         event
         for event in service.database.audit_events(limit=1_000)
@@ -766,4 +938,10 @@ def test_service_publishes_simulation_and_lower_risk_routes(
     assert "safe" not in routes["disclaimer"].lower()
     assert all(
         route["model_version"] == routes["model_version"] for route in routes["alternatives"]
+    )
+    assert {route["shelter_id"] for route in routes["alternatives"]} == {"shelter-aluva-school"}
+    assert all(
+        route["shelter_detail"]["access_status"] == "REACHABLE"
+        and route["shelter_detail"]["version"] is not None
+        for route in routes["alternatives"]
     )

@@ -65,7 +65,7 @@ resource "aws_cloudfront_response_headers_policy" "security" {
       override                   = true
     }
     content_security_policy {
-      content_security_policy = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+      content_security_policy = "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://tile.openstreetmap.org; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
       override                = true
     }
   }
@@ -80,11 +80,20 @@ resource "aws_cloudfront_function" "spa_rewrite" {
       var request = event.request;
       var uri = request.uri;
       var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
-      if (uri === '/') {
+      if (uri === '/ops' || uri === '/field') {
+        return {
+          statusCode: 308,
+          statusDescription: 'Permanent Redirect',
+          headers: {
+            location: { value: uri + '/' },
+            'cache-control': { value: 'public, max-age=300' }
+          }
+        };
+      } else if (uri === '/') {
         request.uri = '/ops/index.html';
-      } else if ((uri.indexOf('/ops/') === 0 || uri === '/ops') && lastSegment.indexOf('.') === -1) {
+      } else if (uri.indexOf('/ops/') === 0 && lastSegment.indexOf('.') === -1) {
         request.uri = '/ops/index.html';
-      } else if ((uri.indexOf('/field/') === 0 || uri === '/field') && lastSegment.indexOf('.') === -1) {
+      } else if (uri.indexOf('/field/') === 0 && lastSegment.indexOf('.') === -1) {
         request.uri = '/field/index.html';
       }
       return request;
@@ -100,6 +109,114 @@ resource "aws_wafv2_web_acl" "edge" {
 
   default_action {
     allow {}
+  }
+
+  # The tightly scoped media exception below is terminal, so it receives its
+  # own stricter per-IP throttle before managed-rule evaluation.
+  rule {
+    name     = "PrivateEvidenceRateLimit"
+    priority = 4
+    action {
+      block {}
+    }
+    statement {
+      rate_based_statement {
+        aggregate_key_type = "IP"
+        limit              = 200
+        scope_down_statement {
+          regex_match_statement {
+            regex_string = "^/api/v1/media/uploads/upload-[a-f0-9]{20}/content$"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name}-private-evidence-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # AWSManagedRulesCommonRuleSet blocks bodies over its 8 KiB inspection
+  # limit. Admit only the immutable private evidence PUT with the API's
+  # bounded declared size. The application rechecks length/checksum before
+  # quarantine, then scans and re-encodes the image.
+  rule {
+    name     = "AllowBoundedPrivateEvidenceContent"
+    priority = 5
+    action {
+      allow {}
+    }
+    statement {
+      and_statement {
+        statement {
+          regex_match_statement {
+            regex_string = "^/api/v1/media/uploads/upload-[a-f0-9]{20}/content$"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+        statement {
+          byte_match_statement {
+            search_string         = "PUT"
+            positional_constraint = "EXACTLY"
+            field_to_match {
+              method {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+        statement {
+          byte_match_statement {
+            search_string         = "image/"
+            positional_constraint = "STARTS_WITH"
+            field_to_match {
+              single_header {
+                name = "content-type"
+              }
+            }
+            text_transformation {
+              priority = 0
+              type     = "LOWERCASE"
+            }
+          }
+        }
+        statement {
+          regex_match_statement {
+            regex_string = "^([0-9]{1,7}|10000000)$"
+            field_to_match {
+              single_header {
+                name = "content-length"
+              }
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name}-bounded-private-evidence"
+      sampled_requests_enabled   = true
+    }
   }
 
   rule {

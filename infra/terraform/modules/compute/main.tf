@@ -12,7 +12,7 @@ locals {
     { name = "FLOODRISE_DATABASE_HOST", value = var.database_host },
     { name = "FLOODRISE_JOBS_QUEUE_URL", value = var.jobs_queue_url },
     { name = "FLOODRISE_JOBS_QUEUE_NAME", value = "${var.name}-jobs" },
-    { name = "FLOODRISE_TILE_API_BASE_URL", value = "http://tile-api:8790" },
+    { name = "FLOODRISE_TILE_API_BASE_URL", value = "http://tile-api.${var.environment}.floodrise.internal:8790" },
     { name = "FLOODRISE_COG_BUCKET_ARN", value = var.processed_bucket_arn },
     { name = "FLOODRISE_COG_PUBLIC_ACCESS", value = "false" },
     { name = "FLOODRISE_COG_ALLOWED_SCHEMES", value = "s3" },
@@ -370,9 +370,17 @@ resource "aws_ecs_task_definition" "tile_api" {
     environment = [
       { name = "FLOODRISE_ENV", value = var.environment },
       { name = "FLOODRISE_ALLOWED_BUCKET", value = trimprefix(var.processed_bucket_arn, "arn:aws:s3:::") },
-      { name = "FLOODRISE_ACCEPT_ARBITRARY_URLS", value = "false" }
+      { name = "FLOODRISE_ACCEPT_ARBITRARY_URLS", value = "false" },
+      { name = "FLOODRISE_RASTER_MANIFEST", value = "/app/artifacts/manifest.json" }
     ]
     portMappings = [{ containerPort = 8790, hostPort = 8790, protocol = "tcp" }]
+    healthCheck = {
+      command     = ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8790/health\", timeout=2)' || exit 1"]
+      interval    = 15
+      timeout     = 5
+      retries     = 3
+      startPeriod = 20
+    }
     logConfiguration = {
       logDriver = "awslogs"
       options = {

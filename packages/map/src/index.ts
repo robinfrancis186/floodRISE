@@ -15,4 +15,5 @@ export type {
   MapGeometry,
   MapHorizon,
   MapPosition,
+  ResilienceLayerVisibility,
 } from "./types";

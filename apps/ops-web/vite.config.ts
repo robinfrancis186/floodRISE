@@ -2,7 +2,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // CloudFront publishes Operations below /ops/. Development remains rooted at
+  // / so the existing local and Playwright workflows do not need a second mode.
+  base: command === "build" ? "/ops/" : "/",
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
@@ -15,4 +18,4 @@ export default defineConfig({
     css: true,
     exclude: ["**/node_modules/**", "**/dist/**", "**/._*"],
   },
-});
+}));

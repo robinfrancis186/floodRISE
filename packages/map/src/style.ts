@@ -1,7 +1,12 @@
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 
 import { keralaMapData } from "./data/kerala";
-import type { FloodMapVariant, MapHorizon, MapPosition } from "./types";
+import type {
+  FloodMapVariant,
+  MapHorizon,
+  MapPosition,
+  ResilienceLayerVisibility,
+} from "./types";
 
 const visibility = (shown: boolean): "visible" | "none" => (shown ? "visible" : "none");
 
@@ -38,12 +43,18 @@ export const interactiveLayerIds = [
 export function createMapStyle(
   variant: FloodMapVariant,
   horizon: MapHorizon,
+  resilienceLayers?: ResilienceLayerVisibility,
+  showRouteGeometry = variant === "operations",
 ): StyleSpecification {
   const operational = isOperationalVariant(variant);
-  const showRoutes = variant === "operations" || variant === "field";
+  const showRoutes = variant === "operations" && showRouteGeometry;
   const showClosures = variant === "operations" || variant === "field";
   const showSignalBoundary = variant === "signals";
   const showResilience = variant === "resilience";
+  const showRecurringFlooding = showResilience && (resilienceLayers?.recurringFlooding ?? true);
+  const showDrainageIssues = showResilience && (resilienceLayers?.drainageIssues ?? true);
+  const showRoadIsolation = showResilience && (resilienceLayers?.roadIsolation ?? true);
+  const showShelterGaps = showResilience && (resilienceLayers?.shelterGaps ?? true);
 
   return {
     version: 8,
@@ -182,7 +193,7 @@ export function createMapStyle(
         id: "resilience-zone-fill",
         type: "fill",
         source: "resilience-zones",
-        layout: { visibility: visibility(showResilience) },
+        layout: { visibility: visibility(showRecurringFlooding) },
         paint: {
           "fill-color": ["coalesce", ["get", "color"], "#6155d9"],
           "fill-opacity": ["interpolate", ["linear"], ["get", "count"], 5, 0.24, 22, 0.56],
@@ -192,7 +203,7 @@ export function createMapStyle(
         id: "resilience-zone-outline",
         type: "line",
         source: "resilience-zones",
-        layout: { visibility: visibility(showResilience) },
+        layout: { visibility: visibility(showRecurringFlooding) },
         paint: { "line-color": "#5448c8", "line-width": 1.2, "line-opacity": 0.72 },
       },
       {
@@ -281,7 +292,7 @@ export function createMapStyle(
         type: "line",
         source: "resilience-issues",
         filter: ["==", ["get", "class"], "drainage"],
-        layout: { visibility: visibility(showResilience) },
+        layout: { visibility: visibility(showDrainageIssues) },
         paint: { "line-color": "#f0b400", "line-width": 4, "line-dasharray": [2, 1.5] },
       },
       {
@@ -289,7 +300,7 @@ export function createMapStyle(
         type: "line",
         source: "resilience-issues",
         filter: ["==", ["get", "class"], "drainage"],
-        layout: { visibility: visibility(showResilience) },
+        layout: { visibility: visibility(showDrainageIssues) },
         paint: { "line-color": "#000000", "line-width": 16, "line-opacity": 0 },
       },
       {
@@ -297,7 +308,7 @@ export function createMapStyle(
         type: "line",
         source: "resilience-issues",
         filter: ["==", ["get", "class"], "road"],
-        layout: { visibility: visibility(showResilience) },
+        layout: { visibility: visibility(showRoadIsolation) },
         paint: { "line-color": "#e3242b", "line-width": 4, "line-dasharray": [1.5, 1.2] },
       },
       {
@@ -305,7 +316,7 @@ export function createMapStyle(
         type: "line",
         source: "resilience-issues",
         filter: ["==", ["get", "class"], "road"],
-        layout: { visibility: visibility(showResilience) },
+        layout: { visibility: visibility(showRoadIsolation) },
         paint: { "line-color": "#000000", "line-width": 16, "line-opacity": 0 },
       },
       {
@@ -313,7 +324,7 @@ export function createMapStyle(
         type: "line",
         source: "resilience-issues",
         filter: ["==", ["get", "class"], "shelter"],
-        layout: { visibility: visibility(showResilience) },
+        layout: { visibility: visibility(showShelterGaps) },
         paint: { "line-color": "#7b2cbf", "line-width": 4, "line-dasharray": [2, 1.5] },
       },
       {
@@ -321,7 +332,7 @@ export function createMapStyle(
         type: "line",
         source: "resilience-issues",
         filter: ["==", ["get", "class"], "shelter"],
-        layout: { visibility: visibility(showResilience) },
+        layout: { visibility: visibility(showShelterGaps) },
         paint: { "line-color": "#000000", "line-width": 16, "line-opacity": 0 },
       },
     ],
@@ -337,6 +348,26 @@ export function updateHorizonLayers(map: MapLibreMap, horizon: MapHorizon): void
       const layerId = `predicted-flood-${value}-${suffix}`;
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, "visibility", nextVisibility);
+      }
+    }
+  }
+}
+
+export function updateResilienceLayers(
+  map: MapLibreMap,
+  layers: ResilienceLayerVisibility,
+): void {
+  const groups: Array<[boolean, readonly string[]]> = [
+    [layers.recurringFlooding, ["resilience-zone-fill", "resilience-zone-outline"]],
+    [layers.drainageIssues, ["resilience-drainage", "resilience-drainage-hit"]],
+    [layers.roadIsolation, ["resilience-road", "resilience-road-hit"]],
+    [layers.shelterGaps, ["resilience-shelter", "resilience-shelter-hit"]],
+  ];
+
+  for (const [shown, layerIds] of groups) {
+    for (const layerId of layerIds) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, "visibility", visibility(shown));
       }
     }
   }

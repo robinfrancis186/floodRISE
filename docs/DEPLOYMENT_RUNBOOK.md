@@ -28,9 +28,10 @@ in Compose are deliberately non-secret demo values and must never be reused.
 
 The checked-in Terraform has not been planned or applied and is not presently a
 runnable release bundle. It describes the target topology, while container
-images, secret/settings wiring, the Celery worker entry point, web PKCE/session
-handling, RDS extension bootstrap, production object/scanner/COG adapters, and
-notification integration remain activation work. Close the gaps listed in
+images, secret/settings wiring, authority-owned SQS/Celery transport rehearsal,
+web PKCE/session handling, RDS extension bootstrap, production
+object/scanner/COG adapters, and notification integration remain activation
+work. Close the gaps listed in
 `infra/terraform/README.md` before using the following as a deployment process.
 
 ```bash
@@ -72,12 +73,22 @@ RDS master secret.
    accounts. Start one new API task, run private health/readiness, OpenAPI, OIDC,
    database, SQS, object, tile-artifact allowlist, origin-bypass denial, and
    audit/outbox smoke checks.
-4. After implementing and validating the missing `app.worker` entry point and
-   SQS/Celery transport, deploy workers, then API tasks with 100% minimum healthy
-   capacity. Confirm SSE replay and one synthetic non-delivery action before
-   shifting CloudFront traffic.
-5. Upload immutable field/ops build artifacts to explicit versioned S3 prefixes,
-   update the release manifest/pointer, and invalidate only changed entry points.
+4. Rehearse the checked-in `app.worker` entry point against the authority-owned
+   SQS queue, including visibility timeout, retry, dead-letter, idempotency, and
+   outbox recovery behavior. After that transport rehearsal passes, deploy
+   workers, then API tasks with 100% minimum healthy capacity. Confirm SSE replay
+   and one synthetic non-delivery action before shifting CloudFront traffic.
+5. Run `pnpm build`; its artifact conformance test serves the generated files
+   under the same `/ops/` and `/field/` layout used by CloudFront and rejects
+   root-scoped assets, manifests, service workers, or SPA fallbacks. Upload the
+   contents of `apps/ops-web/dist/` below the S3 `ops/` key and the contents of
+   `apps/field-web/dist/` below the S3 `field/` key—never either build at the
+   bucket root. Update the release manifest/pointer, then invalidate only the
+   changed entry points (including `/ops/index.html`, `/field/index.html`,
+   `/field/manifest.webmanifest`, and `/field/sw.js` when changed).
+   Confirm the edge returns `308` from `/ops` to `/ops/` and from `/field` to
+   `/field/`; the trailing slash is required for Field's install and
+   service-worker scope boundary.
 6. Exercise reporter, responder, approver-as-different-user, auditor, stale source,
    no-route, and denied arbitrary tile URL. Verify security headers and WAF logs.
 

@@ -1,6 +1,8 @@
 import { demoSnapshot } from "../data/demo";
+import type { RouteRecommendation, SourceHealth } from "@floodrise/contracts";
 import type {
   AuditRecord,
+  FloodSignalRecord,
   OperationalAction,
   OperationsSnapshot,
   ShelterRecord,
@@ -133,12 +135,29 @@ function formatIst(value: string | undefined, fallback: string): string {
   })} IST`;
 }
 
-function actionStatusFromApproval(status: string | undefined): OperationalAction["status"] {
+export function actionStatusFromApproval(status: string | undefined): OperationalAction["status"] {
   if (status === "PENDING") return "PENDING_APPROVAL";
   if (status === "APPROVED") return "APPROVED";
+  if (status === "MODIFIED") return "MODIFIED";
   if (status === "EXPIRED" || status === "CANCELLED") return "EXPIRED";
   if (status === "REJECTED") return "REJECTED";
   return "RECOMMENDED";
+}
+
+export function signalStatusFromState(state: string): FloodSignalRecord["status"] {
+  if (state === "COMMUNITY_CORROBORATED") return "COMMUNITY_CORROBORATED";
+  if (state === "DISPUTED") return "DISPUTED";
+  return "NEEDS_REVIEW";
+}
+
+export function signalDecisionFromState(
+  state: string,
+  humanDecision?: string,
+): SignalDecision {
+  if (state === "COMMUNITY_CORROBORATED") return "VERIFIED";
+  if (state === "DISPUTED") return "REJECTED";
+  if (humanDecision === "FIELD_CHECK" || humanDecision === "MODIFY") return "FIELD_CHECK";
+  return "UNREVIEWED";
 }
 
 function shelterStatus(value: string | undefined, fallback: ShelterRecord["status"]): ShelterRecord["status"] {
@@ -158,6 +177,164 @@ function minutesBetween(later: string | undefined, earlier: string | undefined, 
   return Number.isFinite(difference) ? Math.max(0, Math.round(difference / 60_000)) : fallback;
 }
 
+function normalizedRouteShelterDetail(
+  candidate: unknown,
+  scenarioTime: string,
+): RouteRecommendation["shelter_detail"] {
+  const rawDetail = recordField(candidate, "shelter_detail");
+  const id = stringField(rawDetail, "id");
+  const name = stringField(rawDetail, "name");
+  if (!id || !name) return null;
+
+  const rawStatus = stringField(rawDetail, "activation_status") ?? stringField(rawDetail, "status");
+  const status = rawStatus === "OPEN" || rawStatus === "LIMITED" || rawStatus === "FULL"
+    ? rawStatus
+    : undefined;
+  const rawAccess = stringField(rawDetail, "access_status") ?? stringField(rawDetail, "access");
+  const access = rawAccess === "REACHABLE" || rawAccess === "Reachable"
+    ? "Reachable" as const
+    : rawAccess === "AT_RISK" || rawAccess === "RISKY" || rawAccess === "At risk"
+      ? "At risk" as const
+      : rawAccess === "UNKNOWN" || rawAccess === "Unknown"
+        ? "Unknown" as const
+        : undefined;
+  const observedAt = stringField(rawDetail, "verified_at") ?? stringField(rawDetail, "observed_at");
+  const capacity = numberField(rawDetail, "capacity_total") ?? numberField(rawDetail, "capacity");
+  const remainingCapacity = numberField(rawDetail, "remaining_capacity") ?? numberField(rawDetail, "capacity_remaining");
+  const rawWarnings = rawDetail?.warnings;
+  const warnings = Array.isArray(rawWarnings)
+    ? rawWarnings.filter((warning): warning is string => typeof warning === "string")
+    : [];
+
+  return {
+    id,
+    name,
+    status,
+    access,
+    capacity,
+    remaining_capacity: remainingCapacity,
+    observed_at: observedAt && Number.isFinite(Date.parse(observedAt)) ? observedAt : undefined,
+    updated_minutes_ago: observedAt && Number.isFinite(Date.parse(observedAt))
+      ? minutesBetween(scenarioTime, observedAt, 0)
+      : undefined,
+    version: numberField(rawDetail, "version"),
+    warnings,
+  };
+}
+
+function normalizeRoutes(value: unknown, scenarioTime: string): RouteRecommendation[] {
+  const scenarioTimestamp = Date.parse(scenarioTime);
+  if (!Number.isFinite(scenarioTimestamp)) return [];
+
+  const seen = new Set<string>();
+  return readItems(value).flatMap((candidate) => {
+    const id = stringField(candidate, "id");
+    const label = stringField(candidate, "label");
+    const duration = numberField(candidate, "duration_min");
+    const distance = numberField(candidate, "distance_km");
+    const shelter = stringField(candidate, "shelter");
+    const shelterId = stringField(candidate, "shelter_id");
+    const shelterDetail = normalizedRouteShelterDetail(candidate, scenarioTime);
+    const risk = stringField(candidate, "risk");
+    const routeRisk: RouteRecommendation["risk"] | null = risk === "LOWER" || risk === "ELEVATED"
+      ? risk
+      : null;
+    const modelVersion = stringField(candidate, "model_version");
+    const evidenceVersion = stringField(candidate, "evidence_version");
+    const validUntil = stringField(candidate, "valid_until");
+    const validUntilTimestamp = validUntil ? Date.parse(validUntil) : Number.NaN;
+    const rawReasons = candidate && typeof candidate === "object"
+      ? (candidate as Record<string, unknown>).reasons
+      : undefined;
+    const reasons = Array.isArray(rawReasons)
+      ? rawReasons.filter((reason): reason is string => typeof reason === "string")
+      : [];
+
+    if (
+      !id
+      || seen.has(id)
+      || !label
+      || duration === undefined
+      || duration <= 0
+      || distance === undefined
+      || distance <= 0
+      || !shelter
+      || !routeRisk
+      || !modelVersion
+      || !evidenceVersion
+      || !validUntil
+      || !Number.isFinite(validUntilTimestamp)
+      || validUntilTimestamp <= scenarioTimestamp
+    ) {
+      return [];
+    }
+    seen.add(id);
+    return [{
+      id,
+      label,
+      duration_min: duration,
+      distance_km: distance,
+      shelter,
+      ...(shelterId ? { shelter_id: shelterId } : {}),
+      ...(shelterDetail ? { shelter_detail: shelterDetail } : {}),
+      risk: routeRisk,
+      reasons,
+      model_version: modelVersion,
+      evidence_version: evidenceVersion,
+      valid_until: validUntil,
+    } satisfies RouteRecommendation];
+  }).slice(0, 3);
+}
+
+function normalizeSources(value: unknown): SourceHealth[] {
+  const seen = new Set<string>();
+  return readItems(value).flatMap((candidate) => {
+    const id = stringField(candidate, "id");
+    const provider = stringField(candidate, "provider");
+    const status = stringField(candidate, "status");
+    const observedAt = stringField(candidate, "observed_at");
+    const cadence = stringField(candidate, "cadence");
+    const isSimulated = booleanField(candidate, "is_simulated");
+    const rawQualityFlags = candidate && typeof candidate === "object"
+      ? (candidate as Record<string, unknown>).quality_flags
+      : undefined;
+    const qualityFlags = Array.isArray(rawQualityFlags)
+      ? rawQualityFlags.filter((flag): flag is string => typeof flag === "string")
+      : [];
+    const declaredMode = stringField(candidate, "source_mode");
+    if (
+      !id
+      || seen.has(id)
+      || !provider
+      || (status !== "HEALTHY" && status !== "STALE" && status !== "UNKNOWN")
+      || !observedAt
+      || !Number.isFinite(Date.parse(observedAt))
+      || !cadence
+      || isSimulated === undefined
+    ) {
+      return [];
+    }
+    const sourceMode: NonNullable<SourceHealth["source_mode"]> = qualityFlags.includes("PACKAGED_BASELINE")
+      ? "PACKAGED_BASELINE"
+      : isSimulated || qualityFlags.includes("DEMO_FIXTURE")
+        ? "DEMO_FIXTURE"
+        : declaredMode === "LIVE" || qualityFlags.includes("LIVE_AUTHORIZED")
+          ? "LIVE"
+          : "REFERENCE_DATA";
+    seen.add(id);
+    return [{
+      id,
+      provider,
+      status,
+      observed_at: observedAt,
+      cadence,
+      is_simulated: isSimulated,
+      quality_flags: qualityFlags,
+      source_mode: sourceMode,
+    }];
+  });
+}
+
 function normalizeBootstrap(raw: unknown, incidentId: string): OperationsSnapshot {
   if (!raw || typeof raw !== "object") return demoSnapshot;
   const value = raw as Record<string, unknown>;
@@ -167,6 +344,7 @@ function normalizeBootstrap(raw: unknown, incidentId: string): OperationsSnapsho
   const scenarioTime = typeof value.scenario_clock === "string"
     ? value.scenario_clock
     : stringField(value.scenario_clock, "current_time") ?? stringField(value.scenario_clock, "scenario_time");
+  const effectiveScenarioTime = scenarioTime ?? demoSnapshot.scenarioTime;
 
   const rawSignals = readItems(value.signals);
   const primarySignal = rawSignals[0];
@@ -197,16 +375,10 @@ function normalizeBootstrap(raw: unknown, incidentId: string): OperationsSnapsho
     };
   });
   const primaryDemoSignal = demoSnapshot.signals[0];
-  const apiStatus = signalState === "COMMUNITY_CORROBORATED"
-    ? "COMMUNITY_CORROBORATED" as const
-    : signalState === "DISPUTED"
-      ? "DISPUTED" as const
-      : "NEEDS_REVIEW" as const;
-  const apiDecision = signalState === "COMMUNITY_CORROBORATED"
-    ? "VERIFIED" as const
-    : signalState === "DISPUTED"
-      ? "FIELD_CHECK" as const
-      : "UNREVIEWED" as const;
+  const humanReview = recordField(primarySignal, "human_review");
+  const humanDecision = stringField(humanReview, "decision");
+  const apiStatus = signalStatusFromState(signalState ?? "");
+  const apiDecision = signalDecisionFromState(signalState ?? "", humanDecision);
   const signals = signalId ? [{
     ...primaryDemoSignal,
     apiId: signalId,
@@ -276,6 +448,8 @@ function normalizeBootstrap(raw: unknown, incidentId: string): OperationsSnapsho
       updatedMinutesAgo: minutesBetween(scenarioTime, stringField(apiShelter, "verified_at") ?? stringField(apiShelter, "observed_at"), shelter.updatedMinutesAgo),
     } satisfies ShelterRecord;
   });
+  const routes = normalizeRoutes(value.routes, effectiveScenarioTime);
+  const sources = normalizeSources(value.sources);
 
   // The deterministic bundle remains the presentation-safe baseline. Current
   // authoritative signal identifiers, versions, counts, and evidence replace
@@ -283,11 +457,13 @@ function normalizeBootstrap(raw: unknown, incidentId: string): OperationsSnapsho
   return {
     ...demoSnapshot,
     incidentId,
-    scenarioTime: scenarioTime ?? demoSnapshot.scenarioTime,
+    scenarioTime: effectiveScenarioTime,
     modelVersion: stringField(simulation, "version") ?? stringField(simulation, "model_version") ?? demoSnapshot.modelVersion,
     signals,
     actions,
     shelters,
+    routes,
+    sources,
   };
 }
 
@@ -311,13 +487,20 @@ export async function submitSignalDecision(
   expectedVersion: number,
   identity: StaffApiIdentity,
 ) {
-  const apiDecision = decision === "VERIFIED" ? "VERIFY" : decision === "REJECTED" ? "REJECT" : "MODIFY";
+  const apiDecision = decision === "VERIFIED"
+    ? "VERIFY"
+    : decision === "REJECTED"
+      ? "REJECT"
+      : "FIELD_CHECK";
   const apiSignalId = signalId.startsWith("signal-") ? signalId : `signal-${signalId.toLowerCase()}`;
   return request<{
     id: string;
     state: string;
     version: number;
     human_decision?: string | null;
+    human_review?: {
+      decision?: string | null;
+    } | null;
   }>(`/signals/${encodeURIComponent(apiSignalId)}/decisions`, {
     method: "POST",
     body: JSON.stringify({ decision: apiDecision, reason, expected_version: expectedVersion }),
@@ -330,7 +513,7 @@ export async function submitSignalDecision(
 export type ApprovalDecisionResponse = {
   approval: {
     id: string;
-    status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED";
+    status: "PENDING" | "APPROVED" | "MODIFIED" | "REJECTED" | "EXPIRED" | "CANCELLED";
     version: number;
     decided_by?: string | null;
     decision_reason?: string | null;

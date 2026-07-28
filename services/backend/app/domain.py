@@ -1046,16 +1046,14 @@ class FloodRiseService:
             )
         updated = dict(current)
         value = str(decision.decision)
-        if value.endswith("DISPUTE"):
+        if value in {"DISPUTE", "REJECT", "REJECTED"}:
             updated["state"] = "DISPUTED"
-        elif value.endswith("VERIFY"):
+        elif value in {"VERIFY", "VERIFIED"}:
             updated["state"] = "COMMUNITY_CORROBORATED"
-        elif value.endswith("RESOLVE"):
+        elif value == "RESOLVE":
             updated["state"] = "RESOLVED"
-        elif value.endswith("REJECT"):
+        elif value in {"FIELD_CHECK", "MODIFY", "UNREVIEWED"}:
             updated["state"] = "NEEDS_REVIEW"
-        elif value.endswith("MODIFY") and decision.replacement_state:
-            updated["state"] = str(decision.replacement_state)
         updated["human_review"] = {
             "decision": value,
             "reason": decision.reason,
@@ -1081,7 +1079,12 @@ class FloodRiseService:
                     aggregate_version=updated["version"],
                     actor_id=principal.user_id,
                     actor_role=principal.role,
-                    payload={"decision": value, "reason": decision.reason},
+                    payload={
+                        "decision": value,
+                        "reason": decision.reason,
+                        "previous_state": current["state"],
+                        "next_state": updated["state"],
+                    },
                     incident_id=updated["incident_id"],
                 )
             ],
@@ -1218,7 +1221,67 @@ class FloodRiseService:
         return str(max(signals, key=lambda item: int(item["version"]))["evidence_version"])
 
     def routes(self, incident_id: str) -> list[dict[str, Any]]:
-        return self._for_incident(self.database.list("route"), incident_id)
+        from .routing import shelter_is_eligible
+
+        shelter_records = {str(shelter["id"]): shelter for shelter in self.shelters(incident_id)}
+        current_routes: list[dict[str, Any]] = []
+        for route in self._for_incident(self.database.list("route"), incident_id):
+            shelter_id = route.get("shelter_id")
+            shelter = shelter_records.get(str(shelter_id)) if shelter_id is not None else None
+            if shelter is None:
+                current_routes.append(
+                    {
+                        **route,
+                        "shelter_status": "UNKNOWN",
+                        "shelter_access_status": "UNKNOWN",
+                        "shelter_detail": {
+                            "id": shelter_id,
+                            "name": route.get("shelter"),
+                            "status": "UNKNOWN",
+                            "access_status": "UNKNOWN",
+                            "warnings": ["SHELTER_STATUS_UNVERIFIED"],
+                        },
+                    }
+                )
+                continue
+            eligible, exclusion_codes = shelter_is_eligible(shelter)
+            if not eligible:
+                continue
+            capacity_total = shelter.get("capacity_total", shelter.get("capacity"))
+            capacity_remaining = shelter.get("capacity_remaining")
+            current_routes.append(
+                {
+                    **route,
+                    "shelter_status": str(
+                        shelter.get(
+                            "activation_status",
+                            shelter.get("availability", "UNKNOWN"),
+                        )
+                    ).upper(),
+                    "shelter_access_status": str(shelter.get("access_status", "UNKNOWN")).upper(),
+                    "shelter_capacity_remaining": capacity_remaining,
+                    "shelter_verified_at": shelter.get("verified_at", shelter.get("observed_at")),
+                    "shelter_detail": {
+                        "id": shelter["id"],
+                        "name": shelter.get("name", route.get("shelter")),
+                        "status": str(
+                            shelter.get(
+                                "activation_status",
+                                shelter.get("availability", "UNKNOWN"),
+                            )
+                        ).upper(),
+                        "activation_status": shelter.get("activation_status"),
+                        "access_status": str(shelter.get("access_status", "UNKNOWN")).upper(),
+                        "capacity_total": capacity_total,
+                        "capacity_remaining": capacity_remaining,
+                        "occupancy": shelter.get("occupancy"),
+                        "verified_at": shelter.get("verified_at", shelter.get("observed_at")),
+                        "version": shelter.get("version"),
+                        "warnings": list(exclusion_codes),
+                    },
+                }
+            )
+        return current_routes
 
     def recommend_routes(
         self,
@@ -1246,7 +1309,11 @@ class FloodRiseService:
                 code="LIVE_ROUTING_UNAVAILABLE",
             )
         try:
-            from .routing import build_demo_kerala_graph, find_lower_risk_routes
+            from .routing import (
+                apply_operational_overrides,
+                build_demo_kerala_graph,
+                find_lower_risk_routes,
+            )
         except ImportError as exc:
             raise AppError(
                 status_code=503,
@@ -1255,7 +1322,11 @@ class FloodRiseService:
                 code="ROUTING_UNAVAILABLE",
             ) from exc
 
-        graph = build_demo_kerala_graph()
+        graph = apply_operational_overrides(
+            build_demo_kerala_graph(),
+            roads=self._for_incident(self.database.list("road"), incident_id),
+            shelters=self.shelters(incident_id),
+        )
         nodes = graph.get("nodes")
         if not isinstance(nodes, Mapping) or not nodes:
             raise AppError(
@@ -1398,11 +1469,18 @@ class FloodRiseService:
                         "distance_km", round(float(alternative.get("distance_m", 0)) / 1_000, 2)
                     ),
                     "shelter": shelter_name,
+                    "shelter_id": (
+                        str(shelter["id"])
+                        if isinstance(shelter, Mapping) and shelter.get("id") is not None
+                        else None
+                    ),
                     "shelter_detail": shelter if isinstance(shelter, Mapping) else None,
                     "risk": alternative.get("risk", "LOWER"),
                     "model_version": model_version,
                     "evidence_version": evidence_version,
                     "valid_until": valid_until,
+                    "excluded_edge_count": len(result.get("excluded_edges", [])),
+                    "wording": LOWER_RISK_DISCLAIMER,
                 }
             )
             alternatives.append(alternative)
@@ -1411,7 +1489,13 @@ class FloodRiseService:
             "generated_at": iso_utc(now),
             "status": result.get("status", "ROUTES_AVAILABLE" if alternatives else "NO_ROUTE"),
             "alternatives": alternatives,
-            "exclusions": result.get("exclusions", []),
+            "exclusions": [
+                *result.get("excluded_edges", []),
+                *result.get("excluded_shelters", []),
+            ],
+            "excluded_edges": result.get("excluded_edges", []),
+            "excluded_shelters": result.get("excluded_shelters", []),
+            "graph_version": result.get("graph_version"),
             "no_route_reason": (
                 "No compliant lower-risk route is currently available. Await responder guidance."
                 if not alternatives
@@ -1521,6 +1605,8 @@ class FloodRiseService:
         incident_id: str,
         evidence_version: str,
         model_version: str,
+        action_type: str,
+        action_payload: Mapping[str, Any],
     ) -> dict[str, Any]:
         evidence = next(
             (
@@ -1559,7 +1645,7 @@ class FloodRiseService:
                 detail="The cited published model version does not exist for this incident.",
                 code="INVALID_MODEL_BINDING",
             )
-        return {
+        binding = {
             "evidence_record_id": str(evidence["id"]),
             "evidence_record_version": int(evidence["version"]),
             "evidence_version": evidence_version,
@@ -1568,6 +1654,41 @@ class FloodRiseService:
             "model_version": model_version,
             "incident_id": incident_id,
         }
+        target_kind: str | None = None
+        target_id_field: str | None = None
+        if action_type == "ROAD_CLOSURE":
+            target_kind = "road"
+            target_id_field = "road_id"
+        elif action_type == "SHELTER_CLOSURE":
+            target_kind = "shelter"
+            target_id_field = "shelter_id"
+        if target_kind and target_id_field:
+            target_id = action_payload.get(target_id_field)
+            if not isinstance(target_id, str) or not target_id.strip():
+                raise AppError(
+                    status_code=422,
+                    title="Invalid approval target",
+                    detail=(
+                        f"{action_type} actions must identify a versioned "
+                        f"{target_id_field} for this incident."
+                    ),
+                    code="INVALID_ACTION_TARGET",
+                )
+            target = self.database.get(target_kind, target_id)
+            if target is None or str(target.get("incident_id")) != incident_id:
+                raise AppError(
+                    status_code=422,
+                    title="Invalid approval target",
+                    detail=(f"The cited {target_kind} does not exist in the approval incident."),
+                    code="INVALID_ACTION_TARGET",
+                )
+            binding["action_target"] = {
+                "kind": target_kind,
+                "id": target_id,
+                "record_version": int(target.get("version", 1)),
+                "incident_id": incident_id,
+            }
+        return binding
 
     def create_approval(self, request: ApprovalCreateInput, principal: Principal) -> dict[str, Any]:
         if principal.role == "identity_administrator":
@@ -1580,6 +1701,8 @@ class FloodRiseService:
             str(body["incident_id"]),
             str(body["evidence_version"]),
             str(body["model_version"]),
+            str(body["action_type"]),
+            body["action_payload"],
         )
         now = self.scenario_clock
         payload_digest = hashlib.sha256(canonical_json(body).encode()).hexdigest()
@@ -1691,13 +1814,16 @@ class FloodRiseService:
             )
 
         decision_value = str(decision.decision)
-        approved = decision_value.endswith("APPROVE")
+        approved = decision_value == "APPROVE"
+        modified = decision_value == "MODIFY"
         if approved:
             try:
                 current_binding = self._resolve_approval_bindings(
                     str(current["incident_id"]),
                     str(current["evidence_version"]),
                     str(current["model_version"]),
+                    str(current["action_type"]),
+                    current["action_payload"],
                 )
             except AppError as exc:
                 raise ConflictError(
@@ -1711,7 +1837,7 @@ class FloodRiseService:
                 )
         updated = {
             **current,
-            "status": "APPROVED" if approved else "REJECTED",
+            "status": "APPROVED" if approved else "MODIFIED" if modified else "REJECTED",
             "decided_by": principal.user_id,
             "decided_role": principal.role,
             "decision_authentication": principal.authentication_evidence(),
@@ -1729,7 +1855,13 @@ class FloodRiseService:
                 int(current["version"]),
             )
         ]
-        event_type = "approval.approved" if approved else "approval.rejected"
+        event_type = (
+            "approval.approved"
+            if approved
+            else "approval.modification_requested"
+            if modified
+            else "approval.rejected"
+        )
         events = [
             EventInput(
                 event_type=event_type,
@@ -2004,6 +2136,16 @@ class FloodRiseService:
             if self.is_demo
             else []
         )
+        route_recommendation = (
+            self.recommend_routes(
+                incident_id,
+                origin_node="aluva",
+                max_alternatives=3,
+                principal=Principal("bootstrap-routing-engine", "system", True),
+            )
+            if self.is_demo
+            else None
+        )
         return {
             "server_time": iso_utc(datetime.now(UTC)),
             "scenario_clock": iso_utc(self.scenario_clock),
@@ -2018,7 +2160,12 @@ class FloodRiseService:
             "active_simulation": simulations[-1] if simulations else None,
             "impacts": impacts[-1] if impacts else None,
             "latest_impact": impacts[-1] if impacts else None,
-            "routes": self.routes(incident_id),
+            "routes": (
+                route_recommendation["alternatives"]
+                if route_recommendation is not None
+                else self.routes(incident_id)
+            ),
+            "route_recommendation": route_recommendation,
             "shelters": self.shelters(incident_id),
             "alerts": self.alerts(incident_id),
             "approvals": self.approvals(incident_id),

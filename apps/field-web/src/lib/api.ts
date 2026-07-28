@@ -62,6 +62,13 @@ export type RouteGuidance = {
   message: string;
 };
 
+export type AlertFeed = {
+  items: FieldAlert[];
+  source: "API" | "DEMO_FALLBACK";
+  referenceTime: string;
+  message: string;
+};
+
 function isSimulatedOffline() {
   return isForcedOfflineMode() || !navigator.onLine;
 }
@@ -336,18 +343,29 @@ export async function submitReport(draft: OfflineReportDraft): Promise<ReportRec
   }
 }
 
-export async function fetchAlerts(): Promise<FieldAlert[]> {
+export async function fetchAlerts(): Promise<AlertFeed> {
   try {
     const response = await fetch(`${API_BASE}/alerts?incident_id=${encodeURIComponent(DEMO_INCIDENT_ID)}`, {
       headers: apiHeaders()
     });
     if (!response.ok) throw new Error("Alerts unavailable");
     const payload = AlertListResponse.parse(await response.json());
-    return payload.items
-      .map(normalizeFieldAlert)
-      .filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME));
+    return {
+      items: payload.items
+        .map(normalizeFieldAlert)
+        .filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME)),
+      source: "API",
+      referenceTime: DEMO_SCENARIO_TIME,
+      message: "Current alerts loaded from the incident API."
+    };
   } catch {
-    return demoAlerts.filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME));
+    return {
+      items: demoAlerts.filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME)),
+      source: "DEMO_FALLBACK",
+      referenceTime: DEMO_SCENARIO_TIME,
+      message:
+        "The alert API could not be reached. Showing deterministic DEMO DATA for the scenario checkpoint; this is not a current alert feed."
+    };
   }
 }
 

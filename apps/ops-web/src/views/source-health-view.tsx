@@ -15,13 +15,24 @@ export function SourceHealthView() {
       <div><Clock3 /><span><strong>{snapshot.sources.filter((source) => source.status === "STALE").length} stale</strong><small>Last-known data remains visible</small></span></div>
       <div><ShieldAlert /><span><strong>{snapshot.sources.filter((source) => source.status === "UNKNOWN").length} unknown</strong><small>Never interpreted as normal</small></span></div>
     </div>
-    <section className="table-panel"><div className="panel-heading"><h3>Operational data sources</h3><span>Scenario clock {new Date(snapshot.scenarioTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })} IST</span></div>
+    <section className="table-panel"><div className="panel-heading"><h3>Operational data sources</h3><span>Scenario clock {new Date(snapshot.scenarioTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST</span></div>
       <Table><TableHeader><TableRow><TableHead>Provider</TableHead><TableHead>Status</TableHead><TableHead>Observed at</TableHead><TableHead>Source age</TableHead><TableHead>Cadence</TableHead><TableHead>Mode</TableHead></TableRow></TableHeader>
         <TableBody>{snapshot.sources.map((source) => {
           const age = Math.max(0, Math.round((scenario - new Date(source.observed_at).getTime()) / 60_000));
-          return <TableRow key={source.id}><TableCell><strong>{source.provider}</strong><small className="cell-subtitle">{source.id}</small></TableCell><TableCell><StatusPill tone={source.status === "HEALTHY" ? "success" : source.status === "STALE" ? "warning" : "neutral"}>{source.status}</StatusPill></TableCell><TableCell>{new Date(source.observed_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })}</TableCell><TableCell>{age} min</TableCell><TableCell>{source.cadence}</TableCell><TableCell><StatusPill tone="warning">{source.is_simulated ? "DEMO FIXTURE" : "LIVE"}</StatusPill></TableCell></TableRow>;
+          const sourceMode = source.source_mode
+            ?? (source.quality_flags?.includes("PACKAGED_BASELINE")
+              ? "PACKAGED_BASELINE"
+              : source.is_simulated
+                ? "DEMO_FIXTURE"
+                : "REFERENCE_DATA");
+          const isEventTime = !source.quality_flags?.includes("NOT_EVENT_TIME")
+            && sourceMode !== "PACKAGED_BASELINE"
+            && sourceMode !== "REFERENCE_DATA";
+          const sourceAge = isEventTime ? `${age} min` : "Not event-time";
+          return <TableRow key={source.id}><TableCell><strong>{source.provider}</strong><small className="cell-subtitle">{source.id}</small></TableCell><TableCell><StatusPill tone={source.status === "HEALTHY" ? "success" : source.status === "STALE" ? "warning" : "neutral"}>{source.status}</StatusPill></TableCell><TableCell>{new Date(source.observed_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })}</TableCell><TableCell>{sourceAge}</TableCell><TableCell>{source.cadence}</TableCell><TableCell><StatusPill tone={sourceMode === "LIVE" ? "success" : "warning"}>{sourceMode.replaceAll("_", " ")}</StatusPill></TableCell></TableRow>;
         })}</TableBody>
       </Table>
+      {!snapshot.sources.length && <div className="empty-state"><DatabaseZap /><strong>No authoritative source records</strong><span>The connected bootstrap returned no valid source-health records. No demo source is substituted.</span></div>}
     </section>
     <p className="source-policy"><Satellite /><span><strong>Provider policy</strong>Permission-gated sources are never scraped or redistributed. Missing and delayed data remain labeled unknown or stale.</span></p>
   </div>;

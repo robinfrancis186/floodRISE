@@ -54,6 +54,31 @@ def test_seed_database_preserves_non_demo_existing_records() -> None:
     assert database.get("incident", "inc-demo-kerala-flood-2023") is None
 
 
+def test_demo_runtime_refuses_authority_incident_without_mode_state() -> None:
+    database = Database("sqlite://")
+    database.initialize()
+    incident = {
+        "id": "inc-authority-owned-unmarked-storage",
+        "scenario_id": "authority-event-v1",
+        "title": "Authority-owned incident",
+        "is_demo": False,
+        "is_simulated": False,
+        "version": 1,
+    }
+    database.reset(
+        changes=[EntityChange("incident", incident["id"], incident, 1)],
+        state={"scenario_id": "authority-event-v1", "incident_id": incident["id"]},
+    )
+
+    assert database.get_state("demo_mode") is None
+
+    with pytest.raises(RuntimeError, match="cannot open authority-owned live storage"):
+        seed_database(database, is_demo=True)
+
+    assert database.get("incident", incident["id"]) == incident
+    assert database.get("incident", "inc-demo-kerala-flood-2023") is None
+
+
 def test_empty_non_demo_database_remains_empty() -> None:
     database = Database("sqlite://")
 

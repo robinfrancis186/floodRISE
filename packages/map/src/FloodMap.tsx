@@ -19,6 +19,7 @@ import {
   initialViews,
   interactiveLayerIds,
   updateHorizonLayers,
+  updateResilienceLayers,
 } from "./style";
 import type {
   FloodMapProps,
@@ -362,6 +363,9 @@ export function FloodMap({
   onHorizonChange,
   selectedFeatureId,
   onFeatureSelect,
+  visibleFeatureIds,
+  resilienceLayers,
+  showRouteGeometry = variant === "operations",
   className,
   height,
   showSummary = true,
@@ -386,8 +390,22 @@ export function FloodMap({
   const activeFeatureId = selectedFeatureId !== undefined
     ? selectedFeatureId
     : internalSelection?.id ?? null;
-  const summaryFeatures = useMemo(() => summaryFeaturesForVariant(variant), [variant]);
-  const items = useMemo(() => legendItems(variant, effectiveHorizon), [variant, effectiveHorizon]);
+  const visibleFeatureIdSet = useMemo(
+    () => visibleFeatureIds === undefined ? null : new Set(visibleFeatureIds),
+    [visibleFeatureIds],
+  );
+  const summaryFeatures = useMemo(
+    () => summaryFeaturesForVariant(variant).filter(
+      (feature) => visibleFeatureIdSet === null || visibleFeatureIdSet.has(feature.properties.id),
+    ),
+    [variant, visibleFeatureIdSet],
+  );
+  const items = useMemo(
+    () => legendItems(variant, effectiveHorizon).filter(
+      (item) => showRouteGeometry || item.swatch !== "route",
+    ),
+    [effectiveHorizon, showRouteGeometry, variant],
+  );
   const screenReaderSummary = useMemo(
     () => summaryCopy(variant, effectiveHorizon),
     [variant, effectiveHorizon],
@@ -425,7 +443,12 @@ export function FloodMap({
         const view = initialViews[variant];
         const map = new mapLibrary.Map({
           container,
-          style: createMapStyle(variant, effectiveHorizon),
+          style: createMapStyle(
+            variant,
+            effectiveHorizon,
+            resilienceLayers,
+            showRouteGeometry,
+          ),
           center: view.center,
           zoom: view.zoom,
           minZoom: view.minZoom,
@@ -491,7 +514,7 @@ export function FloodMap({
     };
     // The initial horizon is applied to the style; later changes use the dedicated layer update below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant, interactive]);
+  }, [variant, interactive, showRouteGeometry]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -501,13 +524,21 @@ export function FloodMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map || loadState !== "ready" || variant !== "resilience" || !resilienceLayers) return;
+    updateResilienceLayers(map, resilienceLayers);
+  }, [loadState, resilienceLayers, variant]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     const mapLibrary = mapLibraryRef.current;
     if (!map || !mapLibrary || loadState !== "ready") return;
 
     markersRef.current.forEach((marker) => marker.remove());
     const nextMarkers: MapLibreMarker[] = [];
 
-    for (const feature of markerFeaturesForVariant(variant)) {
+    for (const feature of markerFeaturesForVariant(variant).filter(
+      (candidate) => visibleFeatureIdSet === null || visibleFeatureIdSet.has(candidate.properties.id),
+    )) {
       const element = createMarkerElement(
         feature,
         variant,
@@ -542,7 +573,7 @@ export function FloodMap({
       if (markersRef.current === nextMarkers) markersRef.current = [];
     };
     // mapEpoch signals that the current style is fully loaded and can receive DOM markers.
-  }, [activeFeatureId, loadState, mapEpoch, variant]);
+  }, [activeFeatureId, loadState, mapEpoch, variant, visibleFeatureIdSet]);
 
   useEffect(() => {
     const observer = typeof ResizeObserver === "undefined"
@@ -638,7 +669,7 @@ export function FloodMap({
         <section className="fr-map-summary" aria-label="Synchronized map feature summary">
           <div className="fr-map-summary__intro">
             <strong>{variant === "resilience" ? "Priority summary" : "Map summary"}</strong>
-            <span>{variant === "resilience" ? "Showing 6 of 18 hotspots" : HORIZON_DESCRIPTIONS[effectiveHorizon]}</span>
+            <span>{variant === "resilience" ? `Showing ${summaryFeatures.length} mapped priorities` : HORIZON_DESCRIPTIONS[effectiveHorizon]}</span>
           </div>
           <ul>
             {summaryFeatures.map((feature) => (
