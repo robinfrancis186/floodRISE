@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { router } from "./router";
 import { deleteLegacyFieldApiCache } from "./lib/service-worker-cache";
+import "@floodrise/map/styles.css";
 import "./styles.css";
 
 const queryClient = new QueryClient({

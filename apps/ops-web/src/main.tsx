@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@floodrise/ui/styles.css";
+import "@floodrise/map/styles.css";
 import "./styles.css";
 import { App } from "./App";
 

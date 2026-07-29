@@ -16,7 +16,7 @@ is removed.
 | Plan requirement | Status | Implementation and evidence |
 | --- | --- | --- |
 | Desktop operations console with eight workflows | Executed | `apps/ops-web`; direct-route Playwright sweep and operations journey. |
-| Installable field PWA with six operational workflows | Executed | `apps/field-web`; manifest, Workbox, 360x800 direct-route sweep and field journey. |
+| Installable field PWA with six operational workflows | Executed | `apps/field-web`; scoped manifest/Workbox, Android/maskable/Apple icons, safe-area handling, and six-viewport Field journeys. |
 | Professional shared visual system and accessible map alternatives | Executed | `packages/ui`, `packages/map`, `docs/DESIGN_SYSTEM.md`, keyboard semantics and axe tests. |
 | Detailed Kerala OpenStreetMap view with offline emergency fallback | Executed | 3,967 versioned OSM road segments, 800-segment fallback, visible ODbL attribution and fixture validation. |
 | Visible `DEMO DATA`, freshness and confidence wording | Executed | Shared banner, source health, map labels and browser assertions. |
@@ -59,8 +59,8 @@ is removed.
 | --- | --- | --- |
 | Full functional/unit/contract release gate | Executed | `pnpm test`, lint, format, typecheck and production builds. |
 | Local judging-path latency thresholds | Executed | Twenty-sample API acceptance gate enforces report p95 <=2 s, fourth-report transition <=5 s, route p95 <=750 ms and model publication p95 <=60 s. |
-| Desktop/mobile cross-app journeys | Executed | Ten Playwright journeys cover routes, reports, media, reset, corroboration and approval. |
+| Desktop/mobile cross-app journeys | Executed | 26 Playwright journeys cover all routes, reports, media, reset, corroboration, approval, WCAG scans, and six touch viewports from 320×568 through 768×1024 plus 844×390. |
 | WCAG automated gate | Executed | axe serious/critical WCAG A/AA/2.2 AA scans. |
-| Three reset rehearsals and degraded-network journey | Executed | Dated release evidence plus deterministic reset and offline browser tests. |
+| Three reset rehearsals and degraded-network journey | Automated path executed; operator record pending | Three consecutive deterministic fourth-report replays and the degraded offline browser journey pass. The demo runbook still requires the three-run operator record on the actual judging environment. |
 | Hosted CodeQL, Trivy, secret and dependency gates | Configured; release run pending | Immutable GitHub workflows are checked in. The exact pushed release commit must pass them before publication. |
 | Hydraulic benchmark tolerances, VoiceOver device review, ZAP, k6, backup restore and AWS smoke | External activation | Require accepted reference data or the authorized judging/deployment environment; deterministic checks and repository configuration are not substituted for that evidence. |

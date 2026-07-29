@@ -22,7 +22,7 @@ uses a disposable ignored SQLite database. It does not contact production alert
 destinations or require upstream disaster-data providers.
 
 The current dated local result and its environment limitations are recorded in
-`docs/RELEASE_VERIFICATION_2026-07-28.md`.
+`docs/RELEASE_VERIFICATION_2026-07-29.md`.
 
 ## CI workflow
 

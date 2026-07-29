@@ -13,8 +13,15 @@ test("operations console renders and completes an evidence review", async ({ pag
   await expect(page).toHaveTitle(/floodRISE Operations/);
   await expect(page.getByText(/DEMO DATA.*NOT LIVE/).first()).toBeVisible();
   const impactMap = page.getByRole("region", { name: "Flood impact map" });
-  await expect(impactMap.getByText("Rapid impact estimate", { exact: true })).toBeVisible();
   await expect(impactMap).toBeVisible();
+  const horizon = impactMap.getByRole("group", { name: "Flood estimate horizon" });
+  await expect(horizon.getByRole("button", { name: "Now" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(
+    impactMap.getByText(/current rapid impact estimate is selected/i),
+  ).toBeAttached();
   await expect(impactMap.getByText("Loading the detailed Kerala map…")).toBeHidden();
   await page.screenshot({ path: "artifacts/screenshots/ops-live.png", fullPage: true });
 

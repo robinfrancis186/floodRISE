@@ -107,7 +107,7 @@ export function FloodSignalView() {
           <span><i className="key-report" />Counted reports ({selected.independentReports})</span>
           <span><i className="key-excluded" />Excluded evidence</span>
         </div>
-        <FloodMap variant="signals" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={mapFeatureId} onFeatureSelect={handleMapSelection} showLegend={false} className="shared-map" height="100%" ariaLabel={`Evidence map for ${selected.name} cluster`} />
+        <FloodMap variant="signals" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={mapFeatureId} onFeatureSelect={handleMapSelection} showLegend={false} cooperativeGestures className="shared-map" height="100%" ariaLabel={`Evidence map for ${selected.name} cluster`} />
         </> : <div className="empty-state signal-empty-state"><Filter /><strong>No cluster selected</strong><span>No evidence review is available for the current filters.</span></div>}
       </section>
 
@@ -134,7 +134,7 @@ export function FloodSignalView() {
 
         <section className="evidence-table-section">
           <h3>Evidence ({selected.independentReports} of {selected.receivedReports})</h3>
-          <Table>
+          <Table scrollLabel="FloodSignal evidence table">
             <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Reporter</TableHead><TableHead>Source</TableHead><TableHead>Depth</TableHead><TableHead>Road</TableHead><TableHead>Time</TableHead><TableHead>Dist.</TableHead></TableRow></TableHeader>
             <TableBody>{selected.evidence.map((report, index) => <TableRow key={report.id} data-excluded={!report.counted || undefined}>
               <TableCell><span className={report.counted ? "report-id" : "report-id excluded"}>{report.counted ? index + 1 : "D1"}</span></TableCell>

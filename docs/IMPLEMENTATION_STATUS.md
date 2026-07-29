@@ -84,9 +84,9 @@ offline behavior, and media failure handling. They are development evidence,
 not a signed judging rehearsal record.
 
 Three consecutive clean automated resets/corroboration runs and the degraded
-network field journey passed for the hardened Kerala baseline on 2026-07-28; the exact
+network field journey passed for the hardened Kerala baseline on 2026-07-29; the exact
 timings, OpenStreetMap snapshot, and scope are recorded in
-`docs/RELEASE_VERIFICATION_2026-07-28.md`. The sub-two-minute
+`docs/RELEASE_VERIFICATION_2026-07-29.md`. The sub-two-minute
 full reset rehearsal, eight-minute presentation timing, full numerical fixture
 tolerances, deployed-load performance percentiles, VoiceOver review, ZAP/k6
 gates, and zero-destination environment observation must still be run and

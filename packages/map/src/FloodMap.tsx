@@ -235,11 +235,13 @@ function createMarkerElement(
   feature: PointFeature,
   variant: FloodMapVariant,
   selected: boolean,
+  interactive: boolean,
   onSelect: (selection: FloodMapSelection) => void,
-): HTMLButtonElement {
-  const element = document.createElement("button");
-  element.type = "button";
+): HTMLElement {
+  const element = document.createElement(interactive ? "button" : "div");
+  if (element instanceof HTMLButtonElement) element.type = "button";
   element.className = `${markerClass(feature)}${selected ? " is-selected" : ""}`;
+  if (!interactive) element.setAttribute("role", "img");
   element.setAttribute(
     "aria-label",
     `${kindLabels[feature.properties.kind]}: ${feature.properties.name}. ${feature.properties.description ?? ""}`.trim(),
@@ -269,10 +271,12 @@ function createMarkerElement(
     element.append(label);
   }
 
-  element.addEventListener("click", (event) => {
-    event.stopPropagation();
-    onSelect(featureToSelection(feature));
-  });
+  if (interactive) {
+    element.addEventListener("click", (event) => {
+      event.stopPropagation();
+      onSelect(featureToSelection(feature));
+    });
+  }
 
   return element;
 }
@@ -372,6 +376,7 @@ export function FloodMap({
   showLegend = true,
   showHorizonControl = true,
   interactive = true,
+  cooperativeGestures = false,
   ariaLabel,
 }: FloodMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -460,7 +465,7 @@ export function FloodMap({
           dragRotate: false,
           pitchWithRotate: false,
           touchPitch: false,
-          cooperativeGestures: false,
+          cooperativeGestures,
           fadeDuration: 0,
           localIdeographFontFamily: false,
         });
@@ -514,7 +519,7 @@ export function FloodMap({
     };
     // The initial horizon is applied to the style; later changes use the dedicated layer update below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant, interactive, showRouteGeometry]);
+  }, [variant, interactive, cooperativeGestures, showRouteGeometry]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -543,6 +548,7 @@ export function FloodMap({
         feature,
         variant,
         activeFeatureId === feature.properties.id,
+        interactive,
         emitSelection,
       );
       const marker = new mapLibrary.Marker({
@@ -573,7 +579,7 @@ export function FloodMap({
       if (markersRef.current === nextMarkers) markersRef.current = [];
     };
     // mapEpoch signals that the current style is fully loaded and can receive DOM markers.
-  }, [activeFeatureId, loadState, mapEpoch, variant, visibleFeatureIdSet]);
+  }, [activeFeatureId, interactive, loadState, mapEpoch, variant, visibleFeatureIdSet]);
 
   useEffect(() => {
     const observer = typeof ResizeObserver === "undefined"

@@ -111,7 +111,7 @@ export function EvacuationView() {
     <ViewHeader title="Evacuation Routing" description="Compare lower-risk alternatives against current evidence and rapid impact estimates." actions={<><StatusPill tone="warning">Valid until {formatIstClock(selected.valid_until)} IST</StatusPill><Button disabled={!reviewable} title={reviewable ? undefined : reviewUnavailableReason} onClick={() => setDialogOpen(true)}><ShieldAlert />{action?.status === "APPROVED" ? "Guidance approved" : "Review guidance approval"}</Button></>} />
     <div className="evacuation-layout">
       <section className="evacuation-map">
-        <FloodMap variant="operations" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={null} showRouteGeometry={false} className="shared-map" height="100%" ariaLabel="Flood and shelter context map; route geometry is not displayed" />
+        <FloodMap variant="operations" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={null} showRouteGeometry={false} cooperativeGestures className="shared-map" height="100%" ariaLabel="Flood and shelter context map; route geometry is not displayed" />
         <p className="evacuation-map-boundary" role="note">Route geometry is not displayed because the authoritative alternatives do not include matching GeoJSON. Use the versioned route list; do not infer a path from this context map.</p>
       </section>
       <section className="route-list-panel"><header><h3>Route alternatives</h3><span>Origin: Aluva–Paravur Road</span></header>

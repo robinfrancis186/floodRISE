@@ -439,6 +439,9 @@ describe("operations console", () => {
     expect(screen.getByRole("button", { name: "Notifications unavailable in demo" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: /Rainfall increase/ })).not.toBeInTheDocument();
     expect(screen.getByText("Rainfall increase")).toBeInTheDocument();
+    const auditNavigation = screen.getByRole("button", { name: "Audit Log" });
+    expect(auditNavigation).toHaveAttribute("title", "Audit Log");
+    expect(within(auditNavigation).getByText("Audit", { exact: true })).toHaveAttribute("aria-hidden", "true");
   });
 
   it("makes incident actions explicit, exports a demo brief, and opens command workspace", async () => {
@@ -609,6 +612,7 @@ describe("operations console", () => {
     expect(within(packagedRow).queryByText("0 min")).not.toBeInTheDocument();
     expect(within(packagedRow).queryByText("LIVE")).not.toBeInTheDocument();
     expect(screen.queryByText("IMD weather warning")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Operational source health table" })).toHaveAttribute("tabindex", "0");
   });
 
   it("labels unavailable field dispatch instead of presenting an inert action", () => {
@@ -860,6 +864,7 @@ describe("operations console", () => {
     expect(screen.getByText("Integrity valid")).toBeInTheDocument();
     expect(screen.getByText("SHELTER STATUS UPDATED")).toBeInTheDocument();
     expect(screen.queryByText("Hash chain verified")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Audit event table" })).toHaveAttribute("tabindex", "0");
   });
 
   it("does not make an integrity claim when authoritative audit verification is unavailable", async () => {

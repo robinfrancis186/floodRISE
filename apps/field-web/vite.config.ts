@@ -18,7 +18,13 @@ export default defineConfig(({ command }) => {
       VitePWA({
         registerType: "autoUpdate",
         scope: appBase,
-        includeAssets: ["floodrise-icon.svg"],
+        includeAssets: [
+          "floodrise-icon.svg",
+          "icons/floodrise-192.png",
+          "icons/floodrise-512.png",
+          "icons/floodrise-maskable-512.png",
+          "icons/floodrise-apple-touch-180.png"
+        ],
         manifest: {
           name: "floodRISE Field",
           short_name: "floodRISE",
@@ -26,16 +32,28 @@ export default defineConfig(({ command }) => {
           theme_color: "#062d78",
           background_color: "#ffffff",
           display: "standalone",
-          orientation: "portrait-primary",
+          orientation: "any",
           start_url: appBase,
           scope: appBase,
           categories: ["utilities", "navigation", "government"],
           icons: [
             {
-              src: `${appBase}floodrise-icon.svg`,
-              sizes: "any",
-              type: "image/svg+xml",
-              purpose: "any maskable"
+              src: `${appBase}icons/floodrise-192.png`,
+              sizes: "192x192",
+              type: "image/png",
+              purpose: "any"
+            },
+            {
+              src: `${appBase}icons/floodrise-512.png`,
+              sizes: "512x512",
+              type: "image/png",
+              purpose: "any"
+            },
+            {
+              src: `${appBase}icons/floodrise-maskable-512.png`,
+              sizes: "512x512",
+              type: "image/png",
+              purpose: "maskable"
             }
           ]
         },

@@ -18,6 +18,7 @@ button, input, textarea { letter-spacing: -0.005em; }
 svg { stroke-width: 2; }
 
 .field-app {
+  --field-safe-area-top: env(safe-area-inset-top);
   position: relative;
   width: 100%;
   max-width: 852px;
@@ -29,10 +30,17 @@ svg { stroke-width: 2; }
   box-shadow: 0 0 20px rgba(10, 26, 58, 0.07);
 }
 
+.field-app > .skip-link + [role="status"] {
+  height: auto;
+  min-height: calc(28px + var(--field-safe-area-top));
+  line-height: 1.25;
+  padding-top: var(--field-safe-area-top);
+}
+
 .skip-link {
   position: fixed;
   z-index: 1000;
-  left: 12px;
+  left: max(12px, env(safe-area-inset-left));
   top: -80px;
   border-radius: 6px;
   background: var(--primary);
@@ -40,7 +48,7 @@ svg { stroke-width: 2; }
   padding: 12px 16px;
   font-weight: 700;
 }
-.skip-link:focus { top: 12px; }
+.skip-link:focus { top: max(12px, env(safe-area-inset-top)); }
 
 .field-header {
   display: flex;
@@ -48,7 +56,7 @@ svg { stroke-width: 2; }
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 32px;
+  padding: 0 max(32px, env(safe-area-inset-right)) 0 max(32px, env(safe-area-inset-left));
   border-bottom: 1px solid #edf0f4;
   background: #fbfcfd;
 }
@@ -60,7 +68,7 @@ svg { stroke-width: 2; }
 .field-header-actions { gap: 22px; color: #4b586b; }
 .network-state, .header-action { gap: 9px; font-size: 16px; font-weight: 600; }
 .network-state svg, .header-action svg { width: 25px; height: 25px; }
-.header-action { min-height: 44px; border: 0; background: transparent; color: var(--link); }
+.header-action { min-width: 44px; min-height: 44px; justify-content: center; border: 0; background: transparent; color: var(--link); }
 .field-avatar {
   display: grid;
   width: 48px;
@@ -78,7 +86,7 @@ svg { stroke-width: 2; }
   align-items: center;
   justify-content: center;
   gap: 11px;
-  padding: 8px 18px;
+  padding: 8px max(18px, env(safe-area-inset-right)) 8px max(18px, env(safe-area-inset-left));
   border-bottom: 3px solid var(--warning);
   font-size: 15px;
   color: #39475d;
@@ -92,7 +100,7 @@ svg { stroke-width: 2; }
 .field-main { min-height: calc(100dvh - 185px); padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
 .field-main.report-main { padding-bottom: 0; }
 .page { width: 100%; }
-.page-content { padding: 26px 32px 44px; }
+.page-content { padding: 26px max(32px, env(safe-area-inset-right)) 44px max(32px, env(safe-area-inset-left)); }
 .standard-page { min-height: calc(100dvh - 230px); }
 .standard-page > * + * { margin-top: 24px; }
 .page-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
@@ -101,6 +109,8 @@ svg { stroke-width: 2; }
 .page-title-icon { width: 34px; height: 34px; color: var(--flood); }
 
 .map-region { position: relative; width: 100%; overflow: hidden; background: #eef2f6; }
+.field-app .fr-map-legend { left: max(14px, env(safe-area-inset-left)); }
+.field-app .fr-map-attribution { right: max(10px, env(safe-area-inset-right)); }
 .map-place-overlay {
   position: absolute;
   right: 20px;
@@ -168,7 +178,7 @@ svg { stroke-width: 2; }
   height: calc(70px + env(safe-area-inset-bottom));
   grid-template-columns: repeat(5, 1fr);
   align-items: start;
-  padding: 6px 8px env(safe-area-inset-bottom);
+  padding: 6px max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left));
   border-top: 1px solid var(--border);
   background: #fff;
 }
@@ -206,6 +216,7 @@ svg { stroke-width: 2; }
 }
 .sheet-handle { width: 44px; height: 4px; margin: 10px auto 8px; border-radius: 2px; background: #8b96a5; }
 .report-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 4px 32px 15px; border-bottom: 1px solid var(--border); }
+.report-title-row > button { width: 44px; min-width: 44px; height: 44px; }
 .report-title-row h1 { margin: 0; font-size: 31px; line-height: 1.2; font-weight: 780; letter-spacing: -0.03em; }
 .report-title-row p { display: flex; align-items: center; gap: 9px; margin: 7px 0 0; color: var(--muted-foreground); font-size: 15px; }
 .report-title-row p svg { width: 17px; height: 17px; }
@@ -263,7 +274,7 @@ svg { stroke-width: 2; }
 .photo-picker input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .photo-preview { position: relative; overflow: hidden; background: var(--muted); }
 .photo-preview img { width: 100%; height: 100%; object-fit: cover; }
-.photo-preview button { position: absolute; top: 8px; right: 8px; display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid #fff; border-radius: 50%; background: rgba(255, 255, 255, 0.94); color: var(--foreground); box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.photo-preview button { position: absolute; top: 8px; right: 8px; display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid #fff; border-radius: 50%; background: rgba(255, 255, 255, 0.94); color: var(--foreground); box-shadow: 0 2px 10px rgba(0,0,0,.18); }
 .photo-preview button svg { width: 20px; height: 20px; }
 .privacy-caption { display: flex; align-items: flex-start; gap: 8px; margin: 0; }
 .privacy-caption svg { width: 17px; height: 17px; flex: none; margin-top: 1px; }
@@ -398,13 +409,18 @@ svg { stroke-width: 2; }
 .receipt-details dt svg { width: 16px; height: 16px; }
 .receipt-details dd { margin: 0; font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
 .receipt-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.receipt-page a { min-height: 44px; }
 
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 0%,100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
 
 @media (max-width: 640px) {
-  .field-header { min-height: 64px; padding: 0 16px; }
+  .field-app > .skip-link + [role="status"] {
+    padding-top: calc(5px + var(--field-safe-area-top));
+    padding-bottom: 5px;
+  }
+  .field-header { min-height: 64px; padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); }
   .field-brand-row { gap: 12px; }
   .field-brand-row [aria-label="floodRISE"] > span:last-child { font-size: 21px; }
   .field-brand-row [aria-label="floodRISE"] > span:first-child { width: 28px; height: 28px; }
@@ -416,20 +432,23 @@ svg { stroke-width: 2; }
   .header-action-label { display: none; }
   .field-avatar { width: 40px; height: 40px; }
   .network-strip { min-height: 40px; padding-block: 7px; font-size: 12px; }
-  .page-content { padding: 22px 20px 34px; }
-  .map-place-overlay { right: 12px; bottom: 12px; left: 12px; min-width: 0; }
+  .page-content { padding: 22px max(20px, env(safe-area-inset-right)) 34px max(20px, env(safe-area-inset-left)); }
+  .map-place-overlay { right: max(12px, env(safe-area-inset-right)); bottom: 12px; left: max(12px, env(safe-area-inset-left)); min-width: 0; }
+  .field-app .fr-map-legend { left: max(10px, env(safe-area-inset-left)); }
+  .field-app .fr-map-demo-label { right: max(10px, env(safe-area-inset-right)); }
   .page-title-row h1 { font-size: 26px; }
   .primary-actions { grid-template-columns: 1fr; }
-  .report-map { height: 365px; }
-  .report-map > * { height: 365px !important; }
+  .report-map { height: 300px; }
+  .report-map > * { height: 300px !important; }
   .report-sheet { margin-top: -20px; border-radius: 8px 8px 0 0; }
   .sheet-handle { margin-top: 11px; }
   .report-title-row { padding: 4px 20px 14px; }
+  .report-title-row, .report-form { padding-right: max(20px, env(safe-area-inset-right)); padding-left: max(20px, env(safe-area-inset-left)); }
   .report-title-row h1 { font-size: 26px; }
   .report-title-row p { font-size: 13px; }
   .report-form { padding: 0 20px 24px; }
   .location-row { grid-template-columns: auto 1fr; min-height: 78px; }
-  .location-row button { grid-column: 2; min-width: 0; min-height: 32px; justify-self: start; margin-top: -17px; justify-content: flex-start; }
+  .location-row button { grid-column: 2; min-width: 0; min-height: 44px; justify-self: start; margin-top: -11px; justify-content: flex-start; }
   .depth-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .choice-tile { min-height: 72px; }
   .issues-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -445,24 +464,37 @@ svg { stroke-width: 2; }
   .demo-reset-actions { grid-template-columns: 1fr; }
 }
 
+@media (orientation: landscape) and (max-height: 500px) {
+  .report-map { height: 180px; }
+  .report-map > * { height: 180px !important; }
+  .compact-map-region .fr-flood-map { height: 220px !important; }
+}
+
 @media (max-width: 390px) {
-  .field-header { padding: 0 12px; }
+  .field-header { padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left)); }
   .field-brand-row [aria-label="floodRISE"] > span:last-child { font-size: 19px; }
   .field-brand-row { gap: 8px; }
   .field-product-name { font-size: 16px; }
   .field-header-actions { gap: 7px; }
   .network-state { font-size: 0; gap: 0; }
   .field-avatar { width: 40px; height: 40px; }
-  .page-content { padding-right: 16px; padding-left: 16px; }
-  .bottom-navigation { padding-right: 2px; padding-left: 2px; }
+  .page-content { padding-right: max(16px, env(safe-area-inset-right)); padding-left: max(16px, env(safe-area-inset-left)); }
+  .bottom-navigation { padding-right: max(2px, env(safe-area-inset-right)); padding-left: max(2px, env(safe-area-inset-left)); }
   .bottom-navigation-item { font-size: 10px; }
-  .report-title-row, .report-form { padding-right: 16px; padding-left: 16px; }
+  .report-title-row, .report-form { padding-right: max(16px, env(safe-area-inset-right)); padding-left: max(16px, env(safe-area-inset-left)); }
   .form-submit-region { margin-right: -16px; margin-left: -16px; padding-right: 16px; padding-left: 16px; }
   .choice-tile { gap: 7px; }
   .choice-tile > svg { width: 25px !important; height: 25px !important; }
   .choice-tile strong { font-size: 13px; }
+  .road-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .road-grid > :last-child { grid-column: 1 / -1; }
   .photo-picker, .photo-preview { width: 100%; }
   .queue-summary strong { font-size: 19px; }
+  .field-app .fr-map-legend { top: 44px; }
+}
+
+@media (max-width: 340px) {
+  .field-divider, .field-product-name { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

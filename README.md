@@ -32,7 +32,7 @@ The default profile is a deterministic, clearly watermarked `DEMO DATA` replay a
 The exact boundary between locally verified MVP behavior and deployment-time
 integration work is recorded in `docs/IMPLEMENTATION_STATUS.md`.
 The latest Kerala/OpenStreetMap release evidence is recorded in
-`docs/RELEASE_VERIFICATION_2026-07-28.md`.
+`docs/RELEASE_VERIFICATION_2026-07-29.md`.
 The original brief is reconciled requirement by requirement in
 `docs/PLAN_EXECUTION_MATRIX.md`; its executable checks run inside `pnpm test`.
 

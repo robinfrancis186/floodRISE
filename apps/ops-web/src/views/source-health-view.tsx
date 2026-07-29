@@ -16,7 +16,7 @@ export function SourceHealthView() {
       <div><ShieldAlert /><span><strong>{snapshot.sources.filter((source) => source.status === "UNKNOWN").length} unknown</strong><small>Never interpreted as normal</small></span></div>
     </div>
     <section className="table-panel"><div className="panel-heading"><h3>Operational data sources</h3><span>Scenario clock {new Date(snapshot.scenarioTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST</span></div>
-      <Table><TableHeader><TableRow><TableHead>Provider</TableHead><TableHead>Status</TableHead><TableHead>Observed at</TableHead><TableHead>Source age</TableHead><TableHead>Cadence</TableHead><TableHead>Mode</TableHead></TableRow></TableHeader>
+      <Table scrollLabel="Operational source health table"><TableHeader><TableRow><TableHead>Provider</TableHead><TableHead>Status</TableHead><TableHead>Observed at</TableHead><TableHead>Source age</TableHead><TableHead>Cadence</TableHead><TableHead>Mode</TableHead></TableRow></TableHeader>
         <TableBody>{snapshot.sources.map((source) => {
           const age = Math.max(0, Math.round((scenario - new Date(source.observed_at).getTime()) / 60_000));
           const sourceMode = source.source_mode

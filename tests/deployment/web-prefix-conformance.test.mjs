@@ -17,6 +17,7 @@ function contentType(pathname) {
     ".html": "text/html",
     ".js": "text/javascript",
     ".json": "application/json",
+    ".png": "image/png",
     ".svg": "image/svg+xml",
     ".webmanifest": "application/manifest+json",
   }[extname(pathname)] ?? "application/octet-stream";
@@ -82,6 +83,33 @@ after(async () => {
 
 function documentUrls(html) {
   return [...html.matchAll(/(?:href|src)="(\/[^"#?]+)"/g)].map((match) => match[1]);
+}
+
+async function builtStylesheet(pathname) {
+  const response = await fetch(`${origin}${pathname}`);
+  assert.equal(response.status, 200, `${pathname} should resolve before inspecting its styles`);
+  const stylesheetUrls = documentUrls(await response.text()).filter((url) => url.endsWith(".css"));
+  assert(stylesheetUrls.length > 0, `${pathname} must reference a production stylesheet`);
+  return (
+    await Promise.all(stylesheetUrls.map(async (url) => {
+      const stylesheet = await fetch(`${origin}${url}`);
+      assert.equal(stylesheet.status, 200, `${url} must be available in the production layout`);
+      return stylesheet.text();
+    }))
+  ).join("\n");
+}
+
+function pngDimensions(payload) {
+  assert.equal(
+    payload.subarray(0, 8).toString("hex"),
+    "89504e470d0a1a0a",
+    "install icon must be a PNG",
+  );
+  assert.equal(payload.subarray(12, 16).toString("ascii"), "IHDR");
+  return {
+    width: payload.readUInt32BE(16),
+    height: payload.readUInt32BE(20),
+  };
 }
 
 async function expectDocumentAndAssets(pathname, prefix) {
@@ -152,13 +180,52 @@ test("Field artifacts and nested routes are rooted at /field/", async () => {
   const html = await expectDocumentAndAssets("/field/", "field");
   await expectDocumentAndAssets("/field/report", "field");
   assert.match(html, /href="\/field\/manifest\.webmanifest"/);
+  assert.match(
+    html,
+    /name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/,
+  );
+  assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/);
+  assert.match(html, /name="apple-mobile-web-app-status-bar-style" content="default"/);
+  assert.match(html, /name="apple-mobile-web-app-title" content="floodRISE"/);
+  assert.match(
+    html,
+    /rel="apple-touch-icon" sizes="180x180" href="\/field\/icons\/floodrise-apple-touch-180\.png"/,
+  );
 
   const manifestResponse = await fetch(`${origin}/field/manifest.webmanifest`);
   assert.equal(manifestResponse.status, 200);
   const manifest = await manifestResponse.json();
   assert.equal(manifest.start_url, "/field/");
   assert.equal(manifest.scope, "/field/");
+  assert.equal(manifest.display, "standalone");
+  assert.equal(manifest.orientation, "any");
   assert(manifest.icons.every(({ src }) => src.startsWith("/field/")));
+
+  const expectedIcons = new Map([
+    ["/field/icons/floodrise-192.png", { sizes: "192x192", purpose: "any", pixels: 192 }],
+    ["/field/icons/floodrise-512.png", { sizes: "512x512", purpose: "any", pixels: 512 }],
+    ["/field/icons/floodrise-maskable-512.png", { sizes: "512x512", purpose: "maskable", pixels: 512 }],
+  ]);
+  assert.equal(manifest.icons.length, expectedIcons.size);
+  for (const icon of manifest.icons) {
+    const expected = expectedIcons.get(icon.src);
+    assert(expected, `unexpected Field install icon: ${icon.src}`);
+    assert.equal(icon.type, "image/png");
+    assert.equal(icon.sizes, expected.sizes);
+    assert.equal(icon.purpose, expected.purpose);
+    const response = await fetch(`${origin}${icon.src}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/png");
+    assert.deepEqual(pngDimensions(Buffer.from(await response.arrayBuffer())), {
+      width: expected.pixels,
+      height: expected.pixels,
+    });
+  }
+
+  const appleIcon = Buffer.from(
+    await (await fetch(`${origin}/field/icons/floodrise-apple-touch-180.png`)).arrayBuffer(),
+  );
+  assert.deepEqual(pngDimensions(appleIcon), { width: 180, height: 180 });
 });
 
 test("Field service worker registration and navigation fallback cannot claim Operations", async () => {
@@ -169,6 +236,53 @@ test("Field service worker registration and navigation fallback cannot claim Ope
 
   const serviceWorker = await (await fetch(`${origin}/field/sw.js`)).text();
   assert.match(serviceWorker, /\/field\/index\.html/);
+  for (const installAsset of [
+    "icons/floodrise-192.png",
+    "icons/floodrise-512.png",
+    "icons/floodrise-maskable-512.png",
+    "icons/floodrise-apple-touch-180.png",
+  ]) {
+    assert.match(serviceWorker, new RegExp(`url:["']${installAsset.replaceAll("/", "\\/")}["']`));
+  }
   assert.doesNotMatch(serviceWorker, /\/ops\//);
   assert.doesNotMatch(serviceWorker, /createHandlerBoundToURL\(["']\/index\.html["']\)/);
+});
+
+test("production Field and Operations styles include the complete map system before app overrides", async () => {
+  for (const [prefix, localOverride] of [
+    ["field", ".field-app .fr-map-legend"],
+    ["ops", ".app-frame .fr-map-legend"],
+  ]) {
+    const stylesheet = await builtStylesheet(`/${prefix}/`);
+
+    for (const selector of [
+      ".fr-map-canvas-shell",
+      ".fr-map-legend",
+      ".fr-map-attribution",
+      ".fr-map-sr-only",
+      ".maplibregl-map",
+      ".maplibregl-canvas",
+      ".maplibregl-ctrl-group",
+    ]) {
+      assert(
+        stylesheet.includes(selector),
+        `/${prefix}/ production CSS must include ${selector}`,
+      );
+    }
+
+    const screenReaderRule = stylesheet.match(/\.fr-map-sr-only\{([^}]*)\}/)?.[1];
+    assert(screenReaderRule, `/${prefix}/ must emit the map screen-reader-only rule`);
+    assert.match(screenReaderRule, /position:absolute!important/);
+    assert.match(screenReaderRule, /width:1px!important/);
+    assert.match(screenReaderRule, /height:1px!important/);
+    assert.match(screenReaderRule, /overflow:hidden!important/);
+    assert.match(screenReaderRule, /clip:rect\(0,0,0,0\)!important/);
+
+    const baseRuleIndex = stylesheet.indexOf(".fr-map-legend");
+    const localOverrideIndex = stylesheet.indexOf(localOverride);
+    assert(
+      localOverrideIndex > baseRuleIndex,
+      `/${prefix}/ local map overrides must follow the shared map stylesheet`,
+    );
+  }
 });

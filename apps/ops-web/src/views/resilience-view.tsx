@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   Download,
   FilePlus2,
+  SlidersHorizontal,
   Route,
   ShieldCheck,
   Users,
@@ -35,6 +36,7 @@ export function ResilienceView() {
     roadIsolation: true,
     shelterGaps: true,
   });
+  const [mapControlsOpen, setMapControlsOpen] = useState(false);
   const [compare, setCompare] = useState(false);
   const [detailOpen, setDetailOpen] = useState(true);
   const [inspectionDrafts, setInspectionDrafts] = useState<Set<string>>(() => new Set());
@@ -98,7 +100,17 @@ export function ResilienceView() {
   return (
     <div className="workspace resilience-workspace">
       <section className="resilience-map" aria-label="Resilience priority map">
-        <div className="audit-controls">
+        <Button
+          className="audit-controls-toggle"
+          variant="outline"
+          type="button"
+          aria-controls="resilience-map-controls"
+          aria-expanded={mapControlsOpen}
+          onClick={() => setMapControlsOpen((open) => !open)}
+        >
+          <SlidersHorizontal aria-hidden />{mapControlsOpen ? "Hide map filters" : "Map filters"}
+        </Button>
+        <div className="audit-controls" id="resilience-map-controls" data-open={mapControlsOpen || undefined}>
           <label>Event range<Select value={eventRange} onChange={(event) => setEventRange(event.target.value)}><option value="all">2022–2026</option><option value="2024">2024–2026</option><option value="2026">2026 only</option></Select></label>
           <label>Evidence quality<Select value={evidenceQuality} onChange={(event) => setEvidenceQuality(event.target.value)}><option value="all">All verified evidence</option><option value="official">Official-backed only</option></Select></label>
           <fieldset><legend>Layers</legend>
@@ -114,6 +126,8 @@ export function ResilienceView() {
           visibleFeatureIds={visibleFeatureIds}
           resilienceLayers={layers}
           onFeatureSelect={handleMapSelection}
+          showLegend={false}
+          cooperativeGestures
           className="shared-map"
           height="100%"
           ariaLabel="Kerala recurring flood, road isolation and shelter access priorities"

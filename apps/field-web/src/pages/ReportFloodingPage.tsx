@@ -222,7 +222,17 @@ export function ReportFloodingPage() {
   return (
     <div className="page report-page">
       <section className="report-map" aria-label="Selected report location">
-        <FloodMap variant="field" horizon="3h" height={470} showSummary={false} ariaLabel="Flood conditions around selected report pin" />
+        <FloodMap
+          variant="field"
+          horizon="3h"
+          height={470}
+          showSummary={false}
+          showLegend={false}
+          showHorizonControl={false}
+          interactive={false}
+          visibleFeatureIds={["cluster-aluva"]}
+          ariaLabel="Flood conditions around selected report pin"
+        />
       </section>
 
       <section className="report-sheet" aria-labelledby="report-heading">

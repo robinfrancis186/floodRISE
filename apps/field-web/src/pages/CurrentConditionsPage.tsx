@@ -15,6 +15,7 @@ export function CurrentConditionsPage() {
           horizon="3h"
           height="clamp(320px, 47vh, 470px)"
           showSummary={false}
+          cooperativeGestures
           ariaLabel="Current and estimated flood conditions near Aluva"
         />
         <div className="map-place-overlay">

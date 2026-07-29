@@ -25,7 +25,7 @@ export function AppShell() {
         </div>
       ) : null}
       {isSyncing ? <span className="sr-only" role="status">Syncing queued reports</span> : null}
-      <main id="main-content" className={isFocusedPage ? "field-main report-main" : "field-main"}>
+      <main id="main-content" tabIndex={-1} className={isFocusedPage ? "field-main report-main" : "field-main"}>
         <Outlet />
       </main>
       {!isFocusedPage ? <BottomNavigation /> : null}

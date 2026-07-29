@@ -102,5 +102,6 @@ export type FloodMapProps = {
   showLegend?: boolean;
   showHorizonControl?: boolean;
   interactive?: boolean;
+  cooperativeGestures?: boolean;
   ariaLabel?: string;
 };

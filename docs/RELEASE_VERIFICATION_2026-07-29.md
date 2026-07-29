@@ -1,4 +1,4 @@
-# Kerala competition MVP release verification — 2026-07-28
+# Kerala competition MVP release verification — 2026-07-29
 
 This record captures the clean local release gate for the hardened floodRISE
 Kerala competition MVP. It is development evidence from macOS, not evidence of
@@ -26,14 +26,14 @@ flood guidance.
 | Lint, format, and types | Passed for every TypeScript workspace and both Python services. |
 | Unit and service tests | 209 passed: Field 38, Operations 45, backend 117, and restricted tile API 9. |
 | Executable conformance | 33 passed, including the OpenStreetMap importer, original-plan invariants, portable CodeQL SARIF threshold, immutable CI actions, dependency overrides, non-demo fail-closed policy, service isolation/discovery, CloudFront origin control, bounded media WAF policy, retention, and staff passkeys. |
-| Production-path artifacts | Five checks passed against the built `/ops/` and `/field/` trees and the actual CloudFront rewrite function. They prove canonical redirects, nested routes, prefix-rooted assets, and a Field service worker that cannot claim Operations. Total automated unit/service/conformance/artifact checks: 247. |
+| Production-path artifacts | Six checks passed against the built `/ops/` and `/field/` trees and the actual CloudFront rewrite function. They prove canonical redirects, nested routes, prefix-rooted assets, install icons, a Field service worker that cannot claim Operations, and complete shared map CSS in both optimized applications. Total automated unit/service/conformance/artifact checks: 248. |
 | Contracts and fixtures | Seven fixture files, two raster artifacts, 3,967 full OpenStreetMap road segments, and 800 fallback segments validated. The 33-path OpenAPI snapshot and generated TypeScript client match FastAPI. |
-| Local performance acceptance | Twenty samples each produced report p95 8.43 ms, route p95 3.01 ms, and nine-member model-publication p95 7.48 ms. Fourth-report corroboration and route recalculation completed in 6.52 ms. These are deterministic local timings, not deployed k6 evidence. |
-| Production builds | Both Vite applications built under their CloudFront prefixes. The Field PWA generated a 23-entry, 2,193.91 KiB precache and its compiled service worker permits runtime caching only for same-origin `GET /api/v1/alerts`. |
-| Browser journeys | 11 real-Chromium Playwright journeys passed in 52.8 seconds, including axe WCAG AA smoke checks, all eight Operations routes, all six Field routes at 360×800, offline restrictions, private photo sanitization, FloodSignal review, two-person approval, and working Operations filters/exports/navigation boundaries. |
-| Repeatability | Three consecutive clean reset/corroboration runs passed in 177 ms, 100 ms, and 98 ms. Every fourth report produced the explicitly unofficial signal and retained the route/audit invariants. |
-| Terraform | Terraform 1.12.2 `fmt -check -recursive`, offline-backend initialization, and `validate` passed for the Mumbai scaffold. No plan or apply was performed. |
-| Dependencies and secrets | Frozen pnpm/uv installation passed; production and full `pnpm audit --audit-level high` found no known vulnerabilities; both uv locks resolved; Gitleaks scanned 10.87 MB across 17 commits and found no leaks. |
+| Local performance acceptance | Twenty samples each produced report p95 7.50 ms, route p95 3.13 ms, and nine-member model-publication p95 5.50 ms. Fourth-report corroboration and route recalculation completed in 5.24 ms. These are deterministic local timings, not deployed k6 evidence. |
+| Production builds | Both Vite applications built under their CloudFront prefixes. The Field PWA generated a 27-entry, 2,276.77 KiB precache with Android, maskable, and Apple install icons; its compiled service worker permits runtime caching only for same-origin `GET /api/v1/alerts`. |
+| Browser journeys | 26 real-Chromium Playwright journeys passed in 2.3 minutes. They cover axe WCAG AA smoke checks, every Operations and Field route, 320×568 through 768×1024 plus 844×390 touch layouts, safe-area handling, offline restrictions, private photo sanitization, FloodSignal review, two-person approval, and working filters/exports/navigation boundaries. |
+| Repeatability | The deterministic reset/fourth-report browser replay passed three consecutive runs in 4.0 seconds. Every fourth report produced the explicitly unofficial signal and retained the route/audit invariants. This automated proof does not replace the three-run operator record required by the demo runbook. |
+| Infrastructure conformance | Docker, Terraform, and Trivy were unavailable in this local environment. The repository conformance tests for service isolation, immutable images, WAF, Cognito, CloudFront, and Terraform-required resources passed; exact-commit Compose/Terraform/Trivy evidence remains a hosted gate. No plan or apply was performed. |
+| Dependencies and secrets | Frozen pnpm/uv installation passed; production and full `pnpm audit --audit-level high` found no known vulnerabilities; both uv locks resolved; Gitleaks scanned 11.06 MB across 19 commits and found no leaks. |
 
 ## Security closure
 
@@ -91,14 +91,17 @@ out-of-coverage tile requests that never invoke the renderer.
 
 ## Rendered-product review
 
-The Operations console was inspected at 1,570×1,000 and the Field PWA at
-360×800 in real Chromium. The interface retains the approved map-first visual
+The Operations console was inspected at 1,570×1,000 and both products were
+exercised at 320×568, 360×800, 390×844, 430×932, 768×1024, and 844×390 in
+real touch-enabled Chromium contexts. The interface retains the approved map-first visual
 system: dense operational hierarchy, restrained navy/blue/coral status
 language, tabular values, explicit focus states, non-color cues, synchronized
 list alternatives, and visible `DEMO DATA · NOT LIVE` wording. The Kerala map,
 flood overlays, road risk, lower-risk route, FloodSignal evidence, shelters,
 OpenStreetMap attribution, source provenance, and responsive controls rendered
-without page or console errors. Primary controls either perform a tested local
+without page or console errors. Every audited mobile control retained a
+44×44 px touch target; phone safe areas, short landscape navigation, table
+alternatives, and map gesture boundaries were also exercised. Primary controls either perform a tested local
 or authoritative action or are visibly disabled with the missing authority
 boundary; no inert primary button remains.
 
@@ -117,10 +120,11 @@ Reference captures:
   and no permission-gated source was scraped.
 - No production notification destination, live closure, evacuation
   instruction, or all-clear was contacted or dispatched.
-- Docker, Trivy, ZAP, k6, and VoiceOver device testing were unavailable in this
-  local environment. Hosted CI remains the independent CodeQL/Trivy gate;
-  authenticated ZAP, deployed-load k6, and assistive-technology device review
-  require the authorized target environment.
+- Docker, Terraform, Trivy, ZAP, k6, physical iOS installation, and VoiceOver
+  device testing were unavailable in this local environment. Hosted CI remains
+  the independent Compose/Terraform/CodeQL/Trivy gate; authenticated ZAP,
+  deployed-load k6, and assistive-technology device review require the
+  authorized target environment.
 - AWS plan/apply, Cognito enrollment, PostGIS multi-worker rehearsal, production
   scanner/object-store injection, backup restoration, RPO/RTO measurement, and
   direct-ALB/CloudFront probes remain activation evidence.

@@ -41,7 +41,7 @@ export function IncidentsView({ onNavigate }: { onNavigate: (view: ViewId) => vo
     </div>
     <div className="master-detail">
       <section className="table-panel"><div className="panel-heading"><h3>Operational incidents</h3><span>{snapshot.incidents.length} records</span></div>
-        <Table><TableHeader><TableRow><TableHead>Incident</TableHead><TableHead>Status</TableHead><TableHead>Severity</TableHead><TableHead>Wards</TableHead><TableHead>Exposure</TableHead><TableHead>Last update</TableHead></TableRow></TableHeader>
+        <Table scrollLabel="Operational incident table"><TableHeader><TableRow><TableHead>Incident</TableHead><TableHead>Status</TableHead><TableHead>Severity</TableHead><TableHead>Wards</TableHead><TableHead>Exposure</TableHead><TableHead>Last update</TableHead></TableRow></TableHeader>
           <TableBody>{snapshot.incidents.map((incident) => <TableRow key={incident.id} data-state={incident.id === selected.id ? "selected" : undefined} onClick={() => setSelectedId(incident.id)} tabIndex={0} onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && setSelectedId(incident.id)}>
             <TableCell><strong>{incident.name}</strong><small className="cell-subtitle">{incident.id}</small></TableCell><TableCell><StatusPill tone={incident.status === "ACTIVE" ? "danger" : incident.status === "MONITORING" ? "warning" : "neutral"}>{incident.status}</StatusPill></TableCell><TableCell>{incident.severity}</TableCell><TableCell>{incident.wards}</TableCell><TableCell>{incident.peopleExposed.toLocaleString("en-IN")}</TableCell><TableCell>{incident.lastUpdate}</TableCell>
           </TableRow>)}</TableBody>

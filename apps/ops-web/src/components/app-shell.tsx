@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   Waves,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { StaffRole, ViewId } from "../lib/models";
 import { useOperations } from "../state/operations-context";
 
@@ -39,6 +39,7 @@ const roles: StaffRole[] = ["Incident commander", "Verifier", "Field responder",
 
 export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavigate: (view: ViewId) => void; children: ReactNode }) {
   const { snapshot, connected, streamStatus, role, setRole, advanceDemo, resetDemo, notice } = useOperations();
+  const activeNavigationRef = useRef<HTMLButtonElement>(null);
   const time = new Date(snapshot.scenarioTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
   const liveUpdatesConnected = connected && streamStatus === "live";
   const syncLabel = !connected
@@ -50,11 +51,15 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
         : streamStatus === "reconnecting"
           ? "API connected · live updates reconnecting"
           : "API connected · live updates unavailable";
+  useEffect(() => {
+    activeNavigationRef.current?.scrollIntoView?.({ block: "nearest", inline: "center" });
+  }, [view]);
+
   return (
     <div className="app-frame">
       <DemoBanner />
       <header className="topbar">
-        <div className="topbar-brand"><FloodRiseLogo /><span className="topbar-divider" aria-hidden /><h1>{viewConfig[view].title}</h1></div>
+        <div className="topbar-brand"><FloodRiseLogo /><span className="topbar-divider" aria-hidden /><h1 aria-label={viewConfig[view].title}><span className="topbar-title-full" aria-hidden>{viewConfig[view].title}</span><span className="topbar-title-mobile" aria-hidden>{viewConfig[view].shortLabel}</span></h1></div>
         <div className="incident-select" role="status" aria-label="Selected incident: Ernakulam Kerala extreme-rainfall replay">
           Ernakulam <span aria-hidden>•</span> Kerala extreme-rainfall
         </div>
@@ -78,13 +83,13 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
         <nav>
           {(Object.entries(viewConfig) as [ViewId, typeof viewConfig[ViewId]][]).map(([id, item]) => {
             const Icon = item.icon;
-            return <button key={id} className="nav-item" data-active={view === id || undefined} onClick={() => onNavigate(id)} aria-current={view === id ? "page" : undefined}><Icon aria-hidden /><span>{item.label}</span></button>;
+            return <button ref={view === id ? activeNavigationRef : undefined} key={id} className="nav-item" data-active={view === id || undefined} onClick={() => onNavigate(id)} aria-label={item.label} title={item.label} aria-current={view === id ? "page" : undefined}><Icon aria-hidden /><span className="nav-label-full">{item.label}</span><span className="nav-label-short" aria-hidden>{item.shortLabel}</span></button>;
           })}
         </nav>
         <div className="sidebar-demo">
           <span>DEMO CONTROLS</span>
-          <Button variant="outline" size="sm" onClick={advanceDemo} disabled={role !== "Incident commander" && role !== "Resilience engineer"}><History />Advance 10 min</Button>
-          <Button variant="ghost" size="sm" onClick={resetDemo} disabled={role !== "Identity administrator"}><RotateCcw />Reset replay</Button>
+          <Button variant="outline" size="sm" onClick={advanceDemo} disabled={role !== "Incident commander" && role !== "Resilience engineer"} aria-label="Advance 10 min" title="Advance replay 10 minutes"><History />Advance 10 min</Button>
+          <Button variant="ghost" size="sm" onClick={resetDemo} disabled={role !== "Identity administrator"} aria-label="Reset replay" title="Reset deterministic replay"><RotateCcw />Reset replay</Button>
         </div>
       </aside>
 

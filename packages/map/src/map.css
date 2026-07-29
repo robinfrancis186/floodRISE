@@ -1,3 +1,5 @@
+@import "maplibre-gl/dist/maplibre-gl.css";
+
 .fr-flood-map {
   --fr-map-canvas: #ffffff;
   --fr-map-surface: rgba(255, 255, 255, 0.96);

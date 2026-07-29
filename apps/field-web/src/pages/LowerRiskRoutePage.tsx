@@ -62,7 +62,7 @@ export function LowerRiskRoutePage() {
             horizon="now"
             height="clamp(260px, 37vh, 370px)"
             showSummary={false}
-            interactive={isOnline}
+            interactive={false}
             showRouteGeometry={false}
             ariaLabel="Non-navigational demo context map showing flood estimates, road risk, and nearby shelters; route geometry is not shown"
           />

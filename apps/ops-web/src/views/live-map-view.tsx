@@ -1,16 +1,11 @@
 import { FloodMap, type FloodMapSelection } from "@floodrise/map";
-import { Badge, Button } from "@floodrise/ui";
+import { Button } from "@floodrise/ui";
 import {
   AlertTriangle,
-  ArrowRight,
   Building2,
-  ChevronRight,
-  CircleDot,
   CloudRain,
   FileCheck2,
   GitCompareArrows,
-  MapPin,
-  Navigation,
   Route,
   ShieldAlert,
   Users,
@@ -27,7 +22,6 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
   const action = snapshot.actions[0];
   const reviewable = action.status === "PENDING_APPROVAL" && Boolean(action.approvalId && action.approvalVersion);
   const [decision, setDecision] = useState<"APPROVE" | "MODIFY" | "REJECT" | null>(null);
-  const [listOpen, setListOpen] = useState(false);
   const confidenceReason = useMemo(() => [
     { icon: CloudRain, label: "Rainfall increase", value: "118 mm (3h)" },
     { icon: GitCompareArrows, label: "Rapid impact estimate", value: "Higher runoff" },
@@ -50,32 +44,17 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
       </div>
 
       <section className="map-pane live-map-pane" aria-label="Flood impact map">
-        <div className="map-floating-heading">
-          <span><CircleDot aria-hidden />Current + predicted flooding</span>
-          <StatusPill tone="info">Rapid impact estimate</StatusPill>
-        </div>
         <FloodMap
           variant="operations"
           horizon={horizon}
           onHorizonChange={setHorizon}
           selectedFeatureId={mapFeatureId}
           onFeatureSelect={handleMapSelection}
-          showHorizonControl={false}
+          cooperativeGestures
           className="shared-map"
           height="100%"
           ariaLabel="Kerala current flooding, predicted flooding, routes and shelters"
         />
-        <div className="map-horizon" role="group" aria-label="Forecast horizon">
-          {(["now", "1h", "3h"] as const).map((item) => <button key={item} type="button" data-active={horizon === item || undefined} onClick={() => setHorizon(item)}>{item === "now" ? "Now" : `+${item}`}</button>)}
-          <span><span style={{ width: horizon === "now" ? "12%" : horizon === "1h" ? "52%" : "100%" }} /></span>
-        </div>
-        <button className="map-list-toggle" type="button" onClick={() => setListOpen((open) => !open)} aria-expanded={listOpen}><FileCheck2 aria-hidden />{listOpen ? "Hide" : "Show"} accessible map list</button>
-        {listOpen && <div className="map-list-alternative">
-          <h3>Map features</h3>
-          <ul>
-            {snapshot.signals.slice(0, 4).map((signal) => <li key={signal.id}><button onClick={() => setSelectedSignalId(signal.id)}><MapPin aria-hidden /><span><strong>{signal.name}</strong><small>{signal.status.replaceAll("_", " ")} · {signal.confidence}%</small></span><ChevronRight aria-hidden /></button></li>)}
-          </ul>
-        </div>}
       </section>
 
       <aside className="inspector live-inspector" aria-label="Selected cluster details">
