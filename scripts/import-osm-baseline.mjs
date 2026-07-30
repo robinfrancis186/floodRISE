@@ -1,18 +1,18 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, rename, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const AOI = Object.freeze({ south: 12.9, west: 80.17, north: 13.05, east: 80.29 });
+const AOI = Object.freeze({ south: 9.92, west: 76.2, north: 10.24, east: 76.48 });
 // Overpass returns complete ways intersecting the query AOI, so their terminal
 // nodes can legitimately extend beyond the request box. This reviewed capture
-// boundary contains the full Chennai pilot road corridors without accepting
+// boundary contains the full Kerala pilot road corridors without accepting
 // arbitrary global coordinates.
 const GEOMETRY_BOUNDS = Object.freeze({
-  south: 12.82,
-  west: 80.1,
-  north: 13.13,
-  east: 80.36,
+  south: 9.8,
+  west: 76.08,
+  north: 10.36,
+  east: 76.6,
 });
 const MAX_RESPONSE_BYTES = 15 * 1024 * 1024;
 const MAX_ELEMENTS = 20_000;
@@ -21,21 +21,18 @@ const ALLOWED_ENDPOINTS = new Set([
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
 ]);
-const roadNames = [
-  "100 Feet Road",
-  "Anna Salai (Mount Road)",
-  "Dr MGR Main Road",
-  "Inner Ring Road",
-  "Old Mahabalipuram Road",
-  "Pallikaranai Main Road",
-  "Rajiv Gandhi Salai",
-  "Sardar Patel Road",
-  "Taramani Link Road",
-  "Velachery Bypass Road",
-  "Velachery Main Road",
-  "Velachery Mudhanmai Salai",
-];
-const roadNameSet = new Set(roadNames);
+const ALLOWED_HIGHWAYS = new Set([
+  "motorway",
+  "motorway_link",
+  "trunk",
+  "trunk_link",
+  "primary",
+  "primary_link",
+  "secondary",
+  "secondary_link",
+  "tertiary",
+  "tertiary_link",
+]);
 
 export function validateOverpassEndpoint(value) {
   const url = new URL(value);
@@ -91,6 +88,20 @@ function safeOptionalTag(value, field) {
   return value;
 }
 
+function safeRoadName(value, highway, wayId) {
+  if (value === undefined || value === null || value === "") {
+    return `Unnamed ${roadClass(highway)} road · OSM ${wayId}`;
+  }
+  if (
+    typeof value !== "string"
+    || value.length > 120
+    || !/^[^\u0000-\u001F\u007F<>{}]{1,120}$/u.test(value)
+  ) {
+    throw new Error("OpenStreetMap road name is invalid.");
+  }
+  return value.trim();
+}
+
 function normalizedSnapshotTime(payload) {
   const value = payload.osm3s?.timestamp_osm_base;
   if (value === undefined || value === null) return null;
@@ -124,15 +135,18 @@ export function normalizeOverpassPayload(payload) {
   const features = [];
   for (const element of payload.elements) {
     if (!element || typeof element !== "object" || element.type !== "way") continue;
-    const name = element.tags?.name;
-    if (!roadNameSet.has(name)) continue;
     if (!Number.isSafeInteger(element.id) || element.id <= 0 || seenWayIds.has(element.id)) {
       throw new Error("OpenStreetMap way identifier is invalid or duplicated.");
     }
     const highway = element.tags?.highway;
-    if (typeof highway !== "string" || !/^[a-z_]{1,32}$/.test(highway)) {
+    if (
+      typeof highway !== "string"
+      || !/^[a-z_]{1,32}$/.test(highway)
+      || !ALLOWED_HIGHWAYS.has(highway)
+    ) {
       throw new Error("OpenStreetMap highway tag is invalid.");
     }
+    const name = safeRoadName(element.tags?.name, highway, element.id);
     if (
       !Array.isArray(element.geometry)
       || element.geometry.length < 2
@@ -154,7 +168,7 @@ export function normalizeOverpassPayload(payload) {
         || lat < GEOMETRY_BOUNDS.south
         || lat > GEOMETRY_BOUNDS.north
       ) {
-        throw new Error("OpenStreetMap coordinate falls outside the approved Chennai AOI.");
+        throw new Error("OpenStreetMap coordinate falls outside the approved Kerala AOI.");
       }
       return [Number(lon.toFixed(7)), Number(lat.toFixed(7))];
     });
@@ -197,12 +211,57 @@ export function normalizeOverpassPayload(payload) {
   };
 }
 
+export function buildMapFallback(features, maximumFeatures = 800) {
+  if (!Array.isArray(features) || !Number.isSafeInteger(maximumFeatures) || maximumFeatures < 1) {
+    throw new Error("OpenStreetMap fallback inputs are invalid.");
+  }
+  const priority = new Map([
+    ["motorway", 0], ["motorway_link", 0],
+    ["trunk", 1], ["trunk_link", 1],
+    ["primary", 2], ["primary_link", 2],
+    ["secondary", 3], ["secondary_link", 3],
+    ["tertiary", 4], ["tertiary_link", 4],
+  ]);
+  const centerLongitude = (AOI.west + AOI.east) / 2;
+  const centerLatitude = (AOI.south + AOI.north) / 2;
+  const distanceFromCenter = (feature) => {
+    const points = feature.geometry.coordinates;
+    const midpoint = points[Math.floor(points.length / 2)];
+    return (midpoint[0] - centerLongitude) ** 2 + (midpoint[1] - centerLatitude) ** 2;
+  };
+
+  return [...features]
+    .sort((left, right) => (
+      (priority.get(left.properties.highway) ?? 99)
+      - (priority.get(right.properties.highway) ?? 99)
+      || distanceFromCenter(left) - distanceFromCenter(right)
+      || left.properties.osm_id.localeCompare(right.properties.osm_id, "en", { numeric: true })
+    ))
+    .slice(0, maximumFeatures)
+    .map((feature) => ({
+      ...feature,
+      properties: {
+        id: feature.properties.id,
+        kind: feature.properties.kind,
+        name: feature.properties.name,
+        description: feature.properties.description,
+        class: feature.properties.class,
+        osm_id: feature.properties.osm_id,
+        highway: feature.properties.highway,
+        bridge: feature.properties.bridge,
+        tunnel: feature.properties.tunnel,
+        source: feature.properties.source,
+        is_simulated: false,
+      },
+    }));
+}
+
 async function writeAtomically(outputPath, serialized) {
   const temporaryPath = `${outputPath}.${process.pid}.tmp`;
   const handle = await open(temporaryPath, "wx", 0o600);
   try {
     // The network response has been size-bounded and rebuilt from allow-listed
-    // OSM names, finite AOI coordinates, scalar tags, and a fixed output path.
+    // validated OSM names, finite AOI coordinates, scalar tags, and a fixed output path.
     // codeql[js/http-to-file-access]
     await handle.writeFile(serialized, { encoding: "utf8" });
     await handle.sync();
@@ -217,20 +276,35 @@ async function writeAtomically(outputPath, serialized) {
 
 async function main() {
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
-  const outputPath = join(root, "fixtures", "chennai-demo", "osm-baseline.geojson");
+  const outputPath = join(root, "fixtures", "kerala-demo", "osm-baseline.geojson");
+  const fallbackPath = join(root, "fixtures", "kerala-demo", "osm-map-fallback.geojson");
+  if (process.argv.includes("--from-existing")) {
+    const existing = JSON.parse(await readFile(outputPath, "utf8"));
+    if (existing.type !== "FeatureCollection" || !Array.isArray(existing.features)) {
+      throw new Error("Existing OpenStreetMap baseline is invalid.");
+    }
+    const fallback = {
+      ...existing,
+      name: "floodRISE Kerala OSM application fallback",
+      description: "Bounded application subset; the complete imported snapshot is osm-baseline.geojson",
+      features: buildMapFallback(existing.features),
+    };
+    const serialized = `${JSON.stringify(fallback)}\n`;
+    await writeAtomically(fallbackPath, serialized);
+    console.log(`Wrote ${fallback.features.length} OSM fallback segments to ${fallbackPath}`);
+    console.log(`Fallback SHA-256: ${createHash("sha256").update(serialized).digest("hex")}`);
+    return;
+  }
   const endpoint = validateOverpassEndpoint(
     process.env.FLOODRISE_OVERPASS_URL ?? "https://overpass-api.de/api/interpreter",
   );
   const bbox = `${AOI.south},${AOI.west},${AOI.north},${AOI.east}`;
-  const selectors = roadNames
-    .map((name) => `way["highway"]["name"="${name}"](${bbox});`)
-    .join("\n");
-  const query = `[out:json][timeout:60];(\n${selectors}\n);out tags geom;`;
+  const query = `[out:json][timeout:60];way["highway"~"^(motorway|trunk|primary|secondary|tertiary)(_link)?$"](${bbox});out tags geom;`;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-      "User-Agent": "floodRISE-competition-fixture/0.1 (offline OSM snapshot importer)",
+      "User-Agent": "floodRISE-competition-fixture/0.2 (Kerala OSM snapshot importer)",
     },
     body: new URLSearchParams({ data: query }),
     signal: AbortSignal.timeout(75_000),
@@ -245,13 +319,13 @@ async function main() {
 
   const payload = await readBoundedJson(response);
   const { features, snapshotTime } = normalizeOverpassPayload(payload);
-  if (features.length < 20) {
+  if (features.length < 100) {
     throw new Error(`OpenStreetMap import returned only ${features.length} road segments; refusing to replace the fixture.`);
   }
 
   const collection = {
     type: "FeatureCollection",
-    name: "floodRISE Chennai OSM road baseline",
+    name: "floodRISE Kerala OSM road baseline",
     source: "OpenStreetMap via Overpass API; production imports use Geofabrik Southern Zone extracts",
     source_url: "https://www.openstreetmap.org",
     source_snapshot_at: snapshotTime,
@@ -261,12 +335,23 @@ async function main() {
     features,
   };
   const serialized = `${JSON.stringify(collection, null, 2)}\n`;
+  const fallback = {
+    ...collection,
+    name: "floodRISE Kerala OSM application fallback",
+    description: "Bounded application subset; the complete imported snapshot is osm-baseline.geojson",
+    features: buildMapFallback(features),
+  };
+  const fallbackSerialized = `${JSON.stringify(fallback)}\n`;
   await mkdir(dirname(outputPath), { recursive: true });
   await writeAtomically(outputPath, serialized);
+  await writeAtomically(fallbackPath, fallbackSerialized);
   const checksum = createHash("sha256").update(serialized).digest("hex");
+  const fallbackChecksum = createHash("sha256").update(fallbackSerialized).digest("hex");
   console.log(`Wrote ${features.length} OSM road segments to ${outputPath}`);
+  console.log(`Wrote ${fallback.features.length} OSM fallback segments to ${fallbackPath}`);
   console.log(`Snapshot: ${snapshotTime ?? "unknown"}`);
   console.log(`SHA-256: ${checksum}`);
+  console.log(`Fallback SHA-256: ${fallbackChecksum}`);
 }
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) await main();

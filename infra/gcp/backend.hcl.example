@@ -1,0 +1,4 @@
+# Create this state bucket in a separate, tightly controlled bootstrap project or
+# environment process. Never share a prefix between demo and production.
+bucket = "REPLACE-floodrise-terraform-state"
+prefix = "gcp/REPLACE-ENVIRONMENT"

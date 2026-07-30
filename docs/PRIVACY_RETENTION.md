@@ -26,10 +26,13 @@ traces, dashboard labels, exception messages, or routine application logs.
    operational use.
 4. Decode and re-encode supported images, strip EXIF/GPS, and calculate a
    perceptual hash for near-duplicate evidence families.
-5. Put the sanitized derivative in private process memory and remove the raw
-   quarantine copy. Bytes disappear when the process restarts; upload metadata
-   remains in the database. V1 has no byte-download, public-photo, or signed-URL
-   endpoint.
+5. Put the sanitized derivative in private process memory and commit a durable
+   `PENDING` raw-quarantine deletion marker with the terminal media result. The
+   generation-bound deletion is then attempted immediately; terminal completion
+   replay and metadata polling retry it idempotently without changing the
+   committed result. Bytes disappear when the process restarts; upload metadata
+   and the cleanup receipt remain in the database. V1 has no byte-download,
+   public-photo, or signed-URL endpoint.
 6. Record upload state changes and report attachment in the audit/outbox. A
    general evidence-view/export audit workflow is not implemented.
 
@@ -40,9 +43,9 @@ private object storage and an approved scanner before accepting real photos.
 
 | Category | Default retention | Disposal / notes |
 | --- | --- | --- |
-| Rejected quarantine uploads | 7 days | Target policy. The API stores `quarantine_delete_after`, but no scheduled deletion/legal-hold job is implemented. Demo bytes also disappear on process restart. |
-| Raw non-escalated citizen media | Up to 30 days | Target policy. The API stores `evidence_delete_after`; production object deletion is not implemented. Successful demo sanitization removes raw quarantine immediately. |
-| Accepted evidence and identity linkage | 1 year | Target policy. The API stores `identity_link_delete_after`, but the MVP has no separate identity store or scheduled erasure job. |
+| Rejected quarantine uploads | 7 days | The API stores `quarantine_delete_after` and performs a bounded best-effort expiry sweep. The un-applied GCP target uses an eight-day lifecycle fallback with no minimum bucket retention, object versioning, or soft-delete extension. A continuously scheduled deletion/legal-hold job is not yet activated. |
+| Sanitized private citizen photo bytes | Up to 30 days | The API stores `evidence_delete_after`. The un-applied GCP target uses a 31-day lifecycle fallback with no minimum bucket retention, object versioning, or soft-delete extension. Sanitization/rejection atomically records durable raw-quarantine cleanup state and retries the generation-bound deletion after terminal commit. |
+| Accepted evidence record and identity linkage | 1 year | The API stores `identity_link_delete_after` in the authoritative database. The MVP has no separate identity store or scheduled database erasure job. |
 | Security and access logs | 1 year | Target policy; Terraform declares 365-day production CloudWatch retention, but no deployed log-retention evidence exists. |
 | Official decisions and approval/audit events | 7 years | Target policy; Terraform declares object-lock retention for an audit bucket, but the API does not export its database audit chain to that bucket. |
 | Unsent offline field evidence | 24 hours | Implemented locally: expire drafts and say they were not submitted. Queue limit: 100 items / 100 MB. |
@@ -50,10 +53,12 @@ private object storage and an approved scanner before accepting real photos.
 
 These are proposed defaults pending the deploying authority's legal basis and
 records schedule. Retention timestamps are metadata, not proof of disposal.
-Production requires idempotent deletion workers, legal-hold enforcement,
-deletion/audit receipts, backup handling, failure alerting, and restore tests. A
-documented legal hold should suspend deletion for the minimum affected objects
-and have an owner and review date.
+Production still requires continuous cleanup scheduling, legal-hold enforcement,
+failure alerting, backup handling, and restore tests. Raw-quarantine terminal
+deletion already has an idempotent database cleanup receipt; other retention
+classes do not yet have equivalent scheduled workers. A documented legal hold
+should suspend deletion for the minimum affected objects and have an owner and
+review date.
 
 ## Rights and operational requests
 

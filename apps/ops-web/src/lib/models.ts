@@ -33,7 +33,7 @@ export type EvidenceReport = {
   depth: string;
   roadStatus: string;
   observedAt: string;
-  distanceM: number;
+  distanceM: number | null;
   counted: boolean;
   note: string;
 };
@@ -45,30 +45,36 @@ export type FloodSignalRecord = {
   name: string;
   ward: string;
   area: string;
-  updatedMinutesAgo: number;
+  updatedMinutesAgo: number | null;
   confidence: number;
   independentReports: number;
   receivedReports: number;
   authenticatedReports: number;
   conflictReports: number;
-  status: "NEEDS_REVIEW" | "COMMUNITY_CORROBORATED" | "DISPUTED";
+  status:
+    | "NEEDS_REVIEW"
+    | "COMMUNITY_CORROBORATED"
+    | "DISPUTED"
+    | "STALE"
+    | "EXPIRED"
+    | "RESOLVED";
   decision: SignalDecision;
-  expiresInMinutes: number;
-  peopleExposed: number;
-  roadsAtRisk: number;
-  sheltersReachable: number;
+  expiresInMinutes: number | null;
+  peopleExposed: number | null;
+  roadsAtRisk: number | null;
+  sheltersReachable: number | null;
   evidence: EvidenceReport[];
 };
 
 export type IncidentRecord = {
   id: string;
   name: string;
-  status: "ACTIVE" | "MONITORING" | "CLOSED";
-  severity: "Severe" | "High" | "Moderate";
+  status: "ACTIVE" | "MONITORING" | "CLOSED" | "UNKNOWN";
+  severity: "Severe" | "High" | "Moderate" | "Unknown";
   startedAt: string;
   lastUpdate: string;
-  wards: number;
-  peopleExposed: number;
+  wards: number | null;
+  peopleExposed: number | null;
   modelVersion: string;
 };
 
@@ -78,11 +84,11 @@ export type ShelterRecord = {
   apiVersion?: number;
   name: string;
   ward: string;
-  status: "OPEN" | "LIMITED" | "FULL";
-  occupancy: number;
-  capacity: number;
+  status: "OPEN" | "LIMITED" | "FULL" | "UNKNOWN";
+  occupancy: number | null;
+  capacity: number | null;
   access: "Reachable" | "At risk" | "Unknown";
-  updatedMinutesAgo: number;
+  updatedMinutesAgo: number | null;
 };
 
 export type OperationalAction = {
@@ -109,6 +115,10 @@ export type ResiliencePriority = {
   rank: number;
   id: string;
   location: string;
+  ward: string;
+  assetType: "Drainage" | "Road" | "Shelter";
+  eventYears: number[];
+  hasOfficialEvidence: boolean;
   evidence: string;
   impact: string;
   confidence: number;

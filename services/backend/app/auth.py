@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -37,6 +38,8 @@ ROLE_PRECEDENCE = (
     "reporter",
 )
 ROLES = frozenset(ROLE_PRECEDENCE)
+OIDC_JWKS_REFRESH_COOLDOWN_SECONDS = 5.0
+OIDC_MAX_UNKNOWN_KEY_CACHE_ENTRIES = 256
 
 bearer_scheme = HTTPBearer(
     auto_error=False,
@@ -60,6 +63,7 @@ class Principal:
     phishing_resistant: bool = False
     step_up_authenticated: bool = False
     token_id_digest: str | None = None
+    install_id_digest: str | None = None
     audit_pseudonym_key: bytes = field(
         default=b"floodrise-demo-audit-pseudonym-v1",
         repr=False,
@@ -117,10 +121,20 @@ def _epoch_datetime(value: object) -> datetime | None:
 class OIDCVerifier:
     """Validate bearer JWTs with a bounded, rotation-aware JWKS cache."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        monotonic_clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.settings = settings
+        self._clock = monotonic_clock
         self._jwks: dict[str, Any] | None = None
         self._jwks_expires_at = 0.0
+        self._jwks_generation = 0
+        self._refresh_blocked_until = 0.0
+        self._refresh_failed_until = 0.0
+        self._unknown_key_ids: dict[bytes, tuple[int, float]] = {}
         self._lock = asyncio.Lock()
         if settings.oidc_jwks_json:
             try:
@@ -129,6 +143,7 @@ class OIDCVerifier:
                 raise ValueError("oidc_jwks_json must be a valid JWKS document") from exc
             self._jwks = self._validate_jwks_document(loaded)
             self._jwks_expires_at = float("inf")
+            self._jwks_generation = 1
 
     @staticmethod
     def _validate_jwks_document(value: object) -> dict[str, Any]:
@@ -139,8 +154,75 @@ class OIDCVerifier:
             raise ValueError("JWKS document does not contain any keyed public keys")
         return {"keys": keys}
 
-    async def _load_jwks(self, *, force_refresh: bool = False) -> dict[str, Any]:
-        now = time.monotonic()
+    @staticmethod
+    def _unknown_key_digest(key_id: str) -> bytes:
+        return hashlib.sha256(key_id.encode()).digest()
+
+    def _is_known_unknown_key(self, key_id: str, generation: int) -> bool:
+        digest = self._unknown_key_digest(key_id)
+        cached = self._unknown_key_ids.get(digest)
+        if cached is None:
+            return False
+        cached_generation, expires_at = cached
+        if cached_generation != generation or self._clock() >= expires_at:
+            self._unknown_key_ids.pop(digest, None)
+            return False
+        return True
+
+    def _remember_unknown_key(self, key_id: str, generation: int) -> None:
+        now = self._clock()
+        if self._refresh_blocked_until <= now:
+            return
+        digest = self._unknown_key_digest(key_id)
+        self._unknown_key_ids.pop(digest, None)
+        if len(self._unknown_key_ids) >= OIDC_MAX_UNKNOWN_KEY_CACHE_ENTRIES:
+            self._unknown_key_ids.pop(next(iter(self._unknown_key_ids)))
+        self._unknown_key_ids[digest] = (generation, self._refresh_blocked_until)
+
+    @staticmethod
+    def _identity_provider_unavailable() -> AppError:
+        return AppError(
+            status_code=503,
+            title="Identity provider unavailable",
+            detail="The configured OIDC signing keys could not be refreshed.",
+            code="IDENTITY_PROVIDER_UNAVAILABLE",
+            headers={"Retry-After": "5"},
+        )
+
+    async def _fetch_remote_jwks(self, jwks_url: str) -> dict[str, Any]:
+        succeeded = False
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.settings.oidc_http_timeout_seconds,
+                follow_redirects=False,
+            ) as client:
+                response = await client.get(
+                    jwks_url,
+                    headers={"Accept": "application/json"},
+                )
+                response.raise_for_status()
+                document = self._validate_jwks_document(response.json())
+            completed_at = self._clock()
+            self._jwks = document
+            self._jwks_expires_at = completed_at + self.settings.oidc_jwks_cache_seconds
+            self._jwks_generation += 1
+            self._unknown_key_ids.clear()
+            succeeded = True
+            return document
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
+            raise self._identity_provider_unavailable() from exc
+        finally:
+            retry_at = self._clock() + OIDC_JWKS_REFRESH_COOLDOWN_SECONDS
+            self._refresh_blocked_until = retry_at
+            self._refresh_failed_until = 0.0 if succeeded else retry_at
+
+    async def _load_jwks(
+        self,
+        *,
+        force_refresh: bool = False,
+        expected_generation: int | None = None,
+    ) -> dict[str, Any]:
+        now = self._clock()
         if self._jwks is not None and not force_refresh and now < self._jwks_expires_at:
             return self._jwks
         if self.settings.oidc_jwks_json:
@@ -157,30 +239,21 @@ class OIDCVerifier:
                 code="IDENTITY_PROVIDER_UNAVAILABLE",
             )
         async with self._lock:
-            now = time.monotonic()
+            now = self._clock()
             if self._jwks is not None and not force_refresh and now < self._jwks_expires_at:
                 return self._jwks
-            try:
-                async with httpx.AsyncClient(
-                    timeout=self.settings.oidc_http_timeout_seconds,
-                    follow_redirects=False,
-                ) as client:
-                    response = await client.get(
-                        jwks_url,
-                        headers={"Accept": "application/json"},
-                    )
-                    response.raise_for_status()
-                    document = self._validate_jwks_document(response.json())
-            except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
-                raise AppError(
-                    status_code=503,
-                    title="Identity provider unavailable",
-                    detail="The configured OIDC signing keys could not be refreshed.",
-                    code="IDENTITY_PROVIDER_UNAVAILABLE",
-                ) from exc
-            self._jwks = document
-            self._jwks_expires_at = now + self.settings.oidc_jwks_cache_seconds
-            return document
+            if (
+                force_refresh
+                and self._jwks is not None
+                and expected_generation is not None
+                and self._jwks_generation != expected_generation
+            ):
+                return self._jwks
+            if now < self._refresh_blocked_until:
+                if now < self._refresh_failed_until or not force_refresh or self._jwks is None:
+                    raise self._identity_provider_unavailable()
+                return self._jwks
+            return await self._fetch_remote_jwks(jwks_url)
 
     async def _signing_key(self, token: str) -> tuple[Any, str]:
         try:
@@ -193,10 +266,21 @@ class OIDCVerifier:
             raise AuthenticationError("The bearer token uses an unsupported signing key")
 
         jwks = await self._load_jwks()
+        generation = self._jwks_generation
         matching = next((key for key in jwks["keys"] if key.get("kid") == key_id), None)
-        if matching is None and not self.settings.oidc_jwks_json:
-            jwks = await self._load_jwks(force_refresh=True)
+        if (
+            matching is None
+            and not self.settings.oidc_jwks_json
+            and not self._is_known_unknown_key(key_id, generation)
+        ):
+            jwks = await self._load_jwks(
+                force_refresh=True,
+                expected_generation=generation,
+            )
+            generation = self._jwks_generation
             matching = next((key for key in jwks["keys"] if key.get("kid") == key_id), None)
+            if matching is None:
+                self._remember_unknown_key(key_id, generation)
         if matching is None or matching.get("alg", algorithm) != algorithm:
             raise AuthenticationError("The bearer token signing key is not trusted")
         try:
@@ -275,6 +359,7 @@ class OIDCVerifier:
             claims.get(self.settings.oidc_step_up_claim)
         )
         token_id = claims.get("jti") or claims.get("origin_jti")
+        install_id = claims.get(self.settings.oidc_install_id_claim)
         return Principal(
             user_id=str(claims["sub"]),
             role=primary_role,
@@ -291,6 +376,13 @@ class OIDCVerifier:
             token_id_digest=hashlib.sha256(str(token_id).encode()).hexdigest()[:16]
             if token_id
             else None,
+            install_id_digest=hmac.new(
+                self.settings.session_secret.get_secret_value().encode(),
+                f"install:{install_id}".encode(),
+                hashlib.sha256,
+            ).hexdigest()
+            if install_id
+            else None,
             audit_pseudonym_key=self.settings.session_secret.get_secret_value().encode(),
         )
 
@@ -305,8 +397,9 @@ async def demo_principal(
     role = _normalize_role(x_demo_role)
     if role not in ROLES:
         raise PermissionDeniedError("The supplied demo role is not recognized")
+    user_id = x_demo_user.strip() or "demo-user"
     return Principal(
-        user_id=x_demo_user.strip() or "demo-user",
+        user_id=user_id,
         role=role,
         roles=frozenset({role}),
         authenticated=True,
@@ -317,6 +410,11 @@ async def demo_principal(
         mfa_authenticated=True,
         phishing_resistant=True,
         step_up_authenticated=True,
+        install_id_digest=hmac.new(
+            audit_pseudonym_key,
+            f"demo-install:{user_id}".encode(),
+            hashlib.sha256,
+        ).hexdigest(),
         audit_pseudonym_key=audit_pseudonym_key,
     )
 
@@ -332,7 +430,9 @@ async def authenticated_principal(
     if settings.allow_demo_headers:
         if credentials is not None:
             verifier: OIDCVerifier = request.app.state.oidc_verifier
-            return await verifier.verify(credentials.credentials)
+            principal = await verifier.verify(credentials.credentials)
+            ensure_staff_auth(principal)
+            return principal
         return await demo_principal(
             x_demo_user=x_demo_user or "demo-reporter",
             x_demo_role=x_demo_role or "reporter",
@@ -343,7 +443,9 @@ async def authenticated_principal(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise AuthenticationError()
     verifier = request.app.state.oidc_verifier
-    return await verifier.verify(credentials.credentials)
+    principal = await verifier.verify(credentials.credentials)
+    ensure_staff_auth(principal)
+    return principal
 
 
 def ensure_role(principal: Principal, *allowed: str) -> None:
@@ -384,6 +486,22 @@ def ensure_high_impact_auth(principal: Principal) -> None:
         )
 
 
+def ensure_staff_auth(principal: Principal) -> None:
+    """Require phishing-resistant MFA for every authenticated staff capability."""
+
+    if principal.granted_roles == frozenset({"reporter"}):
+        return
+    missing: list[str] = []
+    if not principal.mfa_authenticated:
+        missing.append("MFA")
+    if not principal.phishing_resistant:
+        missing.append("phishing-resistant authentication")
+    if missing:
+        raise PermissionDeniedError(
+            "Staff access requires " + ", ".join(missing) + ". Re-authenticate and retry."
+        )
+
+
 __all__ = [
     "OIDCVerifier",
     "Principal",
@@ -394,4 +512,5 @@ __all__ = [
     "demo_principal",
     "ensure_high_impact_auth",
     "ensure_role",
+    "ensure_staff_auth",
 ]

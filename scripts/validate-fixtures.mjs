@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const fixtureRoot = join(root, "fixtures", "chennai-demo");
+const fixtureRoot = join(root, "fixtures", "kerala-demo");
 const manifest = JSON.parse(await readFile(join(fixtureRoot, "manifest.json"), "utf8"));
 
 if (manifest.is_simulated !== true || manifest.live_integrations_enabled !== false) {
@@ -90,6 +90,24 @@ if (
   throw new Error("Every OSM road feature must retain source identity and non-simulated status.");
 }
 
+const osmFallback = JSON.parse(
+  await readFile(join(fixtureRoot, "osm-map-fallback.geojson"), "utf8"),
+);
+if (
+  osmFallback.type !== "FeatureCollection" ||
+  osmFallback.features.length < 100 ||
+  osmFallback.features.length > 800 ||
+  osmFallback.attribution !== "© OpenStreetMap contributors" ||
+  osmFallback.features.some(
+    (feature) =>
+      feature.properties?.source !== "OpenStreetMap" ||
+      feature.properties?.is_simulated !== false ||
+      !feature.properties?.osm_id,
+  )
+) {
+  throw new Error("OSM map fallback must be bounded, attributed, and retain source identity.");
+}
+
 console.log(
-  `Validated ${manifest.files.length} fixture files, ${rasterManifest.artifacts.length} raster artifacts, and ${osmBaseline.features.length} OSM road segments for ${manifest.scenario_id}.`,
+  `Validated ${manifest.files.length} fixture files, ${rasterManifest.artifacts.length} raster artifacts, ${osmBaseline.features.length} OSM road segments, and ${osmFallback.features.length} bundled fallback segments for ${manifest.scenario_id}.`,
 );

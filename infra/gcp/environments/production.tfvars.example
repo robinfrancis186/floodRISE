@@ -1,0 +1,46 @@
+project_id              = "floodrise-production-5305"
+environment             = "production"
+deployment_boundary_ack = "floodrise-production-5305:production"
+deployment_phase        = "runtime"
+
+region                   = "asia-south1"
+bucket_location          = "ASIA-SOUTH1"
+database_backup_location = "asia"
+
+api_image = "asia-south1-docker.pkg.dev/floodrise-production-5305/floodrise-containers/floodrise-api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+# Production tile and simulation images are intentionally absent. The current
+# tile API understands only deterministic demo PGM artifacts, and the domain
+# returns LIVE_MODEL_UNAVAILABLE for live incidents; Terraform therefore
+# creates neither production model service.
+
+runtime_config_ready = true
+allowed_origins = [
+  "https://app.example.invalid",
+]
+oidc_issuer   = "https://securetoken.google.com/floodrise-production-5305"
+oidc_audience = "floodrise-production-5305"
+oidc_jwks_url = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+firebase_authorized_domains = [
+  "app.example.invalid",
+]
+firebase_app_check_enabled = true
+firebase_app_check_app_ids = [
+  "1:123456789012:web:0000000000000000000000",
+]
+
+notification_driver            = "disabled"
+external_notifications_enabled = false
+live_integrations_enabled      = false
+
+api_min_instances                  = 2
+api_max_instances                  = 50
+database_tier                      = "db-custom-4-15360"
+database_disk_size_gb              = 100
+database_high_availability         = true
+deletion_protection                = true
+backup_retention_days              = 35
+transaction_log_retention_days     = 7
+target_rpo_minutes                 = 5
+target_rto_minutes                 = 30
+bucket_force_destroy               = false

@@ -1,4 +1,4 @@
-"""Deterministic lower-risk evacuation routing for the Chennai demo.
+"""Deterministic lower-risk evacuation routing for the Kerala demo.
 
 The production architecture can replace this reference graph with a versioned
 pgRouting edge view while preserving the result envelope.  This implementation
@@ -127,18 +127,19 @@ def shelter_is_eligible(shelter: Mapping[str, Any]) -> tuple[bool, tuple[str, ..
         reasons.append("SHELTER_NOT_OPEN")
     if shelter.get("eligible") is False:
         reasons.append("SHELTER_MARKED_INELIGIBLE")
+    if bool(shelter.get("operational_status_unverified", False)):
+        reasons.append("SHELTER_STATUS_UNVERIFIED")
     if bool(shelter.get("authorized_closed", False)):
         reasons.append("AUTHORIZED_SHELTER_CLOSURE")
     if bool(shelter.get("flooded", False)):
         reasons.append("SHELTER_FLOODED")
     if shelter.get("access_open") is False:
         reasons.append("SHELTER_ACCESS_CLOSED")
-    if str(shelter.get("access_status", "")).upper() in {
-        "BLOCKED",
-        "CLOSED",
-        "UNREACHABLE",
-    }:
+    access_status = str(shelter.get("access_status", "")).upper()
+    if access_status in {"BLOCKED", "CLOSED", "UNREACHABLE"}:
         reasons.append("SHELTER_ACCESS_CLOSED")
+    elif access_status in {"AT_RISK", "LIMITED", "RISKY", "UNKNOWN"}:
+        reasons.append("SHELTER_ACCESS_NOT_CONFIRMED_REACHABLE")
 
     capacity_value = shelter.get("capacity_total", shelter.get("capacity"))
     occupancy_value = shelter.get("occupancy")
@@ -161,75 +162,197 @@ def shelter_is_eligible(shelter: Mapping[str, Any]) -> tuple[bool, tuple[str, ..
     return not reasons, tuple(reasons + warnings)
 
 
-def build_demo_chennai_graph() -> dict[str, Any]:
-    """Return the pinned, deterministic Velachery-centred demo graph."""
+def apply_operational_overrides(
+    graph: Mapping[str, Any],
+    *,
+    roads: Sequence[Mapping[str, Any]],
+    shelters: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Overlay authoritative closure and shelter state on a versioned graph.
+
+    The deterministic graph remains the routing baseline. Operational records
+    can only make an edge or shelter less eligible; they never clear modelled
+    depth exclusions or invent availability.
+    """
+
+    road_records = {str(road["id"]): road for road in roads if road.get("id") is not None}
+    shelter_records = {
+        str(shelter["id"]): shelter for shelter in shelters if shelter.get("id") is not None
+    }
+    version_material: list[str] = []
+
+    overlaid_edges: list[dict[str, Any]] = []
+    raw_edges = graph.get("edges", ())
+    if isinstance(raw_edges, (str, bytes)) or not isinstance(raw_edges, Sequence):
+        raise ValueError("graph.edges must be a sequence")
+    for raw_edge in raw_edges:
+        if not isinstance(raw_edge, Mapping):
+            raise ValueError("graph edges must be mappings")
+        edge = dict(raw_edge)
+        road_id = edge.get("road_id")
+        road = road_records.get(str(road_id)) if road_id is not None else None
+        if road is not None:
+            status = str(road.get("status", "UNKNOWN")).upper()
+            version = int(road.get("version", 1))
+            version_material.append(
+                f"road:{road_id}:{version}:{status}:{road.get('authorized_by_approval', '')}"
+            )
+            edge["operational_road_version"] = version
+            if status in {"CLOSED", "BLOCKED"} or road.get("authorized_by_approval"):
+                edge["authorized_closure"] = True
+                edge["closure_status"] = status if status in {"CLOSED", "BLOCKED"} else "CLOSED"
+                edge["closure_approval_id"] = road.get("authorized_by_approval")
+        overlaid_edges.append(edge)
+
+    overlaid_shelters: list[dict[str, Any]] = []
+    raw_shelters = graph.get("shelters", ())
+    if isinstance(raw_shelters, (str, bytes)) or not isinstance(raw_shelters, Sequence):
+        raise ValueError("graph.shelters must be a sequence")
+    for raw_shelter in raw_shelters:
+        if not isinstance(raw_shelter, Mapping):
+            raise ValueError("graph shelters must be mappings")
+        shelter = dict(raw_shelter)
+        record = shelter_records.get(str(shelter.get("id")))
+        if record is not None:
+            status = str(
+                record.get("activation_status", record.get("availability", "UNKNOWN"))
+            ).upper()
+            access_status = str(record.get("access_status", "UNKNOWN")).upper()
+            version = int(record.get("version", 1))
+            version_material.append(
+                "shelter:"
+                f"{shelter['id']}:{version}:{status}:{access_status}:"
+                f"{record.get('authorized_by_approval', '')}"
+            )
+            shelter.update(
+                {
+                    "status": status,
+                    "activation_status": status,
+                    "access_status": access_status,
+                    "capacity_total": record.get(
+                        "capacity_total", record.get("capacity", shelter.get("capacity_total"))
+                    ),
+                    "capacity_remaining": record.get("capacity_remaining"),
+                    "operational_shelter_version": version,
+                    "authorized_closed": bool(record.get("authorized_by_approval")),
+                    "verified_at": record.get("verified_at"),
+                    "observed_at": record.get("observed_at"),
+                }
+            )
+            capacity_total = shelter.get("capacity_total")
+            capacity_remaining = shelter.get("capacity_remaining")
+            if capacity_total is not None and capacity_remaining is not None:
+                shelter["occupancy"] = max(
+                    0,
+                    int(float(capacity_total) - float(capacity_remaining)),
+                )
+            if status == "CLOSED" or access_status in {"BLOCKED", "CLOSED", "UNREACHABLE"}:
+                shelter["access_open"] = False
+        else:
+            # A graph-only destination is useful for planning analysis but
+            # cannot be issued as current operational guidance without a
+            # linked, versioned shelter record.
+            shelter.update(
+                {
+                    "status": "UNKNOWN",
+                    "access_status": "UNKNOWN",
+                    "operational_status_unverified": True,
+                }
+            )
+        overlaid_shelters.append(shelter)
+
+    operational_digest = hashlib.sha256(
+        "|".join(sorted(version_material)).encode("utf-8")
+    ).hexdigest()[:12]
+    return {
+        **graph,
+        "graph_version": f"{graph.get('graph_version', 'unversioned')}+ops-{operational_digest}",
+        "edges": overlaid_edges,
+        "shelters": overlaid_shelters,
+    }
+
+
+def build_demo_kerala_graph() -> dict[str, Any]:
+    """Return the pinned, deterministic Aluva-centred demo graph."""
 
     nodes = {
-        "velachery": {
-            "id": "velachery",
-            "name": "Velachery",
-            "longitude": 80.2206,
-            "latitude": 12.9815,
+        "aluva": {
+            "id": "aluva",
+            "name": "Aluva",
+            "longitude": 76.3516000,
+            "latitude": 10.1065000,
         },
-        "taramani": {
-            "id": "taramani",
-            "name": "Taramani",
-            "longitude": 80.2432,
-            "latitude": 12.9863,
+        "kalamassery": {
+            "id": "kalamassery",
+            "name": "Kalamassery",
+            "longitude": 76.3742000,
+            "latitude": 10.1113000,
         },
-        "adyar": {
-            "id": "adyar",
-            "name": "Adyar",
-            "longitude": 80.2570,
-            "latitude": 13.0067,
+        "periyar": {
+            "id": "periyar",
+            "name": "Periyar",
+            "longitude": 76.3880000,
+            "latitude": 10.1317000,
         },
-        "guindy": {
-            "id": "guindy",
-            "name": "Guindy",
-            "longitude": 80.2209,
-            "latitude": 13.0067,
+        "ernakulam": {
+            "id": "ernakulam",
+            "name": "Ernakulam",
+            "longitude": 76.3519000,
+            "latitude": 10.1317000,
         },
-        "alandur": {
-            "id": "alandur",
-            "name": "Alandur",
-            "longitude": 80.2069,
-            "latitude": 13.0022,
+        "thrikkakara": {
+            "id": "thrikkakara",
+            "name": "Thrikkakara",
+            "longitude": 76.3379000,
+            "latitude": 10.1272000,
         },
-        "saidapet": {
-            "id": "saidapet",
-            "name": "Saidapet",
-            "longitude": 80.2230,
-            "latitude": 13.0213,
+        "eloor": {
+            "id": "eloor",
+            "name": "Eloor",
+            "longitude": 76.3540000,
+            "latitude": 10.1463000,
         },
-        "kotturpuram": {
-            "id": "kotturpuram",
-            "name": "Kotturpuram",
-            "longitude": 80.2416,
-            "latitude": 13.0180,
+        "varapuzha": {
+            "id": "varapuzha",
+            "name": "Varapuzha",
+            "longitude": 76.3726000,
+            "latitude": 10.1430000,
         },
-        "camp-taramani": {
-            "id": "camp-taramani",
-            "name": "Taramani Relief Camp",
-            "longitude": 80.2481,
-            "latitude": 12.9891,
+        "camp-kalamassery": {
+            "id": "camp-kalamassery",
+            "name": "Kalamassery Relief Camp",
+            "longitude": 76.3791000,
+            "latitude": 10.1141000,
         },
-        "camp-adyar": {
-            "id": "camp-adyar",
-            "name": "Adyar Relief Centre",
-            "longitude": 80.2608,
-            "latitude": 13.0080,
+        "camp-periyar": {
+            "id": "camp-periyar",
+            "name": "Periyar Relief Centre",
+            "longitude": 76.3918000,
+            "latitude": 10.1330000,
         },
-        "camp-guindy": {
-            "id": "camp-guindy",
-            "name": "Guindy Community Hall",
-            "longitude": 80.2177,
-            "latitude": 13.0094,
+        "camp-ernakulam": {
+            "id": "camp-ernakulam",
+            "name": "Ernakulam Community Hall",
+            "longitude": 76.3487000,
+            "latitude": 10.1344000,
         },
-        "camp-saidapet": {
-            "id": "camp-saidapet",
-            "name": "Saidapet Relief Centre",
-            "longitude": 80.2252,
-            "latitude": 13.0240,
+        "camp-eloor": {
+            "id": "camp-eloor",
+            "name": "Eloor Relief Centre",
+            "longitude": 76.3562000,
+            "latitude": 10.1490000,
+        },
+        "shelter-aluva-school-node": {
+            "id": "shelter-aluva-school-node",
+            "name": "Aluva School Shelter",
+            "longitude": 76.3492000,
+            "latitude": 10.1036000,
+        },
+        "shelter-kadungalloor-hall-node": {
+            "id": "shelter-kadungalloor-hall-node",
+            "name": "Kadungalloor Community Hall",
+            "longitude": 76.3456000,
+            "latitude": 10.0933000,
         },
     }
 
@@ -257,77 +380,121 @@ def build_demo_chennai_graph() -> dict[str, Any]:
 
     edges = [
         edge(
-            "e-velachery-guindy",
-            "velachery",
-            "guindy",
+            "e-aluva-ernakulam",
+            "aluva",
+            "ernakulam",
             3_400,
             0.18,
             0.27,
+            road_id="road-aluva-main",
         ),
-        edge("e-velachery-taramani", "velachery", "taramani", 3_500, 0.08, 0.13),
-        edge("e-taramani-camp", "taramani", "camp-taramani", 800, 0.03, 0.07),
-        edge("e-taramani-adyar", "taramani", "adyar", 4_200, 0.11, 0.20),
-        edge("e-adyar-camp", "adyar", "camp-adyar", 600, 0.02, 0.04),
-        edge("e-velachery-alandur", "velachery", "alandur", 4_800, 0.07, 0.14),
-        edge("e-alandur-guindy", "alandur", "guindy", 2_500, 0.09, 0.18),
-        edge("e-guindy-camp", "guindy", "camp-guindy", 500, 0.04, 0.05),
         edge(
-            "e-guindy-saidapet",
-            "guindy",
-            "saidapet",
+            "e-aluva-kalamassery",
+            "aluva",
+            "kalamassery",
+            3_500,
+            0.08,
+            0.13,
+            road_id="road-nh-544",
+        ),
+        edge("e-kalamassery-camp", "kalamassery", "camp-kalamassery", 800, 0.03, 0.07),
+        edge("e-kalamassery-periyar", "kalamassery", "periyar", 4_200, 0.11, 0.20),
+        edge("e-periyar-camp", "periyar", "camp-periyar", 600, 0.02, 0.04),
+        edge("e-aluva-thrikkakara", "aluva", "thrikkakara", 4_800, 0.07, 0.14),
+        edge("e-thrikkakara-ernakulam", "thrikkakara", "ernakulam", 2_500, 0.09, 0.18),
+        edge("e-ernakulam-camp", "ernakulam", "camp-ernakulam", 500, 0.04, 0.05),
+        edge(
+            "e-ernakulam-eloor",
+            "ernakulam",
+            "eloor",
             3_000,
             0.08,
             0.16,
             authorized_closure=True,
             closure_status="CLOSED",
         ),
-        edge("e-saidapet-camp", "saidapet", "camp-saidapet", 450, 0.03, 0.06),
+        edge("e-eloor-camp", "eloor", "camp-eloor", 450, 0.03, 0.06),
         edge(
-            "e-adyar-kotturpuram-bridge",
-            "adyar",
-            "kotturpuram",
+            "e-periyar-varapuzha-bridge",
+            "periyar",
+            "varapuzha",
             1_900,
             0.48,
             0.70,
             is_bridge=True,
             depth_source="ground_raster",
         ),
-        edge("e-kotturpuram-saidapet", "kotturpuram", "saidapet", 1_700, 0.07, 0.12),
-        edge("e-taramani-guindy", "taramani", "guindy", 3_600, 0.13, 0.28),
+        edge("e-varapuzha-eloor", "varapuzha", "eloor", 1_700, 0.07, 0.12),
+        edge("e-kalamassery-ernakulam", "kalamassery", "ernakulam", 3_600, 0.13, 0.28),
+        edge(
+            "e-aluva-school-shelter",
+            "aluva",
+            "shelter-aluva-school-node",
+            500,
+            0.03,
+            0.08,
+            road_id="road-nh-544",
+        ),
+        edge(
+            "e-aluva-kadungalloor-hall",
+            "aluva",
+            "shelter-kadungalloor-hall-node",
+            1_550,
+            0.04,
+            0.10,
+        ),
     ]
 
     shelters = [
         {
-            "id": "shelter-taramani",
-            "node": "camp-taramani",
-            "name": "Taramani Relief Camp",
+            "id": "shelter-aluva-school",
+            "node": "shelter-aluva-school-node",
+            "name": "Aluva School Shelter",
+            "status": "OPEN",
+            "capacity_total": 420,
+            "occupancy": 234,
+            "access_open": True,
+        },
+        {
+            "id": "shelter-kadungalloor-hall",
+            "node": "shelter-kadungalloor-hall-node",
+            "name": "Kadungalloor Community Hall",
+            "status": "OPEN",
+            "capacity_total": 300,
+            "occupancy": 300,
+            "access_open": True,
+        },
+        {
+            "id": "shelter-kalamassery",
+            "node": "camp-kalamassery",
+            "name": "Kalamassery Relief Camp",
             "status": "OPEN",
             "capacity_total": 240,
             "occupancy": 104,
             "access_open": True,
         },
         {
-            "id": "shelter-adyar",
-            "node": "camp-adyar",
-            "name": "Adyar Relief Centre",
+            "id": "shelter-periyar",
+            "node": "camp-periyar",
+            "name": "Periyar Relief Centre",
             "status": "OPEN",
             "capacity_total": 180,
             "occupancy": 86,
             "access_open": True,
         },
         {
-            "id": "shelter-guindy",
-            "node": "camp-guindy",
-            "name": "Guindy Community Hall",
+            "id": "shelter-ernakulam",
+            "node": "camp-ernakulam",
+            "name": "Ernakulam Community Hall",
             "status": "OPEN",
             "capacity_total": 320,
             "occupancy": 201,
             "access_open": True,
         },
         {
-            "id": "shelter-saidapet",
-            "node": "camp-saidapet",
-            "name": "Saidapet Relief Centre",
+            "id": "shelter-eloor",
+            "node": "camp-eloor",
+            "name": "Eloor Relief Centre",
             "status": "OPEN",
             "capacity_total": 150,
             "occupancy": 150,
@@ -336,17 +503,17 @@ def build_demo_chennai_graph() -> dict[str, Any]:
     ]
 
     return {
-        "graph_version": "chennai-michaung-demo-graph-v1",
+        "graph_version": "kerala-flood-demo-graph-v1",
         "data_label": "DEMO DATA",
-        "default_origin": "velachery",
+        "default_origin": "aluva",
         "nodes": nodes,
         "edges": edges,
         "shelters": shelters,
         "staging_points": [
             {
-                "id": "staging-velachery",
-                "node": "velachery",
-                "name": "Velachery pre-identified staging point",
+                "id": "staging-aluva",
+                "node": "aluva",
+                "name": "Aluva pre-identified staging point",
                 "status": "DEMO",
             }
         ],
@@ -604,7 +771,19 @@ def find_lower_risk_routes(
                     "id": shelter_id,
                     "name": str(shelter.get("name", shelter_id)),
                     "status": str(shelter.get("status", "UNKNOWN")).upper(),
+                    "activation_status": str(
+                        shelter.get(
+                            "activation_status",
+                            shelter.get("status", "UNKNOWN"),
+                        )
+                    ).upper(),
+                    "access_status": str(shelter.get("access_status", "UNKNOWN")).upper(),
+                    "capacity_total": (int(float(capacity)) if capacity is not None else None),
                     "remaining_capacity": remaining,
+                    "capacity_remaining": remaining,
+                    "occupancy": (int(float(occupancy)) if occupancy is not None else None),
+                    "verified_at": shelter.get("verified_at", shelter.get("observed_at")),
+                    "version": shelter.get("operational_shelter_version"),
                     "warnings": warnings,
                 },
                 "node_ids": path["node_ids"],
@@ -620,6 +799,7 @@ def find_lower_risk_routes(
                     "Avoids authorized closures and configured depth thresholds",
                     "Penalizes uncertain or stale edges",
                 ],
+                "risk": "ELEVATED" if warnings else "LOWER",
             }
         )
 
@@ -683,7 +863,8 @@ __all__ = [
     "DEFAULT_P90_DEPTH_THRESHOLD_M",
     "MAX_ROUTE_ALTERNATIVES",
     "ROUTING_ALGORITHM_VERSION",
-    "build_demo_chennai_graph",
+    "apply_operational_overrides",
+    "build_demo_kerala_graph",
     "edge_is_usable",
     "find_lower_risk_routes",
     "route_to_shelters",

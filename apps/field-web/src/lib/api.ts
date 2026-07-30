@@ -2,9 +2,24 @@ import { ReportInput, type RouteRecommendation } from "@floodrise/contracts";
 import { z } from "zod";
 import { DEMO_INCIDENT_ID, DEMO_SCENARIO_TIME, demoAlerts, demoRoutes, type FieldAlert } from "../data/demo";
 import type { OfflineReportDraft, ReportReceipt } from "./db";
+import {
+  DEMO_FIELD_RUNTIME,
+  type FieldRuntime,
+  type LiveFieldRuntime,
+} from "./field-runtime";
+import {
+  isLiveEligibleLocationAccuracy,
+  MAX_LIVE_LOCATION_ACCURACY_M
+} from "./location-policy";
 import { isForcedOfflineMode } from "./network";
+import { cloudFetch } from "./cloud-security";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "/api/v1";
+let activeFieldRuntime: FieldRuntime = DEMO_FIELD_RUNTIME;
+
+export function configureFieldApiRuntime(runtime: FieldRuntime) {
+  activeFieldRuntime = runtime;
+}
 
 export class ReportSubmissionError extends Error {
   constructor(
@@ -53,7 +68,14 @@ type MediaUploadGrant = MediaUploadMetadata & {
 export type RouteGuidance = {
   alternatives: RouteRecommendation[];
   availability: "CURRENT" | "UNAVAILABLE";
-  source: "API" | "DEMO_FALLBACK";
+  source: "API" | "DEMO_FALLBACK" | "LOCAL_POLICY";
+  referenceTime: string;
+  message: string;
+};
+
+export type AlertFeed = {
+  items: FieldAlert[];
+  source: "API" | "DEMO_FALLBACK" | "UNAVAILABLE";
   referenceTime: string;
   message: string;
 };
@@ -92,7 +114,7 @@ async function fetchWithDeadline(
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await cloudFetch(input, { ...init, signal: controller.signal });
   } catch (error) {
     if (error instanceof TypeError || (error instanceof DOMException && error.name === "AbortError")) {
       throw new RetryableApiError("Network unavailable. The report remains encrypted for retry.");
@@ -298,6 +320,22 @@ export async function submitReport(draft: OfflineReportDraft): Promise<ReportRec
   if (isSimulatedOffline()) {
     throw new RetryableApiError("Network unavailable. The report remains encrypted for retry.");
   }
+  if (activeFieldRuntime.mode === "live") {
+    if (!activeFieldRuntime.incidentId) {
+      throw new RetryableApiError(
+        "The authority incident is unavailable. The report remains encrypted until incident access is restored.",
+      );
+    }
+    if (
+      draft.incident_id !== activeFieldRuntime.incidentId
+      || draft.incident_id === DEMO_INCIDENT_ID
+      || draft.observed_at === DEMO_SCENARIO_TIME
+    ) {
+      throw new NonRetryableApiError(
+        "This report belongs to a different or deterministic incident and cannot be sent to the live authority service.",
+      );
+    }
+  }
   // Media must reach a private, sanitized terminal state before its identifier
   // enters the authoritative report. Keeping this outside the demo fallback
   // prevents scanner or quarantine failures from becoming a synthetic receipt.
@@ -332,22 +370,154 @@ export async function submitReport(draft: OfflineReportDraft): Promise<ReportRec
   }
 }
 
-export async function fetchAlerts(): Promise<FieldAlert[]> {
+const FieldBootstrapResponse = z.object({
+  server_time: z.string().datetime(),
+  scenario_clock: z.string().datetime().optional(),
+  demo_mode: z.boolean(),
+  data_label: z.string().min(1),
+  incident: z.object({
+    id: z.string().min(1),
+    name: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+    status: z.string().min(1),
+    area_name: z.string().min(1).optional(),
+    area: z.union([z.string().min(1), z.record(z.string(), z.unknown())]).optional(),
+    is_demo: z.boolean(),
+    is_simulated: z.boolean(),
+    data_label: z.string().min(1),
+  }),
+});
+
+export class FieldBootstrapError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FieldBootstrapError";
+  }
+}
+
+export async function fetchFieldIncidentBootstrap(
+  timeoutMs = 8_000,
+): Promise<LiveFieldRuntime> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${API_BASE}/alerts?incident_id=${encodeURIComponent(DEMO_INCIDENT_ID)}`, {
+    const response = await cloudFetch(`${API_BASE}/incidents/bootstrap`, {
+      headers: apiHeaders(),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new FieldBootstrapError(
+        response.status === 404
+          ? "No active authority incident is available for Field."
+          : "The authority incident bootstrap is unavailable.",
+      );
+    }
+    const parsed = FieldBootstrapResponse.safeParse(await response.json());
+    if (!parsed.success) {
+      throw new FieldBootstrapError(
+        "The authority service returned an invalid incident bootstrap.",
+      );
+    }
+    const { incident } = parsed.data;
+    const topLabel = parsed.data.data_label.trim().toUpperCase();
+    const incidentLabel = incident.data_label.trim().toUpperCase();
+    if (
+      parsed.data.demo_mode
+      || topLabel !== "LIVE"
+      || incident.is_demo
+      || incident.is_simulated
+      || incidentLabel !== "LIVE"
+      || incident.id === DEMO_INCIDENT_ID
+    ) {
+      throw new FieldBootstrapError(
+        "The authority endpoint returned deterministic or simulated incident data. Live Field remains closed.",
+      );
+    }
+    const incidentName = incident.name ?? incident.title;
+    const areaName = incident.area_name
+      ?? (typeof incident.area === "string" ? incident.area : undefined);
+    if (!incidentName || !areaName) {
+      throw new FieldBootstrapError(
+        "The authority incident bootstrap is missing its incident name or response area.",
+      );
+    }
+    return {
+      mode: "live",
+      incidentId: incident.id,
+      referenceTime: parsed.data.server_time,
+      incidentName,
+      areaName,
+      incidentStatus: incident.status,
+    };
+  } catch (error) {
+    if (error instanceof FieldBootstrapError) throw error;
+    throw new FieldBootstrapError(
+      error instanceof DOMException && error.name === "AbortError"
+        ? "The authority incident bootstrap did not respond in time."
+        : "The authority incident bootstrap could not be verified.",
+    );
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+export async function fetchAlerts(
+  runtime: FieldRuntime = activeFieldRuntime,
+): Promise<AlertFeed> {
+  if (!runtime.incidentId || !runtime.referenceTime) {
+    return {
+      items: [],
+      source: "UNAVAILABLE",
+      referenceTime: new Date().toISOString(),
+      message: "No verified authority incident is available. No deterministic alerts are substituted.",
+    };
+  }
+  const referenceTime = runtime.referenceTime;
+  try {
+    const response = await cloudFetch(`${API_BASE}/alerts?incident_id=${encodeURIComponent(runtime.incidentId)}`, {
       headers: apiHeaders()
     });
     if (!response.ok) throw new Error("Alerts unavailable");
     const payload = AlertListResponse.parse(await response.json());
-    return payload.items.map(normalizeFieldAlert);
+    if (
+      runtime.mode === "live"
+      && payload.items.some(
+        (alert) => alert.is_demo || alert.incident_id !== runtime.incidentId,
+      )
+    ) {
+      throw new Error("An alert crossed the verified live incident boundary");
+    }
+    return {
+      items: payload.items
+        .map(normalizeFieldAlert)
+        .filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, referenceTime)),
+      source: "API",
+      referenceTime,
+      message: "Current alerts loaded from the incident API."
+    };
   } catch {
-    return demoAlerts.filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME));
+    if (runtime.mode === "live") {
+      return {
+        items: [],
+        source: "UNAVAILABLE",
+        referenceTime,
+        message: "The live alert feed could not be verified. No deterministic alerts are substituted.",
+      };
+    }
+    return {
+      items: demoAlerts.filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME)),
+      source: "DEMO_FALLBACK",
+      referenceTime: DEMO_SCENARIO_TIME,
+      message:
+        "The alert API could not be reached. Showing deterministic DEMO DATA for the scenario checkpoint; this is not a current alert feed."
+    };
   }
 }
 
 const AlertListResponse = z.object({
   items: z.array(z.object({
     id: z.string().min(1),
+    incident_id: z.string().min(1).optional(),
     title: z.string().min(1),
     body: z.string().min(1),
     audience: z.string().min(1),
@@ -403,13 +573,50 @@ export function currentRoutesAt(routes: RouteRecommendation[], referenceTime: st
   });
 }
 
-export async function fetchRoutes(origin = { latitude: 12.9791, longitude: 80.2209, accuracy_m: 12 }): Promise<RouteGuidance> {
+export async function fetchRoutes(
+  origin: { latitude: number; longitude: number; accuracy_m: number } | undefined = undefined,
+  runtime: FieldRuntime = activeFieldRuntime,
+): Promise<RouteGuidance> {
+  if (!runtime.incidentId || !runtime.referenceTime) {
+    return {
+      alternatives: [],
+      availability: "UNAVAILABLE",
+      source: "LOCAL_POLICY",
+      referenceTime: new Date().toISOString(),
+      message: "No verified authority incident is available. Route guidance remains paused.",
+    };
+  }
+  if (!origin) {
+    if (runtime.mode === "live") {
+      return {
+        alternatives: [],
+        availability: "UNAVAILABLE",
+        source: "LOCAL_POLICY",
+        referenceTime: runtime.referenceTime,
+        message: "Use a verified current device location before requesting live route guidance.",
+      };
+    }
+    origin = {
+      latitude: 10.1041000,
+      longitude: 76.3519000,
+      accuracy_m: 12,
+    };
+  }
+  if (!isLiveEligibleLocationAccuracy(origin.accuracy_m)) {
+    return {
+      alternatives: [],
+      availability: "UNAVAILABLE",
+      source: "LOCAL_POLICY",
+      referenceTime: runtime.referenceTime,
+      message: `Location accuracy must be ${MAX_LIVE_LOCATION_ACCURACY_M} m or better before requesting route guidance.`
+    };
+  }
   try {
-    const response = await fetch(`${API_BASE}/routes/recommend`, {
+    const response = await cloudFetch(`${API_BASE}/routes/recommend`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...apiHeaders() },
       body: JSON.stringify({
-        incident_id: DEMO_INCIDENT_ID,
+        incident_id: runtime.incidentId,
         origin: {
           latitude: origin.latitude,
           longitude: origin.longitude,
@@ -420,11 +627,23 @@ export async function fetchRoutes(origin = { latitude: 12.9791, longitude: 80.22
     });
     if (!response.ok) throw new Error("Routes unavailable");
     const payload = (await response.json()) as {
+      incident_id?: string;
       alternatives?: RouteRecommendation[];
       generated_at?: string;
       no_route_reason?: string | null;
+      is_simulated?: boolean;
     };
-    const referenceTime = payload.generated_at ?? DEMO_SCENARIO_TIME;
+    if (
+      runtime.mode === "live"
+      && (
+        !payload.generated_at
+        || payload.incident_id !== runtime.incidentId
+        || payload.is_simulated !== false
+      )
+    ) {
+      throw new Error("The live route response is not bound to the verified authority incident");
+    }
+    const referenceTime = payload.generated_at ?? runtime.referenceTime;
     const alternatives = currentRoutesAt(payload.alternatives ?? [], referenceTime);
     return {
       alternatives,
@@ -436,6 +655,15 @@ export async function fetchRoutes(origin = { latitude: 12.9791, longitude: 80.22
         : payload.no_route_reason ?? "No current lower-risk route is available. Await responder guidance."
     };
   } catch {
+    if (runtime.mode === "live") {
+      return {
+        alternatives: [],
+        availability: "UNAVAILABLE",
+        source: "LOCAL_POLICY",
+        referenceTime: runtime.referenceTime,
+        message: "The live route service is unavailable. No deterministic route is substituted; await responder guidance.",
+      };
+    }
     // The static route fixture is useful for deterministic development, but a
     // backend failure means its freshness cannot be revalidated. Never surface
     // it as current guidance, even when its fixture expiry follows the reset

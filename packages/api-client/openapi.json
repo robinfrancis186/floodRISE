@@ -14,6 +14,169 @@
         "title": "ActionType",
         "type": "string"
       },
+      "Alert": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Request Id"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "caution_only": {
+            "default": false,
+            "title": "Caution Only",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dispatched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatched At"
+          },
+          "evidence_version": {
+            "title": "Evidence Version",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "gateway": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/LineStringGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PolygonGeometry"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "is_demo": {
+            "default": true,
+            "title": "Is Demo",
+            "type": "boolean"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "official": {
+            "default": false,
+            "title": "Official",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AlertStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "incident_id",
+          "status",
+          "title",
+          "body",
+          "audience",
+          "evidence_version",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "Alert",
+        "type": "object"
+      },
+      "AlertStatus": {
+        "enum": [
+          "DRAFT",
+          "AWAITING_APPROVAL",
+          "APPROVED",
+          "DISPATCHING",
+          "DISPATCHED",
+          "FAILED",
+          "CANCELLED"
+        ],
+        "title": "AlertStatus",
+        "type": "string"
+      },
       "ApprovalDecision": {
         "additionalProperties": false,
         "properties": {
@@ -40,6 +203,29 @@
         "title": "ApprovalDecision",
         "type": "object"
       },
+      "ApprovalDecisionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "alert": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Alert"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approval": {
+            "$ref": "#/components/schemas/ApprovalRecord"
+          }
+        },
+        "required": [
+          "approval"
+        ],
+        "title": "ApprovalDecisionResponse",
+        "type": "object"
+      },
       "ApprovalDecisionType": {
         "enum": [
           "APPROVE",
@@ -48,6 +234,201 @@
         ],
         "title": "ApprovalDecisionType",
         "type": "string"
+      },
+      "ApprovalRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "action_payload": {
+            "additionalProperties": true,
+            "title": "Action Payload",
+            "type": "object"
+          },
+          "action_type": {
+            "$ref": "#/components/schemas/ActionType"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "binding": {
+            "additionalProperties": true,
+            "title": "Binding",
+            "type": "object"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decided_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided Role"
+          },
+          "decision_authentication": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Authentication"
+          },
+          "decision_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Reason"
+          },
+          "evidence_version": {
+            "title": "Evidence Version",
+            "type": "string"
+          },
+          "execution_status": {
+            "enum": [
+              "NOT_STARTED",
+              "SUCCEEDED",
+              "FAILED"
+            ],
+            "title": "Execution Status",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/LineStringGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PolygonGeometry"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "is_simulated": {
+            "default": false,
+            "title": "Is Simulated",
+            "type": "boolean"
+          },
+          "model_version": {
+            "title": "Model Version",
+            "type": "string"
+          },
+          "payload_digest": {
+            "title": "Payload Digest",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_authentication": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Authentication"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "requested_role": {
+            "title": "Requested Role",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApprovalStatus"
+          },
+          "version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "incident_id",
+          "action_type",
+          "action_payload",
+          "audience",
+          "evidence_version",
+          "model_version",
+          "reason",
+          "id",
+          "status",
+          "requested_by",
+          "requested_at",
+          "expires_at",
+          "payload_digest",
+          "requested_role",
+          "binding",
+          "execution_status"
+        ],
+        "title": "ApprovalRecord",
+        "type": "object"
       },
       "ApprovalRequestCreate": {
         "additionalProperties": false,
@@ -111,6 +492,18 @@
         ],
         "title": "ApprovalRequestCreate",
         "type": "object"
+      },
+      "ApprovalStatus": {
+        "enum": [
+          "PENDING",
+          "APPROVED",
+          "MODIFIED",
+          "REJECTED",
+          "EXPIRED",
+          "CANCELLED"
+        ],
+        "title": "ApprovalStatus",
+        "type": "string"
       },
       "DemoAdvanceRequest": {
         "additionalProperties": false,
@@ -1042,7 +1435,7 @@
         "additionalProperties": false,
         "properties": {
           "accuracy_m": {
-            "maximum": 100.0,
+            "maximum": 10000.0,
             "minimum": 0.0,
             "title": "Accuracy M",
             "type": "number"
@@ -1144,6 +1537,12 @@
           "access_status": {
             "anyOf": [
               {
+                "enum": [
+                  "REACHABLE",
+                  "LIMITED",
+                  "AT_RISK",
+                  "UNKNOWN"
+                ],
                 "type": "string"
               },
               {
@@ -1155,6 +1554,12 @@
           "activation_status": {
             "anyOf": [
               {
+                "enum": [
+                  "OPEN",
+                  "LIMITED",
+                  "FULL",
+                  "UNKNOWN"
+                ],
                 "type": "string"
               },
               {
@@ -1249,7 +1654,7 @@
     }
   },
   "info": {
-    "description": "Versioned Chennai flood-response API. The default profile is deterministic DEMO DATA and never contacts a production notification destination.",
+    "description": "Versioned Kerala flood-response API. The default profile is deterministic DEMO DATA and never contacts a production notification destination.",
     "summary": "Human-verified flood intelligence and decision support",
     "title": "floodRISE API",
     "version": "0.1.0"
@@ -1267,6 +1672,38 @@
             "schema": {
               "title": "Incident Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Demo-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Demo-User"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Demo-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Demo-Role"
             }
           }
         ],
@@ -1295,6 +1732,11 @@
             "description": "RFC 9457 problem detail"
           }
         },
+        "security": [
+          {
+            "OIDC bearer token": []
+          }
+        ],
         "summary": "List Alerts",
         "tags": [
           "alerts"
@@ -1416,6 +1858,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1433,9 +1884,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Create Approval Api V1 Approvals Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ApprovalRecord"
                 }
               }
             },
@@ -1508,6 +1957,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1525,9 +1983,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Decide Approval Api V1 Approvals  Approval Id  Decisions Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
                 }
               }
             },
@@ -1822,6 +2278,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1912,6 +2377,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1956,6 +2430,17 @@
         "parameters": [
           {
             "in": "query",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "maxLength": 240,
+              "minLength": 1,
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "once",
             "required": false,
             "schema": {
@@ -1978,6 +2463,47 @@
                 }
               ],
               "title": "Last-Event-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Demo-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Demo-User"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Demo-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2002,6 +2528,11 @@
             "description": "RFC 9457 problem detail"
           }
         },
+        "security": [
+          {
+            "OIDC bearer token": []
+          }
+        ],
         "summary": "Events",
         "tags": [
           "events"
@@ -2365,6 +2896,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -2544,6 +3084,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2658,6 +3207,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2691,6 +3249,40 @@
         "summary": "Upload Media Content",
         "tags": [
           "reports"
+        ]
+      }
+    },
+    "/api/v1/ready": {
+      "get": {
+        "operationId": "readiness_api_v1_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Readiness Api V1 Ready Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "RFC 9457 problem detail"
+          }
+        },
+        "summary": "Readiness",
+        "tags": [
+          "system"
         ]
       }
     },
@@ -2817,6 +3409,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -3076,6 +3677,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -3212,6 +3822,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -3469,6 +4088,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -3594,6 +4222,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -3740,6 +4377,29 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "readiness_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Readiness Ready Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness",
         "tags": [
           "system"
         ]

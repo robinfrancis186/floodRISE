@@ -4,21 +4,33 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from threading import Barrier
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from starlette.requests import Request
 
+from app.auth import Principal
 from app.config import Settings
-from app.database import Database
+from app.database import ConcurrentWriteError, Database, EntityChange
+from app.errors import AppError
 from app.main import create_app
-from app.media import MediaService, MemoryMediaBlobStore, UnavailableScanner
+from app.media import (
+    QUARANTINE_CLEANUP_KIND,
+    MediaService,
+    MediaStoreCapacityError,
+    MemoryMediaBlobStore,
+    UnavailableScanner,
+)
+from app.schemas import MediaUploadRequest
 
 API = "/api/v1"
-INCIDENT_ID = "inc-demo-michaung-2023"
+INCIDENT_ID = "inc-demo-kerala-flood-2023"
 FIXED_TIME = datetime(2023, 12, 4, 14, 10, tzinfo=UTC)
 
 
@@ -61,6 +73,34 @@ def _image_bytes(
 
 def _headers(user: str = "demo-reporter", role: str = "reporter") -> dict[str, str]:
     return {"X-Demo-User": user, "X-Demo-Role": role}
+
+
+def _seed_authority_owned_incident(database: Database) -> None:
+    """Create the minimum live-owned parent record without using demo fixtures."""
+
+    database.initialize()
+    database.commit(
+        changes=[
+            EntityChange(
+                "incident",
+                INCIDENT_ID,
+                {
+                    "id": INCIDENT_ID,
+                    "name": "Authority-managed media pipeline test",
+                    "status": "ACTIVE",
+                    "is_demo": False,
+                    "is_simulated": False,
+                    "version": 1,
+                },
+                1,
+            )
+        ],
+        state={
+            "incident_id": INCIDENT_ID,
+            "scenario_clock": FIXED_TIME.isoformat().replace("+00:00", "Z"),
+            "demo_mode": False,
+        },
+    )
 
 
 def _grant(
@@ -155,7 +195,7 @@ def _report_payload(number: int, upload_ids: list[str]) -> dict[str, Any]:
         "reporter_id": f"reporter-{number}",
         "device_id": f"device-{number}",
         "observed_at": "2023-12-04T14:08:00Z",
-        "location": {"latitude": 12.9815, "longitude": 80.2207, "accuracy_m": 20},
+        "location": {"latitude": 10.1065000, "longitude": 76.3517000, "accuracy_m": 20},
         "water_depth": "KNEE",
         "road_status": "IMPASSABLE",
         "media_upload_ids": upload_ids,
@@ -424,6 +464,144 @@ def test_clean_blob_rolls_back_but_quarantine_remains_when_ready_commit_fails(
     assert store.read_quarantine(grant["upload_id"]) == payload
 
 
+def test_cross_instance_upload_loser_cannot_delete_winner_quarantine(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _image_bytes()
+    grant = _grant(client, payload, key="cross-instance-upload-grant")
+    database = client.app.state.database
+    store = client.app.state.media_service.blob_store
+    first = client.app.state.media_service
+    second = MediaService(
+        database,
+        blob_store=store,
+        scanner=first.scanner,
+        clock=first.clock,
+    )
+    second.bind_runtime(is_demo=True)
+    commit_barrier = Barrier(2)
+    original_commit = database.commit
+
+    def synchronize_quarantine_commits(*args: Any, **kwargs: Any) -> Any:
+        events = kwargs.get("events", ())
+        if any(event.event_type == "media.quarantined" for event in events):
+            commit_barrier.wait(timeout=5)
+        return original_commit(*args, **kwargs)
+
+    monkeypatch.setattr(database, "commit", synchronize_quarantine_commits)
+    principal = Principal(
+        user_id="demo-reporter",
+        role="reporter",
+        authenticated=True,
+    )
+
+    def upload(service: MediaService, key: str) -> Any:
+        try:
+            return service.upload_content(
+                grant["upload_id"],
+                payload,
+                content_type="image/jpeg",
+                content_length=len(payload),
+                checksum_header=hashlib.sha256(payload).hexdigest(),
+                idempotency_key=key,
+                principal=principal,
+            )
+        except Exception as exc:  # noqa: BLE001 - the result is asserted below
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                upload,
+                (first, second),
+                ("cross-instance-upload-first", "cross-instance-upload-second"),
+            )
+        )
+
+    assert sum(isinstance(result, tuple) and result[0] == 202 for result in results) == 1
+    assert sum(isinstance(result, ConcurrentWriteError) for result in results) == 1
+    stored = database.get("media_upload", grant["upload_id"])
+    assert stored["status"] == "QUARANTINED_PENDING_SCAN"
+    assert (
+        store.read_quarantine(
+            grant["upload_id"],
+            blob_ref=stored["quarantine_blob_ref"],
+        )
+        == payload
+    )
+    assert store.read_quarantine(grant["upload_id"]) == payload
+    assert store.object_count == 1
+
+
+def test_cross_instance_completion_loser_cannot_delete_winner_clean_blob(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _image_bytes()
+    grant = _grant(client, payload, key="cross-instance-complete-grant")
+    assert _upload(client, grant, payload, key="cross-instance-complete-content").status_code == 202
+    database = client.app.state.database
+    store = client.app.state.media_service.blob_store
+    first = client.app.state.media_service
+    second = MediaService(
+        database,
+        blob_store=store,
+        scanner=first.scanner,
+        clock=first.clock,
+    )
+    second.bind_runtime(is_demo=True)
+    commit_barrier = Barrier(2)
+    original_commit = database.commit
+
+    def synchronize_ready_commits(*args: Any, **kwargs: Any) -> Any:
+        events = kwargs.get("events", ())
+        if any(event.event_type == "media.ready_private" for event in events):
+            commit_barrier.wait(timeout=5)
+        return original_commit(*args, **kwargs)
+
+    monkeypatch.setattr(database, "commit", synchronize_ready_commits)
+    principal = Principal(
+        user_id="demo-reporter",
+        role="reporter",
+        authenticated=True,
+    )
+
+    def complete(service: MediaService, key: str) -> Any:
+        try:
+            return service.complete_upload(
+                grant["upload_id"],
+                idempotency_key=key,
+                principal=principal,
+            )
+        except Exception as exc:  # noqa: BLE001 - the result is asserted below
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                complete,
+                (first, second),
+                ("cross-instance-complete-first", "cross-instance-complete-second"),
+            )
+        )
+
+    assert sum(isinstance(result, tuple) and result[0] == 200 for result in results) == 1
+    assert sum(isinstance(result, ConcurrentWriteError) for result in results) == 1
+    stored = database.get("media_upload", grant["upload_id"])
+    assert stored["status"] == "READY_PRIVATE"
+    assert (
+        store.read_clean(
+            grant["upload_id"],
+            blob_ref=stored["clean_blob_ref"],
+        )
+        is not None
+    )
+    assert store.read_clean(grant["upload_id"]) is not None
+    assert store.read_quarantine(grant["upload_id"]) is None
+    assert store.object_count == 1
+
+
 def test_scanner_outage_retains_quarantine_and_blocks_evidence_use() -> None:
     database = Database("sqlite://")
     store = MemoryMediaBlobStore()
@@ -491,5 +669,536 @@ def test_non_demo_runtime_defaults_to_a_fail_closed_scanner() -> None:
     )
     try:
         assert isinstance(application.state.media_service.scanner, UnavailableScanner)
+    finally:
+        database.engine.dispose()
+
+
+def test_non_demo_pipeline_rejects_before_reading_or_storing_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = Database("sqlite://")
+    _seed_authority_owned_incident(database)
+    application = create_app(
+        Settings(env="test", demo_mode=False, database_url="sqlite://"),
+        database=database,
+    )
+    media = application.state.media_service
+    payload = _image_bytes()
+    stream_reads: list[bool] = []
+
+    async def forbidden_stream(_request: Request) -> Any:
+        stream_reads.append(True)
+        yield payload
+
+    try:
+        with TestClient(application, raise_server_exceptions=False) as non_demo_client:
+            media.create_upload(
+                MediaUploadRequest(
+                    incident_id=INCIDENT_ID,
+                    filename="non-demo.jpg",
+                    content_type="image/jpeg",
+                    size_bytes=len(payload),
+                    sha256=hashlib.sha256(payload).hexdigest(),
+                ),
+                idempotency_key="non-demo-grant",
+                principal=Principal(
+                    user_id="non-demo-reporter",
+                    role="reporter",
+                    authenticated=True,
+                ),
+            )
+            upload_id = next(
+                record["upload_id"]
+                for record in database.list("media_upload")
+                if record["requested_by"] == "non-demo-reporter"
+            )
+            monkeypatch.setattr(Request, "stream", forbidden_stream)
+            response = non_demo_client.put(
+                f"{API}/media/uploads/{upload_id}/content",
+                content=payload,
+                headers={
+                    "Content-Type": "image/jpeg",
+                    "Content-Length": str(len(payload)),
+                    "X-Checksum-SHA256": hashlib.sha256(payload).hexdigest(),
+                    "Idempotency-Key": "non-demo-content",
+                    **_headers("non-demo-reporter"),
+                },
+            )
+
+        assert response.status_code == 503
+        assert response.json()["code"] == "MEDIA_PIPELINE_UNAVAILABLE"
+        assert stream_reads == []
+        assert media.blob_store.read_quarantine(upload_id) is None
+        with pytest.raises(AppError) as direct_failure:
+            media.upload_content(
+                upload_id,
+                payload,
+                content_type="image/jpeg",
+                content_length=len(payload),
+                checksum_header=hashlib.sha256(payload).hexdigest(),
+                idempotency_key="non-demo-direct-content",
+                principal=Principal(
+                    user_id="non-demo-reporter",
+                    role="reporter",
+                    authenticated=True,
+                ),
+            )
+        assert direct_failure.value.code == "MEDIA_PIPELINE_UNAVAILABLE"
+        assert media.blob_store.read_quarantine(upload_id) is None
+    finally:
+        database.engine.dispose()
+
+
+class _ApprovedExternalBlobStore:
+    production_approved = True
+
+    def __init__(self) -> None:
+        self.delegate = MemoryMediaBlobStore()
+
+    def put_quarantine(
+        self,
+        upload_id: str,
+        payload: bytes,
+        *,
+        delete_after: datetime,
+    ) -> str:
+        return self.delegate.put_quarantine(upload_id, payload, delete_after=delete_after)
+
+    def read_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str | None = None,
+    ) -> bytes | None:
+        return self.delegate.read_quarantine(upload_id, blob_ref=blob_ref)
+
+    def put_clean(
+        self,
+        upload_id: str,
+        payload: bytes,
+        *,
+        delete_after: datetime,
+    ) -> str:
+        return self.delegate.put_clean(upload_id, payload, delete_after=delete_after)
+
+    def read_clean(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str | None = None,
+    ) -> bytes | None:
+        return self.delegate.read_clean(upload_id, blob_ref=blob_ref)
+
+    def delete_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
+    ) -> None:
+        self.delegate.delete_quarantine(upload_id, blob_ref=blob_ref)
+
+    def delete_clean(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
+    ) -> None:
+        self.delegate.delete_clean(upload_id, blob_ref=blob_ref)
+
+    def cleanup_expired(self, now: datetime) -> int:
+        return self.delegate.cleanup_expired(now)
+
+    def clear(self) -> None:
+        self.delegate.clear()
+
+
+class _CleanupFailingBlobStore(MemoryMediaBlobStore):
+    def cleanup_expired(self, now: datetime) -> int:
+        del now
+        raise RuntimeError("cleanup-transport-secret")
+
+
+class _ApprovedExternalScanner:
+    production_approved = True
+
+    def scan(self, payload: bytes) -> str:
+        assert payload
+        return "CLEAN"
+
+
+class _RecoveringQuarantineDeleteStore(_ApprovedExternalBlobStore):
+    def __init__(self, *, failures: int = 1) -> None:
+        super().__init__()
+        self.remaining_failures = failures
+        self.delete_attempts = 0
+
+    def delete_quarantine(
+        self,
+        upload_id: str,
+        *,
+        blob_ref: str,
+    ) -> None:
+        self.delete_attempts += 1
+        if self.remaining_failures:
+            self.remaining_failures -= 1
+            raise RuntimeError("private-storage-transport-secret")
+        super().delete_quarantine(upload_id, blob_ref=blob_ref)
+
+
+class _ApprovedMaliciousScanner:
+    production_approved = True
+
+    def scan(self, payload: bytes) -> str:
+        assert payload
+        return "MALICIOUS"
+
+
+def test_non_demo_pipeline_accepts_injected_approved_external_adapters() -> None:
+    database = Database("sqlite://")
+    _seed_authority_owned_incident(database)
+    store = _ApprovedExternalBlobStore()
+    media = MediaService(
+        database,
+        blob_store=store,
+        scanner=_ApprovedExternalScanner(),
+        clock=lambda: FIXED_TIME,
+    )
+    application = create_app(
+        Settings(env="test", demo_mode=False, database_url="sqlite://"),
+        database=database,
+        media_service=media,
+    )
+    try:
+        with TestClient(application, raise_server_exceptions=False) as external_client:
+            payload = _image_bytes()
+            grant = _grant(
+                external_client,
+                payload,
+                key="external-grant",
+                user="external-reporter",
+            )
+            uploaded = _upload(
+                external_client,
+                grant,
+                payload,
+                key="external-content",
+                user="external-reporter",
+            )
+            completed = _complete(
+                external_client,
+                grant,
+                key="external-complete",
+                user="external-reporter",
+            )
+
+        assert uploaded.status_code == 202
+        assert completed.status_code == 200
+        assert completed.json()["scanner_status"] == "CLEAN"
+        assert grant["is_simulated"] is False
+        assert uploaded.json()["is_simulated"] is False
+        assert completed.json()["is_simulated"] is False
+        assert grant["retention_status"] == "ACTIVE_AUTHORITY_POLICY"
+        assert uploaded.json()["retention_status"] == "ACTIVE_AUTHORITY_POLICY"
+        assert completed.json()["retention_status"] == "ACTIVE_AUTHORITY_POLICY"
+        assert datetime.fromisoformat(
+            grant["evidence_delete_after"].replace("Z", "+00:00")
+        ) - FIXED_TIME == timedelta(days=30)
+        assert datetime.fromisoformat(
+            grant["identity_link_delete_after"].replace("Z", "+00:00")
+        ) - FIXED_TIME == timedelta(days=365)
+        assert store.read_clean(grant["upload_id"]) is not None
+    finally:
+        database.engine.dispose()
+
+
+def test_committed_ready_media_retries_pending_quarantine_deletion_idempotently(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    database = Database("sqlite://")
+    _seed_authority_owned_incident(database)
+    store = _RecoveringQuarantineDeleteStore()
+    media = MediaService(
+        database,
+        blob_store=store,
+        scanner=_ApprovedExternalScanner(),
+        clock=lambda: FIXED_TIME,
+    )
+    application = create_app(
+        Settings(env="test", demo_mode=False, database_url="sqlite://"),
+        database=database,
+        media_service=media,
+    )
+    payload = _image_bytes(include_exif=True)
+    try:
+        with TestClient(application, raise_server_exceptions=False) as external_client:
+            grant = _grant(
+                external_client,
+                payload,
+                key="pending-delete-grant",
+                user="external-reporter",
+            )
+            uploaded = _upload(
+                external_client,
+                grant,
+                payload,
+                key="pending-delete-content",
+                user="external-reporter",
+            )
+            first = _complete(
+                external_client,
+                grant,
+                key="pending-delete-complete",
+                user="external-reporter",
+            )
+
+            pending = database.get(QUARANTINE_CLEANUP_KIND, grant["upload_id"])
+            assert first.status_code == 200
+            assert uploaded.status_code == 202
+            assert pending is not None
+            assert pending["state"] == "PENDING"
+            assert pending["blob_ref"]
+            assert store.read_quarantine(grant["upload_id"]) == payload
+            assert [record.message for record in caplog.records] == [
+                (
+                    "Private quarantine deletion remains pending; the authoritative media "
+                    "result is unchanged and a later reconciliation will retry."
+                )
+            ]
+            assert all(
+                "private-storage-transport-secret" not in record.message
+                for record in caplog.records
+            )
+
+            replay = _complete(
+                external_client,
+                grant,
+                key="pending-delete-complete",
+                user="external-reporter",
+            )
+            metadata = external_client.get(
+                f"{API}/media/uploads/{grant['upload_id']}",
+                headers=_headers("external-reporter"),
+            )
+
+        cleanup = database.get(QUARANTINE_CLEANUP_KIND, grant["upload_id"])
+        assert replay.status_code == 200
+        assert replay.json() == first.json()
+        assert metadata.status_code == 200
+        assert cleanup is not None
+        assert cleanup["state"] == "DELETED"
+        assert cleanup["blob_ref"] is None
+        assert cleanup["completed_at"] is not None
+        assert store.read_quarantine(grant["upload_id"]) is None
+        assert store.delete_attempts == 2
+        assert [
+            event["event_type"]
+            for event in database.audit_events(limit=1_000)
+            if event["event_type"] == "media.quarantine_deleted"
+        ] == ["media.quarantine_deleted"]
+        assert database.verify_audit_chain() is True
+    finally:
+        database.engine.dispose()
+
+
+def test_rejected_media_reconciles_pending_quarantine_deletion_on_replay(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    database = Database("sqlite://")
+    _seed_authority_owned_incident(database)
+    store = _RecoveringQuarantineDeleteStore()
+    media = MediaService(
+        database,
+        blob_store=store,
+        scanner=_ApprovedMaliciousScanner(),
+        clock=lambda: FIXED_TIME,
+    )
+    application = create_app(
+        Settings(env="test", demo_mode=False, database_url="sqlite://"),
+        database=database,
+        media_service=media,
+    )
+    payload = _image_bytes()
+    try:
+        with TestClient(application, raise_server_exceptions=False) as external_client:
+            grant = _grant(
+                external_client,
+                payload,
+                key="rejected-delete-grant",
+                user="external-reporter",
+            )
+            uploaded = _upload(
+                external_client,
+                grant,
+                payload,
+                key="rejected-delete-content",
+                user="external-reporter",
+            )
+            first = _complete(
+                external_client,
+                grant,
+                key="rejected-delete-complete",
+                user="external-reporter",
+            )
+
+            pending = database.get(QUARANTINE_CLEANUP_KIND, grant["upload_id"])
+            assert uploaded.status_code == 202
+            assert first.status_code == 422
+            assert first.json()["code"] == "MEDIA_MALWARE_DETECTED"
+            assert pending is not None and pending["state"] == "PENDING"
+            assert store.read_quarantine(grant["upload_id"]) == payload
+            assert all(
+                "private-storage-transport-secret" not in record.message
+                for record in caplog.records
+            )
+
+            replay = _complete(
+                external_client,
+                grant,
+                key="rejected-delete-complete",
+                user="external-reporter",
+            )
+
+        cleanup = database.get(QUARANTINE_CLEANUP_KIND, grant["upload_id"])
+        assert replay.status_code == 422
+        assert replay.json()["code"] == "MEDIA_MALWARE_DETECTED"
+        assert cleanup is not None and cleanup["state"] == "DELETED"
+        assert store.read_quarantine(grant["upload_id"]) is None
+        assert store.delete_attempts == 2
+        assert database.verify_audit_chain() is True
+    finally:
+        database.engine.dispose()
+
+
+def test_best_effort_cleanup_failure_does_not_break_media_grant(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    database = Database("sqlite://")
+    payload = _image_bytes()
+    media = MediaService(
+        database,
+        blob_store=_CleanupFailingBlobStore(),
+        clock=lambda: FIXED_TIME,
+    )
+    application = create_app(
+        Settings(env="test", demo_mode=True, database_url="sqlite://"),
+        database=database,
+        media_service=media,
+    )
+    try:
+        with TestClient(application, raise_server_exceptions=False) as cleanup_client:
+            grant = _grant(
+                cleanup_client,
+                payload,
+                key="cleanup-failure-grant",
+            )
+
+        assert grant["status"] == "AWAITING_UPLOAD"
+        messages = [record.message for record in caplog.records]
+        assert messages == [
+            "Private media retention cleanup failed; the primary operation will continue."
+        ]
+        assert all("cleanup-transport-secret" not in message for message in messages)
+    finally:
+        database.engine.dispose()
+
+
+def test_demo_memory_store_enforces_aggregate_quotas_and_cleans_expired() -> None:
+    store = MemoryMediaBlobStore(max_objects=2, max_bytes=5)
+    expired = FIXED_TIME - timedelta(seconds=1)
+    retained = FIXED_TIME + timedelta(days=1)
+
+    store.put_quarantine("expired", b"123", delete_after=expired)
+    store.put_clean("retained", b"45", delete_after=retained)
+    assert store.object_count == 2
+    assert store.byte_count == 5
+
+    with pytest.raises(MediaStoreCapacityError):
+        store.put_quarantine("overflow-object", b"", delete_after=retained)
+    with pytest.raises(MediaStoreCapacityError):
+        store.put_clean("retained", b"456", delete_after=retained)
+
+    assert store.cleanup_expired(FIXED_TIME) == 1
+    assert store.read_quarantine("expired") is None
+    assert store.read_clean("retained") == b"45"
+    assert store.object_count == 1
+    assert store.byte_count == 2
+
+    store.put_quarantine("new", b"123", delete_after=retained)
+    assert store.object_count == 2
+    assert store.byte_count == 5
+
+
+def test_demo_media_capacity_failure_does_not_store_or_advance_upload() -> None:
+    database = Database("sqlite://")
+    payload = _image_bytes()
+    store = MemoryMediaBlobStore(max_objects=2, max_bytes=len(payload) - 1)
+    media = MediaService(
+        database,
+        blob_store=store,
+        clock=lambda: FIXED_TIME,
+    )
+    application = create_app(
+        Settings(env="test", demo_mode=True, database_url="sqlite://"),
+        database=database,
+        media_service=media,
+    )
+    try:
+        with TestClient(application, raise_server_exceptions=False) as capacity_client:
+            grant = _grant(capacity_client, payload, key="capacity-grant")
+            uploaded = _upload(
+                capacity_client,
+                grant,
+                payload,
+                key="capacity-content",
+            )
+            metadata = capacity_client.get(
+                f"{API}/media/uploads/{grant['upload_id']}",
+                headers=_headers(),
+            )
+
+        assert uploaded.status_code == 503
+        assert uploaded.json()["code"] == "MEDIA_STORE_CAPACITY_EXCEEDED"
+        assert metadata.json()["status"] == "AWAITING_UPLOAD"
+        assert store.read_quarantine(grant["upload_id"]) is None
+        assert store.object_count == 0
+        assert store.byte_count == 0
+    finally:
+        database.engine.dispose()
+
+
+def test_demo_media_service_reclaims_expired_objects_before_upload() -> None:
+    database = Database("sqlite://")
+    payload = _image_bytes()
+    store = MemoryMediaBlobStore(max_objects=1, max_bytes=len(payload))
+    store.put_quarantine(
+        "expired-object",
+        b"x",
+        delete_after=FIXED_TIME - timedelta(seconds=1),
+    )
+    media = MediaService(
+        database,
+        blob_store=store,
+        clock=lambda: FIXED_TIME,
+    )
+    application = create_app(
+        Settings(env="test", demo_mode=True, database_url="sqlite://"),
+        database=database,
+        media_service=media,
+    )
+    try:
+        with TestClient(application, raise_server_exceptions=False) as retention_client:
+            grant = _grant(retention_client, payload, key="retention-grant")
+            uploaded = _upload(
+                retention_client,
+                grant,
+                payload,
+                key="retention-content",
+            )
+
+        assert uploaded.status_code == 202
+        assert store.read_quarantine("expired-object") is None
+        assert store.read_quarantine(grant["upload_id"]) == payload
+        assert store.object_count == 1
+        assert store.byte_count == len(payload)
     finally:
         database.engine.dispose()

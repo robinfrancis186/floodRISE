@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "./components/app-shell";
-import type { ViewId } from "./lib/models";
-import { OperationsProvider } from "./state/operations-context";
+import { appPathForView, viewFromAppPath } from "./lib/app-paths";
+import type { StaffRole, ViewId } from "./lib/models";
+import {
+  OperationsProvider,
+  type OperationsMode,
+} from "./state/operations-context";
 import { AuditView } from "./views/audit-view";
 import { EvacuationView } from "./views/evacuation-view";
 import { FloodSignalView } from "./views/flood-signal-view";
@@ -11,38 +15,25 @@ import { ResilienceView } from "./views/resilience-view";
 import { SheltersView } from "./views/shelters-view";
 import { SourceHealthView } from "./views/source-health-view";
 
-const pathByView: Record<ViewId, string> = {
-  live: "/",
-  signals: "/signals",
-  incidents: "/incidents",
-  evacuation: "/evacuation",
-  shelters: "/shelters",
-  resilience: "/resilience",
-  sources: "/sources",
-  audit: "/audit",
-};
-
-function viewFromPath(pathname: string): ViewId {
-  return (Object.entries(pathByView).find(([, path]) => path === pathname)?.[0] as ViewId | undefined) ?? "live";
-}
+const appBase = import.meta.env.BASE_URL;
 
 function RoutedApp() {
-  const [view, setView] = useState<ViewId>(() => viewFromPath(window.location.pathname));
+  const [view, setView] = useState<ViewId>(() => viewFromAppPath(window.location.pathname, appBase));
 
   useEffect(() => {
-    const handler = () => setView(viewFromPath(window.location.pathname));
+    const handler = () => setView(viewFromAppPath(window.location.pathname, appBase));
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
   }, []);
 
   const navigate = (next: ViewId) => {
-    window.history.pushState({}, "", pathByView[next]);
+    window.history.pushState({}, "", appPathForView(next, appBase));
     setView(next);
   };
 
   const content = view === "live" ? <LiveMapView onNavigate={navigate} />
     : view === "signals" ? <FloodSignalView />
-      : view === "incidents" ? <IncidentsView />
+      : view === "incidents" ? <IncidentsView onNavigate={navigate} />
         : view === "evacuation" ? <EvacuationView />
           : view === "shelters" ? <SheltersView />
             : view === "resilience" ? <ResilienceView />
@@ -52,6 +43,22 @@ function RoutedApp() {
   return <AppShell view={view} onNavigate={navigate}>{content}</AppShell>;
 }
 
-export function App() {
-  return <OperationsProvider><RoutedApp /></OperationsProvider>;
+export function App({
+  mode = "demo",
+  initialRole = "Incident commander",
+  principalUserId,
+}: {
+  mode?: OperationsMode;
+  initialRole?: StaffRole;
+  principalUserId?: string;
+}) {
+  return (
+    <OperationsProvider
+      mode={mode}
+      initialRole={initialRole}
+      principalUserId={principalUserId}
+    >
+      <RoutedApp />
+    </OperationsProvider>
+  );
 }

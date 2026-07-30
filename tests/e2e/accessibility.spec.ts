@@ -36,7 +36,7 @@ test("operations console passes a WCAG AA smoke scan", async ({ page }) => {
 
 test("field reporting passes a mobile WCAG AA smoke scan", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
-  await page.goto("http://127.0.0.1:55174", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:55174", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Current conditions" })).toBeVisible();
   await expectNoHighImpactViolations(page, "field current conditions");
 

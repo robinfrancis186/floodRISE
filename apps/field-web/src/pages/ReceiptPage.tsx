@@ -3,15 +3,27 @@ import { Alert, AlertDescription, AlertTitle, Badge, Button } from "@floodrise/u
 import { CheckCircle2, Clock3, FileCheck2, LockKeyhole, MapPin, UsersRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getReceipt, type ReportReceipt } from "../lib/db";
+import { useFieldCloudAccess } from "../lib/cloud-access";
 import { formatDateTime } from "../lib/format";
+import { recoverAuthoritativeReceipt } from "../lib/receipt-recovery";
 
 export function ReceiptPage() {
   const { receiptId } = useParams({ from: "/receipt/$receiptId" });
+  const { runtime } = useFieldCloudAccess();
   const [receipt, setReceipt] = useState<ReportReceipt | null | undefined>(undefined);
 
   useEffect(() => {
-    void getReceipt(receiptId).then((value) => setReceipt(value ?? null));
-  }, [receiptId]);
+    let active = true;
+    void (async () => {
+      const local = await getReceipt(receiptId).catch(() => undefined);
+      const recovered = local
+        ?? await recoverAuthoritativeReceipt(receiptId, runtime);
+      if (active) setReceipt(recovered);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [receiptId, runtime]);
 
   if (receipt === undefined) return <div className="page page-content loading-row" role="status">Opening report receipt…</div>;
 
@@ -20,7 +32,11 @@ export function ReceiptPage() {
       <div className="page page-content standard-page receipt-page">
         <Alert variant="warning">
           <AlertTitle>Receipt not available on this device</AlertTitle>
-          <AlertDescription>It may have been submitted from another device or removed with site data.</AlertDescription>
+          <AlertDescription>
+            It may have been submitted from another device, removed with site data,
+            or unavailable while the authority service is offline. Reconnect and
+            reopen this receipt before submitting the observation again.
+          </AlertDescription>
         </Alert>
         <Button asChild><Link to="/">Return to conditions</Link></Button>
       </div>

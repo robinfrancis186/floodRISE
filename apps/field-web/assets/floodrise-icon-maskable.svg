@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="floodRISE">
+  <rect width="512" height="512" fill="#062d78"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="34">
+    <path d="M104 188c40-40 80-40 120 0s80 40 120 0 56-40 64-32"/>
+    <path d="M104 256c40-40 80-40 120 0s80 40 120 0 56-40 64-32"/>
+    <path d="M104 324c40-40 80-40 120 0s80 40 120 0 56-40 64-32"/>
+  </g>
+</svg>

@@ -33,6 +33,18 @@ export type EncryptedQueueRecord = {
   lastError?: string;
 };
 
+export type QueuedReportListItem =
+  | {
+      record: EncryptedQueueRecord;
+      draft: OfflineReportDraft;
+      decryptionFailed: false;
+    }
+  | {
+      record: EncryptedQueueRecord;
+      draft: null;
+      decryptionFailed: true;
+    };
+
 type DeviceKeyRecord = {
   id: "field-queue-v1";
   key: CryptoKey;
@@ -65,6 +77,7 @@ class FieldDatabase extends Dexie {
 }
 
 export const fieldDb = new FieldDatabase();
+const sessionReceipts = new Map<string, ReportReceipt>();
 
 function announceQueueChange() {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(QUEUE_CHANGED_EVENT));
@@ -75,8 +88,18 @@ async function getOrCreateDeviceKey() {
   if (stored) return stored.key;
 
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-  await fieldDb.keys.put({ id: "field-queue-v1", key });
-  return key;
+  try {
+    // `add`, rather than `put`, elects one key when two tabs initialize the
+    // queue concurrently. The losing tab must use the stored winner; replacing
+    // it would make ciphertext created by the first tab permanently unreadable.
+    await fieldDb.keys.add({ id: "field-queue-v1", key });
+    return key;
+  } catch (error) {
+    if (!(error instanceof Dexie.ConstraintError)) throw error;
+    const winner = await fieldDb.keys.get("field-queue-v1");
+    if (!winner) throw error;
+    return winner.key;
+  }
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -133,16 +156,7 @@ export async function enqueueReport(
   now = Date.now(),
   retry?: { nextAttemptAt: number; lastError: string }
 ) {
-  await purgeExpiredReports(now);
-  const [queued, encrypted] = await Promise.all([fieldDb.queue.toArray(), encryptDraft(draft)]);
-  const totalBytes = queued.reduce((sum, item) => sum + item.sizeBytes, 0);
-  if (queued.length >= QUEUE_LIMIT_ITEMS) {
-    throw new QueueCapacityError("Offline queue is full. Reconnect and sync or remove an older report.");
-  }
-  if (totalBytes + encrypted.sizeBytes > QUEUE_LIMIT_BYTES) {
-    throw new QueueCapacityError("Offline evidence storage reached 100 MB. Reconnect and sync or remove an older report.");
-  }
-
+  const encrypted = await encryptDraft(draft);
   const record: EncryptedQueueRecord = {
     id: draft.client_report_id,
     createdAt: now,
@@ -155,7 +169,23 @@ export async function enqueueReport(
     iv: encrypted.iv,
     ciphertext: encrypted.ciphertext
   };
-  await fieldDb.queue.add(record);
+  // A read/write IndexedDB transaction is serialized with transactions from
+  // other tabs that touch the same queue store. Expiry, capacity admission,
+  // and insertion therefore commit as one decision instead of allowing two
+  // tabs to pass the limits from the same stale snapshot.
+  await fieldDb.transaction("rw", fieldDb.queue, async () => {
+    const expired = await fieldDb.queue.where("expiresAt").belowOrEqual(now).primaryKeys();
+    if (expired.length) await fieldDb.queue.bulkDelete(expired);
+    const queued = await fieldDb.queue.toArray();
+    const totalBytes = queued.reduce((sum, item) => sum + item.sizeBytes, 0);
+    if (queued.length >= QUEUE_LIMIT_ITEMS) {
+      throw new QueueCapacityError("Offline queue is full. Reconnect and sync or remove an older report.");
+    }
+    if (totalBytes + encrypted.sizeBytes > QUEUE_LIMIT_BYTES) {
+      throw new QueueCapacityError("Offline evidence storage reached 100 MB. Reconnect and sync or remove an older report.");
+    }
+    await fieldDb.queue.add(record);
+  });
   announceQueueChange();
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(QUEUE_ENQUEUED_EVENT));
   return record;
@@ -165,10 +195,19 @@ export async function listQueuedReports() {
   await purgeExpiredReports();
   const records = await fieldDb.queue.orderBy("createdAt").reverse().toArray();
   return Promise.all(
-    records.map(async (record) => ({
-      record,
-      draft: await decryptQueueRecord(record)
-    }))
+    records.map(async (record): Promise<QueuedReportListItem> => {
+      try {
+        return {
+          record,
+          draft: await decryptQueueRecord(record),
+          decryptionFailed: false
+        };
+      } catch {
+        // Do not surface WebCrypto or payload diagnostics. A single damaged
+        // record remains removable without hiding the rest of the queue.
+        return { record, draft: null, decryptionFailed: true };
+      }
+    })
   );
 }
 
@@ -206,10 +245,21 @@ export async function deleteQueuedReport(id: string) {
 
 export async function saveReceipt(receipt: ReportReceipt) {
   await fieldDb.receipts.put(receipt);
+  sessionReceipts.delete(receipt.id);
+}
+
+/**
+ * Keep an authoritative acknowledgement visible for the current application
+ * session when IndexedDB receipt persistence fails after server acceptance.
+ * This contains no report body or photo and is never written to unencrypted
+ * browser storage.
+ */
+export function rememberReceiptForSession(receipt: ReportReceipt) {
+  sessionReceipts.set(receipt.id, receipt);
 }
 
 export async function getReceipt(id: string) {
-  return fieldDb.receipts.get(id);
+  return (await fieldDb.receipts.get(id)) ?? sessionReceipts.get(id);
 }
 
 /**
@@ -233,11 +283,13 @@ export async function clearDemoFieldData() {
       fieldDb.receipts.clear()
     ]);
   });
+  sessionReceipts.clear();
   announceQueueChange();
   return { queuedDrafts, receipts };
 }
 
 export async function clearFieldDatabaseForTests() {
+  sessionReceipts.clear();
   await fieldDb.delete();
   await fieldDb.open();
 }

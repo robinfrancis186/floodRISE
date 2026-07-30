@@ -35,12 +35,19 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { DEMO_INCIDENT_ID, DEMO_SCENARIO_TIME } from "../data/demo";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { useQueueSummary } from "../hooks/useQueueSummary";
 import { ReportSubmissionError, shouldRetrySubmission, submitReport } from "../lib/api";
-import { enqueueReport, saveReceipt, type OfflineReportDraft, type PhotoDraft } from "../lib/db";
+import { useFieldCloudAccess } from "../lib/cloud-access";
+import {
+  enqueueReport,
+  rememberReceiptForSession,
+  saveReceipt,
+  type OfflineReportDraft,
+  type PhotoDraft
+} from "../lib/db";
 import { createClientReportId, getDeviceId, getReporterId } from "../lib/identity";
+import { isLiveEligibleLocationAccuracy } from "../lib/location-policy";
 import { defaultReportValues, reportFormSchema, type ReportFormValues } from "../lib/report-schema";
 
 const depthOptions = [
@@ -73,24 +80,31 @@ type FieldLocation = {
 };
 
 const demoLocation: FieldLocation = {
-  latitude: 12.9791,
-  longitude: 80.2209,
+  latitude: 10.1041000,
+  longitude: 76.3519000,
   accuracy: 12,
-  label: "Velachery Main Road"
+  label: "Aluva–Paravur Road"
 };
 
 export function ReportFloodingPage() {
   const navigate = useNavigate();
   const { isOnline } = useNetworkStatus();
+  const { runtime } = useFieldCloudAccess();
+  const isDemo = runtime.mode === "demo";
   const queue = useQueueSummary();
   const fileInputId = useId();
-  const [location, setLocation] = useState(demoLocation);
+  const [location, setLocation] = useState<FieldLocation | null>(
+    () => isDemo ? demoLocation : null,
+  );
   const [locating, setLocating] = useState(false);
   const [photo, setPhoto] = useState<PhotoDraft | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const previewRef = useRef<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [savedOffline, setSavedOffline] = useState(false);
+  const locationIsLiveEligible = location
+    ? isLiveEligibleLocationAccuracy(location.accuracy)
+    : false;
 
   const {
     control,
@@ -119,14 +133,18 @@ export function ReportFloodingPage() {
         setLocation({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-          accuracy: Math.round(position.coords.accuracy),
+          accuracy: position.coords.accuracy,
           label: "Current location"
         });
         setLocating(false);
         setFormError(null);
       },
       () => {
-        setFormError("Location permission was not available. The Velachery demo pin is still selected.");
+        setFormError(
+          isDemo
+            ? "Location permission was not available. The Aluva demo pin is still selected."
+            : "Location permission was not available. A verified device location is required for a live report.",
+        );
         setLocating(false);
       },
       { enableHighAccuracy: true, timeout: 8_000, maximumAge: 30_000 }
@@ -162,17 +180,27 @@ export function ReportFloodingPage() {
   async function submit(values: ReportFormValues) {
     setFormError(null);
     setSavedOffline(false);
+    if (!runtime.incidentId || !runtime.referenceTime) {
+      setFormError(
+        "No verified authority incident is available. Reconnect and verify secure access before creating this report.",
+      );
+      return;
+    }
+    if (!location) {
+      setFormError("Use the current device location before creating a live report.");
+      return;
+    }
     const clientId = createClientReportId();
     const draft: OfflineReportDraft = {
       client_report_id: clientId,
-      incident_id: DEMO_INCIDENT_ID,
+      incident_id: runtime.incidentId,
       reporter_id: getReporterId(),
       device_id: getDeviceId(),
-      observed_at: import.meta.env.VITE_DEMO_MODE === "false" ? new Date().toISOString() : DEMO_SCENARIO_TIME,
+      observed_at: isDemo ? runtime.referenceTime : new Date().toISOString(),
       location: {
         latitude: location.latitude,
         longitude: location.longitude,
-        accuracy_m: Math.min(location.accuracy, 100)
+        accuracy_m: location.accuracy
       },
       water_depth: values.waterDepth,
       road_status: values.roadStatus,
@@ -182,45 +210,92 @@ export function ReportFloodingPage() {
       photo: photo ?? undefined
     };
 
-    try {
-      if (!isOnline) {
+    if (!isOnline) {
+      try {
         await enqueueReport(draft);
         setSavedOffline(true);
         await navigate({ to: "/queue" });
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : "Report could not be stored offline.");
+      }
+      return;
+    }
+
+    let receipt: Awaited<ReturnType<typeof submitReport>>;
+    try {
+      receipt = await submitReport(draft);
+    } catch (error) {
+      if (!shouldRetrySubmission(error)) {
+        setFormError(error instanceof Error ? error.message : "Report could not be submitted.");
         return;
       }
-      const receipt = await submitReport(draft);
-      await saveReceipt(receipt);
-      await navigate({ to: "/receipt/$receiptId", params: { receiptId: receipt.id } });
-    } catch (error) {
-      if (isOnline && shouldRetrySubmission(error)) {
-        try {
-          await enqueueReport(
-            draft,
-            Date.now(),
-            error instanceof ReportSubmissionError
-              ? {
-                  nextAttemptAt: Date.now() + Math.max(1_000, error.retryAfterMs),
-                  lastError: error.message
-                }
-              : undefined
-          );
-          setSavedOffline(true);
-          await navigate({ to: "/queue" });
-          return;
-        } catch (queueError) {
-          setFormError(queueError instanceof Error ? queueError.message : "Report could not be stored offline.");
-          return;
-        }
+      try {
+        await enqueueReport(
+          draft,
+          Date.now(),
+          error instanceof ReportSubmissionError
+            ? {
+                nextAttemptAt: Date.now() + Math.max(1_000, error.retryAfterMs),
+                lastError: error.message
+              }
+            : undefined
+        );
+        setSavedOffline(true);
+        await navigate({ to: "/queue" });
+      } catch (queueError) {
+        setFormError(queueError instanceof Error ? queueError.message : "Report could not be stored offline.");
       }
-      setFormError(error instanceof Error ? error.message : "Report could not be submitted.");
+      return;
     }
+
+    try {
+      await saveReceipt(receipt);
+    } catch {
+      // The API has already accepted this immutable client ID. Preserve the
+      // acknowledgement for this session and keep the exact encrypted draft
+      // retryable so a later idempotent replay can repair durable receipt
+      // storage without creating a second evidence record.
+      rememberReceiptForSession(receipt);
+      try {
+        await enqueueReport(draft, Date.now(), {
+          nextAttemptAt: Date.now() + 5_000,
+          lastError: "Report accepted by the API; local receipt storage will retry."
+        });
+      } catch {
+        // The authoritative report and in-memory receipt remain usable. The
+        // receipt screen can also recover the minimal acknowledgement from the
+        // authenticated report endpoint after a reload.
+      }
+    }
+    await navigate({ to: "/receipt/$receiptId", params: { receiptId: receipt.id } });
   }
 
   return (
     <div className="page report-page">
       <section className="report-map" aria-label="Selected report location">
-        <FloodMap variant="field" horizon="3h" height={470} showSummary={false} ariaLabel="Flood conditions around selected report pin" />
+        {isDemo ? (
+          <FloodMap
+            variant="field"
+            horizon="3h"
+            height={470}
+            showSummary={false}
+            showLegend={false}
+            showHorizonControl={false}
+            interactive={false}
+            visibleFeatureIds={["cluster-aluva"]}
+            ariaLabel="Flood conditions around selected report pin"
+          />
+        ) : (
+          <div className="route-map-paused field-live-map-boundary" role="status">
+            <LocateFixed aria-hidden />
+            <strong>Live report location</strong>
+            <span>
+              {location
+                ? `Device location acquired with ±${Math.round(location.accuracy)} m accuracy.`
+                : "Use the device location control below. No demo pin is selected."}
+            </span>
+          </div>
+        )}
       </section>
 
       <section className="report-sheet" aria-labelledby="report-heading">
@@ -239,13 +314,50 @@ export function ReportFloodingPage() {
           <div className="location-row">
             <span className="location-icon"><LocateFixed aria-hidden /></span>
             <div>
-              <strong>{location.label}</strong>
-              <span>±{Math.round(location.accuracy)} m accuracy</span>
+              <strong>{location?.label ?? "Device location required"}</strong>
+              <span>
+                {location
+                  ? `±${Math.round(location.accuracy)} m accuracy`
+                  : "No default location is used in live mode"}
+              </span>
             </div>
             <Button type="button" variant="link" onClick={() => void useCurrentLocation()} disabled={locating}>
-              {locating ? "Locating…" : "Adjust pin"}<ChevronRight aria-hidden />
+              {locating
+                ? "Locating…"
+                : isDemo
+                  ? "Adjust pin"
+                  : location
+                    ? "Update location"
+                    : "Use current"}
+              <ChevronRight aria-hidden />
             </Button>
           </div>
+
+          {location && !locationIsLiveEligible ? (
+            <Alert variant="warning" className="location-policy-alert">
+              <ShieldAlert aria-hidden className="alert-leading-icon" />
+              <div>
+                <AlertTitle>Location accuracy is too low for live corroboration</AlertTitle>
+                <AlertDescription>
+                  The ±{Math.round(location.accuracy)} m reading will be preserved with this report. It does not
+                  qualify for live community corroboration unless accuracy is 100 m or better, but responders may
+                  still review it.
+                </AlertDescription>
+              </div>
+            </Alert>
+          ) : null}
+
+          {!runtime.incidentId ? (
+            <Alert variant="warning" className="location-policy-alert">
+              <ShieldAlert aria-hidden className="alert-leading-icon" />
+              <div>
+                <AlertTitle>Live incident context unavailable</AlertTitle>
+                <AlertDescription>
+                  This offline session has no verified authority incident. The form cannot create or queue a live report.
+                </AlertDescription>
+              </div>
+            </Alert>
+          ) : null}
 
           <Controller
             name="waterDepth"
@@ -374,7 +486,12 @@ export function ReportFloodingPage() {
             {formError ? <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert> : null}
             {savedOffline ? <Alert variant="info"><AlertDescription>Report saved in the encrypted offline queue.</AlertDescription></Alert> : null}
 
-            <Button type="submit" size="lg" className="submit-report-button" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              size="lg"
+              className="submit-report-button"
+              disabled={isSubmitting || !runtime.incidentId || !location}
+            >
               {isSubmitting ? <RefreshCw aria-hidden className="spin" /> : isOnline ? <CloudUpload aria-hidden /> : <CloudUpload aria-hidden />}
               <span>
                 <strong>{isSubmitting ? "Saving report…" : isOnline ? "Submit report" : "Save report offline"}</strong>

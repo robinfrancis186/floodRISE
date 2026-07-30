@@ -8,13 +8,14 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings
-from app.database import Database
+from app.database import Database, EventInput
 from app.domain import CORROBORATION_MESSAGE, EXPIRY_MESSAGE
 from app.main import create_app
 
-INCIDENT_ID = "inc-demo-michaung-2023"
+INCIDENT_ID = "inc-demo-kerala-flood-2023"
 API = "/api/v1"
 
 
@@ -50,8 +51,8 @@ def _report_payload(
         "device_id": device_id or f"device-{number}",
         "observed_at": observed_at,
         "location": {
-            "latitude": 12.98150 + number * 0.00004,
-            "longitude": 80.22070 + number * 0.00004,
+            "latitude": 10.1065000 + number * 0.00004,
+            "longitude": 76.3517000 + number * 0.00004,
             "accuracy_m": 20,
         },
         "water_depth": "KNEE",
@@ -105,8 +106,8 @@ def _approval_payload() -> dict[str, Any]:
             "title": "Official flood warning",
             "body": "Move away from low-lying streets and follow responder instructions.",
         },
-        "audience": "Residents inside the approved Velachery warning area",
-        "geometry": {"type": "Point", "coordinates": [80.2207, 12.9815]},
+        "audience": "Residents inside the approved Aluva warning area",
+        "geometry": {"type": "Point", "coordinates": [76.3517000, 10.1065000]},
         "evidence_version": "evidence-demo-001",
         "model_version": "model-demo-20231204-001",
         "reason": "Issue an official warning for the reviewed impact area.",
@@ -124,15 +125,16 @@ def test_seeded_health_and_bootstrap_are_demo_labelled(client: TestClient) -> No
         "service": "floodrise-backend",
         "version": "0.1.0",
         "environment": "test",
-        "database": "reachable",
-        "audit_chain_valid": True,
         "demo_mode": True,
         "data_label": "DEMO DATA",
         "time": "ignored",
     }
     assert client.get(f"{API}/health").json()["status"] == "ok"
 
-    bootstrap = client.get(f"{API}/incidents/{INCIDENT_ID}/bootstrap")
+    bootstrap = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("incident-lead", "incident_commander"),
+    )
     assert bootstrap.status_code == 200
     body = bootstrap.json()
     assert body["data_label"] == "DEMO DATA"
@@ -170,6 +172,119 @@ def test_seeded_health_and_bootstrap_are_demo_labelled(client: TestClient) -> No
         "ACT-198",
         "ACT-204",
     }
+    road_closure = next(
+        approval
+        for approval in body["approvals"]
+        if approval["action_payload"]["presentation_id"] == "ACT-198"
+    )
+    assert road_closure["action_payload"]["road_id"] == "road-aluva-main"
+    assert road_closure["binding"]["action_target"] == {
+        "kind": "road",
+        "id": "road-aluva-main",
+        "record_version": 1,
+        "incident_id": INCIDENT_ID,
+    }
+
+
+def test_public_health_is_database_independent(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database: Database = client.app.state.database
+
+    def unexpected_database_access(*_args: Any, **_kwargs: Any) -> bool:
+        raise AssertionError("public liveness must not access the database")
+
+    monkeypatch.setattr(database, "is_empty", unexpected_database_access)
+    monkeypatch.setattr(database, "verify_audit_chain", unexpected_database_access)
+    monkeypatch.setattr(database, "readiness_check", unexpected_database_access)
+
+    for path in ("/health", f"{API}/health"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+
+def test_readiness_uses_only_the_bounded_database_check(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database: Database = client.app.state.database
+    readiness_calls = 0
+
+    def unexpected_full_verification(*_args: Any, **_kwargs: Any) -> bool:
+        raise AssertionError("public readiness must not verify the full audit history")
+
+    def bounded_readiness() -> bool:
+        nonlocal readiness_calls
+        readiness_calls += 1
+        return True
+
+    monkeypatch.setattr(database, "verify_audit_chain", unexpected_full_verification)
+    monkeypatch.setattr(database, "readiness_check", bounded_readiness)
+
+    for path in ("/ready", f"{API}/ready"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.json() | {"time": "ignored"} == {
+            "status": "ready",
+            "service": "floodrise-backend",
+            "environment": "test",
+            "database": "reachable",
+            "audit_chain_head": "initialized",
+            "time": "ignored",
+        }
+    assert readiness_calls == 2
+
+
+@pytest.mark.parametrize("failure_mode", ["missing_head", "database_error"])
+def test_readiness_fails_closed_without_exposing_database_errors(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+) -> None:
+    database: Database = client.app.state.database
+
+    if failure_mode == "missing_head":
+        monkeypatch.setattr(database, "readiness_check", lambda: False)
+    else:
+
+        def unavailable_database() -> bool:
+            raise SQLAlchemyError("postgresql://private-credential@database")
+
+        monkeypatch.setattr(database, "readiness_check", unavailable_database)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.headers["retry-after"] == "5"
+    assert response.json()["code"] == "SERVICE_NOT_READY"
+    assert "private-credential" not in response.text
+    assert client.get("/health").status_code == 200
+
+
+def test_bootstrap_omits_operational_approvals_for_non_operational_roles(
+    client: TestClient,
+) -> None:
+    reporter = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("field-reporter", "reporter"),
+    )
+    identity_admin = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("identity-admin", "identity_administrator"),
+    )
+    verifier = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("duty-verifier", "verifier"),
+    )
+
+    assert reporter.status_code == identity_admin.status_code == verifier.status_code == 200
+    assert reporter.json()["approvals"] == []
+    assert identity_admin.json()["approvals"] == []
+    serialized_reporter = json.dumps(reporter.json())
+    assert "demo-requester-area-caution" not in serialized_reporter
+    assert "request_authentication" not in serialized_reporter
+    assert len(verifier.json()["approvals"]) == 3
 
 
 def test_demo_reset_requires_identity_administrator_and_returns_canonical_checkpoint(
@@ -188,13 +303,15 @@ def test_demo_reset_requires_identity_administrator_and_returns_canonical_checkp
         "scenario_time": "2023-12-04T14:10:00Z",
         "reset_at": "ignored",
         "data_label": "DEMO DATA",
-        "message": "Deterministic Michaung replay reset; no live provider was contacted.",
+        "message": (
+            "Deterministic Kerala extreme-rainfall replay reset; no live provider was contacted."
+        ),
     }
 
 
 def test_validation_errors_use_rfc_9457_problem_details(client: TestClient) -> None:
     payload = _report_payload(1)
-    payload["location"]["accuracy_m"] = 101
+    payload["location"]["accuracy_m"] = 10_001
     payload["unexpected"] = "strict contracts reject extra fields"
 
     response = client.post(
@@ -313,7 +430,7 @@ def test_four_independent_reports_create_one_unofficial_caution(client: TestClie
     assert alerts[0]["body"] == CORROBORATION_MESSAGE
     assert alerts[0]["caution_only"] is True
     assert alerts[0]["official"] is False
-    assert alerts[0]["gateway"] == "fake://notification-sink"
+    assert "gateway" not in alerts[0]
 
     fifth = _submit_report(client, 5)
     assert fifth.status_code == 201
@@ -441,6 +558,22 @@ def test_late_report_is_retained_but_cannot_trigger_a_live_signal(client: TestCl
     assert body["signal"]["independent_report_count"] == 0
 
 
+def test_poor_accuracy_report_is_retained_but_not_live_eligible(
+    client: TestClient,
+) -> None:
+    payload = _report_payload(71)
+    payload["location"]["accuracy_m"] = 145
+
+    response = _submit_report(client, 71, payload=payload)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["report"]["disposition"] == "INVALID"
+    assert body["report"]["eligible_for_live_signal"] is False
+    assert "worse than 100 m" in body["report"]["disposition_reasons"][0]
+    assert body["signal"]["independent_report_count"] == 0
+
+
 def test_demo_advance_expires_signal_without_implying_safety(client: TestClient) -> None:
     created = _submit_report(client, 1)
     signal_id = created.json()["signal"]["id"]
@@ -502,6 +635,36 @@ def test_signal_decision_requires_the_current_expected_version(client: TestClien
     assert accepted.json()["human_review"]["reviewed_by"] == "field-verifier"
 
 
+def test_field_check_http_decision_returns_corroborated_signal_to_review(
+    client: TestClient,
+) -> None:
+    headers = _role_headers("field-verifier", "verifier")
+    signal = client.get(f"{API}/signals/signal-aluva-042", headers=headers).json()
+    corroborated = client.post(
+        f"{API}/signals/{signal['id']}/decisions",
+        json={
+            "decision": "VERIFY",
+            "reason": "Independent review supports community corroboration.",
+            "expected_version": signal["version"],
+        },
+        headers=headers,
+    )
+    assert corroborated.status_code == 200
+    reviewed = client.post(
+        f"{API}/signals/{signal['id']}/decisions",
+        json={
+            "decision": "FIELD_CHECK",
+            "reason": "A responder field check is required before operational use.",
+            "expected_version": corroborated.json()["version"],
+        },
+        headers=headers,
+    )
+
+    assert reviewed.status_code == 200
+    assert reviewed.json()["state"] == "NEEDS_REVIEW"
+    assert reviewed.json()["human_review"]["decision"] == "FIELD_CHECK"
+
+
 def test_two_person_approval_denies_requester_and_dispatches_for_other_user(
     client: TestClient,
 ) -> None:
@@ -534,12 +697,24 @@ def test_two_person_approval_denies_requester_and_dispatches_for_other_user(
     assert alert["caution_only"] is False
     assert alert["approval_request_id"] == approval["id"]
     assert alert["gateway"] == "fake://notification-sink"
+    reporter_bootstrap = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("field-reporter", "reporter"),
+    )
+    assert approval["id"] not in json.dumps(reporter_bootstrap.json())
+    public_alert = next(
+        item for item in reporter_bootstrap.json()["alerts"] if item["official"] is True
+    )
+    assert "gateway" not in public_alert
 
 
 def test_seeded_evacuation_approval_uses_bound_id_version_and_distinct_approver(
     client: TestClient,
 ) -> None:
-    bootstrap = client.get(f"{API}/incidents/{INCIDENT_ID}/bootstrap").json()
+    bootstrap = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=_role_headers("incident-lead", "incident_commander"),
+    ).json()
     approval = next(
         item
         for item in bootstrap["approvals"]
@@ -579,6 +754,167 @@ def test_seeded_evacuation_approval_uses_bound_id_version_and_distinct_approver(
     assert accepted.json()["alert"]["approval_request_id"] == approval["id"]
 
 
+def test_approved_road_closure_persists_and_is_excluded_from_new_routes(
+    client: TestClient,
+) -> None:
+    route_request = {
+        "incident_id": INCIDENT_ID,
+        "origin_node": "aluva",
+        "max_alternatives": 3,
+    }
+    before = client.post(f"{API}/routes/recommend", json=route_request)
+    assert before.status_code == 200
+    assert any(
+        "e-aluva-school-shelter" in route["edge_ids"] for route in before.json()["alternatives"]
+    )
+
+    payload = {
+        **_approval_payload(),
+        "action_type": "ROAD_CLOSURE",
+        "action_payload": {
+            "road_id": "road-nh-544",
+            "title": "Close reviewed NH 544 segment",
+            "body": "Close only the exact bound segment after independent review.",
+        },
+        "reason": "The road target, evidence and model are bound for review.",
+    }
+    created = client.post(
+        f"{API}/approvals",
+        json=payload,
+        headers=_role_headers("road-requester", "incident_commander"),
+    )
+    assert created.status_code == 201
+    approval = created.json()
+    assert approval["binding"]["action_target"]["id"] == "road-nh-544"
+
+    decision = client.post(
+        f"{API}/approvals/{approval['id']}/decisions",
+        json={
+            "decision": "APPROVE",
+            "reason": "Independent review confirms the exact road closure target.",
+            "expected_version": approval["version"],
+        },
+        headers=_role_headers("road-approver", "verifier"),
+    )
+    assert decision.status_code == 200
+    assert decision.json()["approval"]["status"] == "APPROVED"
+
+    after = client.post(f"{API}/routes/recommend", json=route_request)
+    assert after.status_code == 200
+    body = after.json()
+    assert all("e-aluva-school-shelter" not in route["edge_ids"] for route in body["alternatives"])
+    exclusion = next(
+        item for item in body["excluded_edges"] if item["edge_id"] == "e-aluva-school-shelter"
+    )
+    assert exclusion["reasons"] == ["AUTHORIZED_OR_CONFIRMED_CLOSURE"]
+    audit = client.get(
+        f"{API}/audit",
+        headers=_role_headers("audit-reviewer", "auditor"),
+    ).json()
+    assert any(
+        event["event_type"] == "road.officially_closed" and event["aggregate_id"] == "road-nh-544"
+        for event in audit["items"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("update", "expected_reason"),
+    [
+        (
+            {
+                "activation_status": "FULL",
+                "access_status": "REACHABLE",
+                "capacity_remaining": 0,
+                "status_reason": "The shelter reached its verified capacity.",
+            },
+            "SHELTER_FULL",
+        ),
+        (
+            {
+                "activation_status": "OPEN",
+                "access_status": "AT_RISK",
+                "capacity_remaining": 120,
+                "status_reason": "The only verified access is currently at risk.",
+            },
+            "SHELTER_ACCESS_NOT_CONFIRMED_REACHABLE",
+        ),
+    ],
+)
+def test_shelter_status_change_withholds_stale_route_from_list_and_bootstrap(
+    client: TestClient,
+    update: dict[str, Any],
+    expected_reason: str,
+) -> None:
+    staff_headers = _role_headers("incident-lead", "incident_commander")
+    before = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=staff_headers,
+    ).json()
+    shelter = next(item for item in before["shelters"] if item["id"] == "shelter-aluva-school")
+    initial_route = next(item for item in before["routes"] if item["shelter_id"] == shelter["id"])
+    assert initial_route["shelter_detail"]["status"] == "OPEN"
+    assert initial_route["shelter_detail"]["access_status"] == "REACHABLE"
+    assert initial_route["shelter_detail"]["capacity_remaining"] == 186
+
+    changed = client.patch(
+        f"{API}/shelters/{shelter['id']}",
+        json={"expected_version": shelter["version"], **update},
+        headers=_role_headers("shelter-manager", "shelter_manager"),
+    )
+    assert changed.status_code == 200
+
+    stored_routes = client.get(
+        f"{API}/routes",
+        params={"incident_id": INCIDENT_ID},
+        headers=staff_headers,
+    ).json()
+    after = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=staff_headers,
+    ).json()
+    assert all(route.get("shelter_id") != shelter["id"] for route in stored_routes["items"])
+    assert all(route.get("shelter_id") != shelter["id"] for route in after["routes"])
+    exclusion = next(
+        item
+        for item in after["route_recommendation"]["excluded_shelters"]
+        if item["shelter_id"] == shelter["id"]
+    )
+    assert expected_reason in exclusion["reasons"]
+
+
+def test_limited_reachable_shelter_route_preserves_current_capacity_and_status(
+    client: TestClient,
+) -> None:
+    staff_headers = _role_headers("incident-lead", "incident_commander")
+    before = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=staff_headers,
+    ).json()
+    shelter = next(item for item in before["shelters"] if item["id"] == "shelter-aluva-school")
+    changed = client.patch(
+        f"{API}/shelters/{shelter['id']}",
+        json={
+            "expected_version": shelter["version"],
+            "activation_status": "LIMITED",
+            "access_status": "REACHABLE",
+            "capacity_remaining": 24,
+            "status_reason": "Capacity is limited but verified access remains reachable.",
+        },
+        headers=_role_headers("shelter-manager", "shelter_manager"),
+    )
+    assert changed.status_code == 200
+
+    after = client.get(
+        f"{API}/incidents/{INCIDENT_ID}/bootstrap",
+        headers=staff_headers,
+    ).json()
+    route = next(item for item in after["routes"] if item["shelter_id"] == shelter["id"])
+    assert route["shelter_detail"]["status"] == "LIMITED"
+    assert route["shelter_detail"]["access_status"] == "REACHABLE"
+    assert route["shelter_detail"]["capacity_remaining"] == 24
+    assert route["shelter_detail"]["version"] == shelter["version"] + 1
+
+
 def test_identity_administrator_cannot_request_operational_action(client: TestClient) -> None:
     response = client.post(
         f"{API}/approvals",
@@ -592,7 +928,12 @@ def test_identity_administrator_cannot_request_operational_action(client: TestCl
 
 
 def test_audit_chain_and_finite_sse_replay_share_persisted_events(client: TestClient) -> None:
-    initial_stream = client.get(f"{API}/events", params={"once": "true"})
+    stream_headers = _role_headers("audit-reviewer", "auditor")
+    initial_stream = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers=stream_headers,
+    )
     initial_events = _parse_sse(initial_stream.text)
 
     assert initial_stream.status_code == 200
@@ -608,8 +949,8 @@ def test_audit_chain_and_finite_sse_replay_share_persisted_events(client: TestCl
     assert _submit_report(client, 1).status_code == 201
     replay = client.get(
         f"{API}/events",
-        params={"once": "true"},
-        headers={"Last-Event-ID": initial_events[-1]["id"]},
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers={**stream_headers, "Last-Event-ID": initial_events[-1]["id"]},
     )
     replay_events = _parse_sse(replay.text)
     assert [event["event"] for event in replay_events] == [
@@ -626,12 +967,66 @@ def test_audit_chain_and_finite_sse_replay_share_persisted_events(client: TestCl
     assert exported.json()["chain_valid"] is True
     assert exported.json()["event_count"] == len(audit.json()["items"]) == 6
     assert len(exported.json()["sha256"]) == 64
+    assert client.app.state.sse_connection_count == 0
+
+
+def test_sse_requires_operational_auth_filters_incident_and_rejects_bad_cursor(
+    client: TestClient,
+) -> None:
+    default_reporter = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+    )
+    auditor = _role_headers("audit-reviewer", "auditor")
+    malformed = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers={**auditor, "Last-Event-ID": "not-a-persisted-sequence"},
+    )
+    database = client.app.state.database
+    database.commit(
+        events=[
+            EventInput(
+                event_type="approval.requested",
+                aggregate_kind="approval",
+                aggregate_id="approval-other-incident",
+                aggregate_version=1,
+                actor_id="other-incident-user",
+                actor_role="incident_commander",
+                payload={"private": True},
+                incident_id="inc-other-authority-event",
+            )
+        ]
+    )
+    filtered = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers=auditor,
+    )
+
+    assert default_reporter.status_code == 403
+    assert malformed.status_code == 400
+    assert malformed.json()["code"] == "INVALID_EVENT_CURSOR"
+    assert "approval-other-incident" not in filtered.text
+    assert all(event["data"]["incident_id"] == INCIDENT_ID for event in _parse_sse(filtered.text))
+
+    runtime = client.app.state.settings
+    client.app.state.sse_connection_count = runtime.sse_max_connections
+    at_capacity = client.get(
+        f"{API}/events",
+        params={"once": "true", "incident_id": INCIDENT_ID},
+        headers=auditor,
+    )
+    client.app.state.sse_connection_count = 0
+    client.app.state.sse_principal_connections.clear()
+    assert at_capacity.status_code == 429
+    assert at_capacity.json()["code"] == "SSE_CONNECTION_LIMIT"
 
 
 def test_route_and_simulation_endpoints_publish_versioned_estimates(client: TestClient) -> None:
     route = client.post(
         f"{API}/routes/recommend",
-        json={"incident_id": INCIDENT_ID, "origin_node": "velachery", "max_alternatives": 3},
+        json={"incident_id": INCIDENT_ID, "origin_node": "aluva", "max_alternatives": 3},
     )
 
     assert route.status_code == 200
@@ -642,6 +1037,14 @@ def test_route_and_simulation_endpoints_publish_versioned_estimates(client: Test
     assert "safe" not in route_body["disclaimer"].lower()
     assert all(
         alternative["model_version"] == route_body["model_version"]
+        for alternative in route_body["alternatives"]
+    )
+    assert {alternative["shelter_id"] for alternative in route_body["alternatives"]} == {
+        "shelter-aluva-school"
+    }
+    assert all(
+        alternative["shelter_detail"]["access_status"] == "REACHABLE"
+        and alternative["shelter_detail"]["version"] is not None
         for alternative in route_body["alternatives"]
     )
 
@@ -666,3 +1069,78 @@ def test_route_and_simulation_endpoints_publish_versioned_estimates(client: Test
         and item["label"] == "Rapid impact estimate"
         for item in impacts.json()["items"]
     )
+
+
+@pytest.mark.parametrize(
+    ("origin", "reason_code"),
+    [
+        ({"origin_node": "not-on-graph"}, "UNKNOWN_ORIGIN_NODE"),
+        (
+            {
+                "origin": {
+                    "latitude": 40.7128,
+                    "longitude": -74.006,
+                    "accuracy_m": 10,
+                }
+            },
+            "ORIGIN_OUTSIDE_INCIDENT_AREA",
+        ),
+        (
+            {
+                "origin": {
+                    "latitude": 9.93,
+                    "longitude": 76.21,
+                    "accuracy_m": 10,
+                }
+            },
+            "ORIGIN_TOO_FAR_FROM_ROUTABLE_NETWORK",
+        ),
+        (
+            {
+                "origin": {
+                    "latitude": 10.1065,
+                    "longitude": 76.3516,
+                    "accuracy_m": 101,
+                }
+            },
+            "ORIGIN_ACCURACY_TOO_LOW",
+        ),
+    ],
+)
+def test_route_recommendation_fails_closed_for_untrusted_origins(
+    client: TestClient,
+    origin: dict[str, Any],
+    reason_code: str,
+) -> None:
+    response = client.post(
+        f"{API}/routes/recommend",
+        json={"incident_id": INCIDENT_ID, **origin, "max_alternatives": 3},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "NO_ROUTE"
+    assert response.json()["alternatives"] == []
+    assert response.json()["reason_code"] == reason_code
+    assert response.json()["staging_point"] is None
+
+
+def test_route_engine_failure_never_returns_a_seeded_route(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_engine(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise ValueError("corrupt graph fixture")
+
+    monkeypatch.setattr("app.routing.find_lower_risk_routes", fail_engine)
+    response = client.post(
+        f"{API}/routes/recommend",
+        json={
+            "incident_id": INCIDENT_ID,
+            "origin_node": "aluva",
+            "max_alternatives": 3,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "ROUTING_UNAVAILABLE"
+    assert "route-lower-risk-001" not in response.text

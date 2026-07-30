@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildMapFallback,
   normalizeOverpassPayload,
   readBoundedJson,
   validateOverpassEndpoint,
@@ -12,8 +13,8 @@ function payload(overrides = {}) {
     elements: [{
       type: "way",
       id: 123,
-      tags: { name: "Velachery Main Road", highway: "primary", surface: "asphalt" },
-      geometry: [{ lat: 12.98, lon: 80.22 }, { lat: 12.981, lon: 80.221 }],
+      tags: { name: "Aluva - Paravoor Road", highway: "primary", surface: "asphalt" },
+      geometry: [{ lat: 10.105, lon: 76.351 }, { lat: 10.106, lon: 76.352 }],
       ...overrides,
     }],
   };
@@ -34,6 +35,18 @@ test("allows only the reviewed HTTPS Overpass endpoints", () => {
   );
 });
 
+test("builds a bounded map fallback that prioritizes major roads", () => {
+  const primary = normalizeOverpassPayload(payload()).features[0];
+  const tertiary = normalizeOverpassPayload(payload({
+    id: 124,
+    tags: { name: "HMT Road", highway: "tertiary" },
+  })).features[0];
+  const fallback = buildMapFallback([tertiary, primary], 1);
+  assert.equal(fallback.length, 1);
+  assert.equal(fallback[0].properties.highway, "primary");
+  assert.equal(fallback[0].properties.source, "OpenStreetMap");
+});
+
 test("normalizes an OSM way into bounded deterministic GeoJSON", () => {
   const normalized = normalizeOverpassPayload(payload());
   assert.equal(normalized.snapshotTime, "2026-07-20T12:30:00Z");
@@ -42,12 +55,12 @@ test("normalizes an OSM way into bounded deterministic GeoJSON", () => {
     id: "osm-way-123",
     geometry: {
       type: "LineString",
-      coordinates: [[80.22, 12.98], [80.221, 12.981]],
+      coordinates: [[76.3510000, 10.1050000], [76.3520000, 10.1060000]],
     },
     properties: {
       id: "osm-way-123",
       kind: "route",
-      name: "Velachery Main Road",
+      name: "Aluva - Paravoor Road",
       description: "OpenStreetMap primary road segment",
       class: "primary",
       osm_type: "way",
@@ -72,9 +85,22 @@ test("rejects duplicate ways and coordinates outside the approved AOI", () => {
   assert.throws(() => normalizeOverpassPayload(duplicate), /duplicated/);
   assert.throws(
     () => normalizeOverpassPayload(payload({
-      geometry: [{ lat: 12.98, lon: 80.22 }, { lat: 14, lon: 80.221 }],
+      geometry: [{ lat: 10.105, lon: 76.351 }, { lat: 14, lon: 76.352 }],
     })),
-    /outside the approved Chennai AOI/,
+    /outside the approved Kerala AOI/,
+  );
+});
+
+test("accepts unnamed major roads but rejects unreviewed classes and unsafe names", () => {
+  const unnamed = normalizeOverpassPayload(payload({ tags: { highway: "tertiary" } }));
+  assert.equal(unnamed.features[0].properties.name, "Unnamed local road · OSM 123");
+  assert.throws(
+    () => normalizeOverpassPayload(payload({ tags: { highway: "residential" } })),
+    /highway tag is invalid/,
+  );
+  assert.throws(
+    () => normalizeOverpassPayload(payload({ tags: { highway: "primary", name: "<script>" } })),
+    /road name is invalid/,
   );
 });
 

@@ -13,12 +13,13 @@ import type {
   Marker as MapLibreMarker,
 } from "maplibre-gl";
 
-import { chennaiMapData } from "./data/chennai";
+import { keralaMapData } from "./data/kerala";
 import {
   createMapStyle,
   initialViews,
   interactiveLayerIds,
   updateHorizonLayers,
+  updateResilienceLayers,
 } from "./style";
 import type {
   FloodMapProps,
@@ -38,10 +39,10 @@ type PointFeature = MapFeature<{ type: "Point"; coordinates: MapPosition }>;
 type LoadState = "loading" | "ready" | "error";
 
 const DEFAULT_ARIA_LABELS: Record<FloodMapVariant, string> = {
-  operations: "Live operations flood intelligence map for south Chennai",
-  signals: "FloodSignal evidence review map for Velachery",
-  resilience: "Chennai resilience audit priority map",
-  field: "Current conditions and community reports map near Velachery",
+  operations: "Live operations flood intelligence map for the Aluva and Periyar floodplain in Kerala",
+  signals: "FloodSignal evidence review map for Aluva",
+  resilience: "Kerala resilience audit priority map",
+  field: "Current conditions and community reports map near Aluva",
 };
 
 const HORIZON_LABELS: Record<MapHorizon, string> = {
@@ -118,33 +119,33 @@ function renderedFeatureToSelection(feature: MapGeoJSONFeature): FloodMapSelecti
 }
 
 function markerFeaturesForVariant(variant: FloodMapVariant): PointFeature[] {
-  const clusterPoints = pointFeatures(chennaiMapData.clusters);
+  const clusterPoints = pointFeatures(keralaMapData.clusters);
 
   switch (variant) {
     case "signals":
       return [
-        ...chennaiMapData.reports.features,
-        ...clusterPoints.filter((feature) => feature.properties.id === "cluster-velachery"),
-        ...chennaiMapData.shelters.features.slice(0, 2),
-        ...chennaiMapData.hospitals.features.slice(1),
+        ...keralaMapData.reports.features,
+        ...clusterPoints.filter((feature) => feature.properties.id === "cluster-aluva"),
+        ...keralaMapData.shelters.features.slice(0, 2),
+        ...keralaMapData.hospitals.features.slice(1),
       ];
     case "resilience":
       return [
-        ...chennaiMapData.resilienceHotspots.features,
-        ...chennaiMapData.shelters.features,
-        ...chennaiMapData.hospitals.features,
+        ...keralaMapData.resilienceHotspots.features,
+        ...keralaMapData.shelters.features,
+        ...keralaMapData.hospitals.features,
       ];
     case "field":
       return [
-        ...clusterPoints.filter((feature) => feature.properties.id === "cluster-velachery"),
-        ...chennaiMapData.shelters.features.slice(0, 2),
+        ...clusterPoints.filter((feature) => feature.properties.id === "cluster-aluva"),
+        ...keralaMapData.shelters.features.slice(0, 2),
       ];
     case "operations":
     default:
       return [
         ...clusterPoints,
-        ...chennaiMapData.shelters.features,
-        ...chennaiMapData.hospitals.features,
+        ...keralaMapData.shelters.features,
+        ...keralaMapData.hospitals.features,
       ];
   }
 }
@@ -153,25 +154,25 @@ function summaryFeaturesForVariant(variant: FloodMapVariant): PointFeature[] {
   switch (variant) {
     case "signals":
       return [
-        pointFeatures(chennaiMapData.clusters).find((feature) => feature.properties.id === "cluster-velachery")!,
-        chennaiMapData.reports.features.find((feature) => feature.properties.id === "report-duplicate")!,
-        chennaiMapData.reports.features.find((feature) => feature.properties.id === "report-conflict")!,
+        pointFeatures(keralaMapData.clusters).find((feature) => feature.properties.id === "cluster-aluva")!,
+        keralaMapData.reports.features.find((feature) => feature.properties.id === "report-duplicate")!,
+        keralaMapData.reports.features.find((feature) => feature.properties.id === "report-conflict")!,
       ];
     case "resilience":
-      return chennaiMapData.resilienceHotspots.features.slice(0, 4);
+      return keralaMapData.resilienceHotspots.features.slice(0, 4);
     case "field":
       return [
-        pointFeatures(chennaiMapData.clusters).find((feature) => feature.properties.id === "cluster-velachery")!,
-        chennaiMapData.shelters.features[0]!,
-        chennaiMapData.shelters.features[1]!,
+        pointFeatures(keralaMapData.clusters).find((feature) => feature.properties.id === "cluster-aluva")!,
+        keralaMapData.shelters.features[0]!,
+        keralaMapData.shelters.features[1]!,
       ];
     case "operations":
     default:
       return [
-        pointFeatures(chennaiMapData.clusters).find((feature) => feature.properties.id === "cluster-velachery")!,
-        chennaiMapData.shelters.features[0]!,
-        chennaiMapData.shelters.features[1]!,
-        chennaiMapData.hospitals.features[0]!,
+        pointFeatures(keralaMapData.clusters).find((feature) => feature.properties.id === "cluster-aluva")!,
+        keralaMapData.shelters.features[0]!,
+        keralaMapData.shelters.features[1]!,
+        keralaMapData.hospitals.features[0]!,
       ];
   }
 }
@@ -234,11 +235,13 @@ function createMarkerElement(
   feature: PointFeature,
   variant: FloodMapVariant,
   selected: boolean,
+  interactive: boolean,
   onSelect: (selection: FloodMapSelection) => void,
-): HTMLButtonElement {
-  const element = document.createElement("button");
-  element.type = "button";
+): HTMLElement {
+  const element = document.createElement(interactive ? "button" : "div");
+  if (element instanceof HTMLButtonElement) element.type = "button";
   element.className = `${markerClass(feature)}${selected ? " is-selected" : ""}`;
+  if (!interactive) element.setAttribute("role", "img");
   element.setAttribute(
     "aria-label",
     `${kindLabels[feature.properties.kind]}: ${feature.properties.name}. ${feature.properties.description ?? ""}`.trim(),
@@ -259,7 +262,7 @@ function createMarkerElement(
 
   const shouldLabel =
     (feature.properties.kind === "shelter" || feature.properties.kind === "hospital") &&
-    (variant !== "field" || feature.properties.id === "shelter-velachery");
+    (variant !== "field" || feature.properties.id === "shelter-aluva");
   if (shouldLabel) {
     const label = document.createElement("span");
     label.className = "fr-map-marker__label";
@@ -268,10 +271,12 @@ function createMarkerElement(
     element.append(label);
   }
 
-  element.addEventListener("click", (event) => {
-    event.stopPropagation();
-    onSelect(featureToSelection(feature));
-  });
+  if (interactive) {
+    element.addEventListener("click", (event) => {
+      event.stopPropagation();
+      onSelect(featureToSelection(feature));
+    });
+  }
 
   return element;
 }
@@ -288,14 +293,14 @@ function summaryCopy(variant: FloodMapVariant, horizon: MapHorizon): string {
   const horizonCopy = HORIZON_DESCRIPTIONS[horizon];
   switch (variant) {
     case "signals":
-      return `Velachery FloodSignal evidence view with 6 eligible independent reports, 1 excluded duplicate, 1 possible conflict, and 92 percent confidence. ${horizonCopy} is selected.`;
+      return `Aluva FloodSignal evidence view with 6 eligible independent reports, 1 excluded duplicate, 1 possible conflict, and 92 percent confidence. ${horizonCopy} is selected.`;
     case "resilience":
-      return "Chennai resilience audit showing 6 of 18 recurring hotspots, 11 road bottlenecks, 4 shelter access gaps, and 72 percent of people within 30 minutes of an eligible shelter.";
+      return "Kerala resilience audit showing 6 of 18 recurring hotspots, 11 road bottlenecks, 4 shelter access gaps, and 72 percent of people within 30 minutes of an eligible shelter.";
     case "field":
-      return `Current conditions near Velachery with one community-corroborated report cluster, nearby shelters, and road risk. ${horizonCopy} is selected. Conditions may change.`;
+      return `Current conditions near Aluva with one community-corroborated report cluster, nearby shelters, and road risk. ${horizonCopy} is selected. Conditions may change.`;
     case "operations":
     default:
-      return `South Chennai operations view with four current flood estimate areas, three road risk segments, five shelters, three hospitals, and three community report clusters. ${horizonCopy} is selected.`;
+      return `Kerala operations view for Aluva, Eloor, Kalamassery, and the Periyar floodplain with four current flood estimate areas, three road risk segments, five shelters, three hospitals, and three community report clusters. ${horizonCopy} is selected.`;
   }
 }
 
@@ -351,7 +356,7 @@ function MarkerStatus({ state }: { state: LoadState }): ReactNode {
     <div className={`fr-map-load-state fr-map-load-state--${state}`} role={state === "error" ? "alert" : "status"}>
       {state === "error"
         ? "Interactive map unavailable. The synchronized feature summary remains available below."
-        : "Loading the offline Chennai map…"}
+        : "Loading the detailed Kerala map…"}
     </div>
   );
 }
@@ -362,12 +367,16 @@ export function FloodMap({
   onHorizonChange,
   selectedFeatureId,
   onFeatureSelect,
+  visibleFeatureIds,
+  resilienceLayers,
+  showRouteGeometry = variant === "operations",
   className,
   height,
   showSummary = true,
   showLegend = true,
   showHorizonControl = true,
   interactive = true,
+  cooperativeGestures = false,
   ariaLabel,
 }: FloodMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -386,8 +395,22 @@ export function FloodMap({
   const activeFeatureId = selectedFeatureId !== undefined
     ? selectedFeatureId
     : internalSelection?.id ?? null;
-  const summaryFeatures = useMemo(() => summaryFeaturesForVariant(variant), [variant]);
-  const items = useMemo(() => legendItems(variant, effectiveHorizon), [variant, effectiveHorizon]);
+  const visibleFeatureIdSet = useMemo(
+    () => visibleFeatureIds === undefined ? null : new Set(visibleFeatureIds),
+    [visibleFeatureIds],
+  );
+  const summaryFeatures = useMemo(
+    () => summaryFeaturesForVariant(variant).filter(
+      (feature) => visibleFeatureIdSet === null || visibleFeatureIdSet.has(feature.properties.id),
+    ),
+    [variant, visibleFeatureIdSet],
+  );
+  const items = useMemo(
+    () => legendItems(variant, effectiveHorizon).filter(
+      (item) => showRouteGeometry || item.swatch !== "route",
+    ),
+    [effectiveHorizon, showRouteGeometry, variant],
+  );
   const screenReaderSummary = useMemo(
     () => summaryCopy(variant, effectiveHorizon),
     [variant, effectiveHorizon],
@@ -425,19 +448,24 @@ export function FloodMap({
         const view = initialViews[variant];
         const map = new mapLibrary.Map({
           container,
-          style: createMapStyle(variant, effectiveHorizon),
+          style: createMapStyle(
+            variant,
+            effectiveHorizon,
+            resilienceLayers,
+            showRouteGeometry,
+          ),
           center: view.center,
           zoom: view.zoom,
           minZoom: view.minZoom,
           maxZoom: view.maxZoom,
-          maxBounds: [[80.145, 12.875], [80.315, 13.075]],
+          maxBounds: [[74.75, 8.05], [77.65, 12.9]],
           attributionControl: false,
           interactive,
           keyboard: interactive,
           dragRotate: false,
           pitchWithRotate: false,
           touchPitch: false,
-          cooperativeGestures: false,
+          cooperativeGestures,
           fadeDuration: 0,
           localIdeographFontFamily: false,
         });
@@ -491,7 +519,7 @@ export function FloodMap({
     };
     // The initial horizon is applied to the style; later changes use the dedicated layer update below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant, interactive]);
+  }, [variant, interactive, cooperativeGestures, showRouteGeometry]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -501,17 +529,26 @@ export function FloodMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map || loadState !== "ready" || variant !== "resilience" || !resilienceLayers) return;
+    updateResilienceLayers(map, resilienceLayers);
+  }, [loadState, resilienceLayers, variant]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     const mapLibrary = mapLibraryRef.current;
     if (!map || !mapLibrary || loadState !== "ready") return;
 
     markersRef.current.forEach((marker) => marker.remove());
     const nextMarkers: MapLibreMarker[] = [];
 
-    for (const feature of markerFeaturesForVariant(variant)) {
+    for (const feature of markerFeaturesForVariant(variant).filter(
+      (candidate) => visibleFeatureIdSet === null || visibleFeatureIdSet.has(candidate.properties.id),
+    )) {
       const element = createMarkerElement(
         feature,
         variant,
         activeFeatureId === feature.properties.id,
+        interactive,
         emitSelection,
       );
       const marker = new mapLibrary.Marker({
@@ -524,7 +561,7 @@ export function FloodMap({
     }
 
     if (variant !== "field") {
-      for (const feature of chennaiMapData.places.features) {
+      for (const feature of keralaMapData.places.features) {
         const marker = new mapLibrary.Marker({ element: createPlaceLabel(feature), anchor: "center" })
           .setLngLat(feature.geometry.coordinates)
           .addTo(map);
@@ -542,7 +579,7 @@ export function FloodMap({
       if (markersRef.current === nextMarkers) markersRef.current = [];
     };
     // mapEpoch signals that the current style is fully loaded and can receive DOM markers.
-  }, [activeFeatureId, loadState, mapEpoch, variant]);
+  }, [activeFeatureId, interactive, loadState, mapEpoch, variant, visibleFeatureIdSet]);
 
   useEffect(() => {
     const observer = typeof ResizeObserver === "undefined"
@@ -586,7 +623,7 @@ export function FloodMap({
         <MarkerStatus state={loadState} />
 
         <div className="fr-map-demo-label" role="note">
-          DEMO DATA <span aria-hidden="true">•</span> NOT LIVE
+          DEMO DATA <span aria-hidden="true">•</span> KERALA <span aria-hidden="true">•</span> NOT LIVE
         </div>
 
         {showLegend ? (
@@ -622,11 +659,11 @@ export function FloodMap({
         ) : null}
 
         <div className="fr-map-freshness">
-          {variant === "resilience" ? "Audit compiled 18 Jul 2026" : "Scenario time 19:40 IST"}
+          {variant === "resilience" ? "Audit compiled 18 Jul 2026" : "Demo snapshot · scenario clock"}
         </div>
 
         <div className="fr-map-attribution" role="note">
-          Road data ©{" "}
+          Detailed map ©{" "}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>{" "}
@@ -638,7 +675,7 @@ export function FloodMap({
         <section className="fr-map-summary" aria-label="Synchronized map feature summary">
           <div className="fr-map-summary__intro">
             <strong>{variant === "resilience" ? "Priority summary" : "Map summary"}</strong>
-            <span>{variant === "resilience" ? "Showing 6 of 18 hotspots" : HORIZON_DESCRIPTIONS[effectiveHorizon]}</span>
+            <span>{variant === "resilience" ? `Showing ${summaryFeatures.length} mapped priorities` : HORIZON_DESCRIPTIONS[effectiveHorizon]}</span>
           </div>
           <ul>
             {summaryFeatures.map((feature) => (

@@ -1,9 +1,9 @@
-# Cyclone Michaung competition demo runbook
+# Kerala extreme-rainfall competition demo runbook
 
 ## Safety objective
 
-This is a deterministic synthetic replay for Velachery–Saidapet–Adyar and
-Chembarambakkam. It must run without upstream providers, show
+This is a deterministic synthetic replay for Aluva–Eloor–Periyar and
+Periyar basin. It must run without upstream providers, show
 `DEMO DATA • NOT LIVE` throughout, reset in under two minutes, and never contact
 a real notification destination.
 
@@ -53,7 +53,7 @@ on the judging machine; the UI state alone is not timing evidence.
 | Time | Operator action | Evidence visible to judges |
 | --- | --- | --- |
 | 0:00 | Open Live Map and name the scenario and safety boundary. | Persistent demo watermark, incident clock, source timestamps/confidence, modelled versus observed legend. |
-| 0:45 | Open Source Health, then return to Velachery. | Provenance and freshness are explicit; no hidden “perfect data” claim. |
+| 0:45 | Open Source Health, then return to Aluva. | Provenance and freshness are explicit; no hidden “perfect data” claim. |
 | 1:20 | Submit the first report in the field PWA. | Mobile-friendly form, accuracy/time validation, receipt, one uncorroborated candidate. |
 | 2:00 | Submit reports two and three from distinct fixture identities. | Independent-family count rises while wording remains unofficial. |
 | 2:40 | Submit the fourth qualifying report. | Within five seconds the signal becomes community-corroborated, the map invalidates/refetches, and route impact updates. |
@@ -125,8 +125,8 @@ docker compose -f infra/compose.yaml down
 The current backend does not call the mock sink, so its request log should be
 empty; synthetic alert state is inspected through the API/audit log instead.
 Prometheus includes an alert rule for
-`floodrise_notification_external_attempt_total{environment="demo"}`, but the
-backend does not currently emit that metric. A missing time series is not proof
-of zero attempts—record configuration/preflight results and environment-level
-network observation for release evidence.
+`floodrise_notification_external_attempt_total{environment="demo"}` and the
+backend initializes that counter to zero. Record the metric together with
+configuration/preflight results and environment-level network observation; one
+application process alone cannot prove that every process made zero attempts.
 Do not use `down -v` unless intentionally deleting the named local demo volumes.

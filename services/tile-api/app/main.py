@@ -7,9 +7,11 @@ from app.artifacts import (
     MAX_ZOOM,
     MIN_ZOOM,
     RENDERER_VERSION,
+    TRANSPARENT_TILE_PNG,
     load_artifact_store,
     render_tile,
     tile_etag,
+    tile_intersects_artifact,
 )
 
 app = FastAPI(title="floodRISE Tile API", version="0.2.0")
@@ -101,6 +103,12 @@ async def tile(artifact_id: str, z: int, x: int, y: int, request: Request) -> Re
     }
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
+    if not tile_intersects_artifact(artifact, z, x, y):
+        return Response(
+            TRANSPARENT_TILE_PNG,
+            media_type="image/png",
+            headers=headers,
+        )
     return Response(
         render_tile(artifact, z, x, y),
         media_type="image/png",

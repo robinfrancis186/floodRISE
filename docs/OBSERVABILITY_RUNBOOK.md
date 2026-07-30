@@ -12,10 +12,11 @@ remain visible locally and cannot page or message a production channel.
 
 ## Telemetry contract
 
-This is the target telemetry contract. The repository provisions local
-Prometheus/Grafana/OTel configuration and alert rules, but the FastAPI services
-do not yet emit the floodRISE application metrics below. Dashboard panels or a
-missing series are therefore not release evidence.
+The FastAPI service emits the core SLO metrics below from its private `/metrics`
+endpoint. Prometheus/Grafana/OTel configuration and alert rules are provisioned
+for the local stack. The notification-attempt counter is initialized to zero in
+every process, while authoritative alert and approval events remain in the
+database audit/outbox records.
 
 Implemented telemetry must carry environment, service, release, incident ID,
 demo/live mode, and model/evidence version where relevant. Never use identity,
@@ -34,7 +35,8 @@ Required production metrics include:
 | `floodrise_audit_outbox_oldest_age_seconds` | Near zero; critical above 30 s |
 | `floodrise_source_age_seconds` and `floodrise_source_max_age_seconds` | Source freshness contract |
 | `floodrise_notification_external_attempt_total` | Must remain exactly zero in demo |
-| queue depth/oldest age, SSE connected/replay/lag, route no-result count, model failures, scanner availability | Capacity, delivery, and safe-degradation signals |
+| `floodrise_audit_outbox_depth` | Persisted outbox depth |
+| SSE connected/replay/lag, route no-result count, model failures, scanner availability | Production-adapter capacity and safe-degradation signals still requiring deployment instrumentation |
 
 Structured logs use UTC, severity, service/release, request/job/event ID, actor role
 (not identity), authorization decision, resource type/version, outcome, duration,
@@ -46,9 +48,9 @@ records; logs are not the audit trail.
 ### API or SSE unavailable
 
 Check ALB/health, task desired/running counts, recent deployment, CPU/memory,
-database/Redis reachability, and error codes. Redis/SSE loss must cause refetch or
-reconnect with `Last-Event-ID`, not lost authority. Keep cached UI timestamps and
-disable claims needing fresh verification.
+database reachability, persisted outbox age, and error codes. SSE loss must cause
+refetch or reconnect with `Last-Event-ID`, not lost authority. Keep cached UI
+timestamps and disable claims needing fresh verification.
 
 ### Corroboration or route latency high
 
@@ -88,8 +90,8 @@ and consumer offsets, and follow
 
 For every competition rehearsal capture the reset duration, report and route
 timings, model publish duration, audit-chain result, browser performance
-(LCP/INP/CLS), and fixture/release versions. Until application instrumentation is
-implemented, use an external harness and environment-level network observation;
-do not claim an absent external-attempt counter or unused queue/DLQ as zero. Three
-clean runs plus one degraded-network run are required. A screenshot without
+(LCP/INP/CLS), and fixture/release versions. Use the application metrics plus
+environment-level network observation; do not treat an unused queue/DLQ as a
+production delivery proof. Three clean runs plus one degraded-network run are
+required. A screenshot without
 measurement method, time range, and release context is not acceptance evidence.

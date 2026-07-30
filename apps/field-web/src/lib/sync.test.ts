@@ -17,15 +17,15 @@ import { syncQueuedReports } from "./sync";
 
 const draft: OfflineReportDraft = {
   client_report_id: "sync-report-immutable-0001",
-  incident_id: "inc-demo-michaung-2023",
+  incident_id: "inc-demo-kerala-flood-2023",
   reporter_id: "field-reporter",
   device_id: "field-device",
   observed_at: "2023-12-04T14:08:00.000Z",
-  location: { latitude: 12.9791, longitude: 80.2209, accuracy_m: 12 },
+  location: { latitude: 10.1041000, longitude: 76.3519000, accuracy_m: 12 },
   water_depth: "KNEE",
   road_status: "DIFFICULT",
   infrastructure_issues: ["BLOCKED_DRAIN"],
-  place_label: "Velachery Main Road"
+  place_label: "Aluva–Paravur Road"
 };
 
 const receipt: ReportReceipt = {
@@ -87,5 +87,38 @@ describe("offline queue synchronization", () => {
     expect(vi.mocked(submitReport).mock.calls[1]?.[0].client_report_id).toBe(
       draft.client_report_id
     );
+  });
+
+  it("replays an imprecise offline fix unchanged for authoritative human review", async () => {
+    const reviewDraft: OfflineReportDraft = {
+      ...draft,
+      client_report_id: "sync-report-location-review-0002",
+      location: { ...draft.location, accuracy_m: 850 }
+    };
+    const reviewReceipt: ReportReceipt = {
+      ...receipt,
+      id: "report-authoritative-review-0002",
+      clientReportId: reviewDraft.client_report_id,
+      reference: "report-authoritative-review-0002",
+      status: "UNDER_REVIEW",
+      message: "Location accuracy exceeds 100 m; retained for human review."
+    };
+    await enqueueReport(reviewDraft);
+    vi.mocked(submitReport).mockResolvedValue(reviewReceipt);
+
+    await expect(syncQueuedReports()).resolves.toMatchObject({
+      synced: 1,
+      failed: 0,
+      needsAction: 0
+    });
+
+    expect(submitReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client_report_id: reviewDraft.client_report_id,
+        location: expect.objectContaining({ accuracy_m: 850 })
+      })
+    );
+    expect(await fieldDb.queue.get(reviewDraft.client_report_id)).toBeUndefined();
+    expect(await fieldDb.receipts.get(reviewReceipt.id)).toEqual(reviewReceipt);
   });
 });

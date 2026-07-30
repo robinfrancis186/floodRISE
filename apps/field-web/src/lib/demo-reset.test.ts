@@ -4,15 +4,15 @@ import { clearThisDemoDevice } from "./demo-reset";
 
 const report: OfflineReportDraft = {
   client_report_id: "demo-reset-report",
-  incident_id: "inc-demo-michaung-2023",
+  incident_id: "inc-demo-kerala-flood-2023",
   reporter_id: "reporter-reset",
   device_id: "device-reset",
   observed_at: "2023-12-04T14:08:00Z",
-  location: { latitude: 12.9791, longitude: 80.2209, accuracy_m: 12 },
+  location: { latitude: 10.1041000, longitude: 76.3519000, accuracy_m: 12 },
   water_depth: "KNEE",
   road_status: "DIFFICULT",
   infrastructure_issues: [],
-  place_label: "Velachery Main Road"
+  place_label: "Aluva–Paravur Road"
 };
 
 describe("demo device reset safety boundary", () => {

@@ -79,12 +79,33 @@ resource "aws_s3_bucket_lifecycle_configuration" "raw" {
   bucket = aws_s3_bucket.raw.id
 
   rule {
-    id     = "expire-non-escalated-demo-artifacts"
+    id     = "expire-all-current-raw-evidence"
     status = "Enabled"
     filter {}
 
+    expiration {
+      days = 30
+    }
+
     noncurrent_version_expiration {
-      noncurrent_days = var.environment == "production" ? 30 : 7
+      noncurrent_days = 7
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+
+  rule {
+    id     = "expire-rejected-quarantine"
+    status = "Enabled"
+
+    filter {
+      prefix = "quarantine/"
+    }
+
+    expiration {
+      days = 7
     }
   }
 }
@@ -174,36 +195,12 @@ resource "aws_db_instance" "postgres" {
 
 }
 
-resource "aws_elasticache_subnet_group" "this" {
-  name       = "${var.name}-redis"
-  subnet_ids = var.private_subnet_ids
-}
-
-resource "aws_elasticache_replication_group" "redis" {
-  replication_group_id       = "${var.name}-redis"
-  description                = "floodRISE cache and SSE fanout only"
-  engine                     = "redis"
-  engine_version             = "7.1"
-  node_type                  = var.redis_node_type
-  port                       = 6379
-  parameter_group_name       = "default.redis7"
-  num_cache_clusters         = var.multi_az ? 2 : 1
-  automatic_failover_enabled = var.multi_az
-  multi_az_enabled           = var.multi_az
-  at_rest_encryption_enabled = true
-  transit_encryption_enabled = true
-  subnet_group_name          = aws_elasticache_subnet_group.this.name
-  security_group_ids         = [var.data_security_group_id]
-  snapshot_retention_limit   = var.backup_retention_days
-  apply_immediately          = var.environment != "production"
-}
-
 # Terraform creates only the secret envelope. Operators populate a structured
 # value through the approved secret-management process; no credential is stored
 # in source control or a tfvars file.
 resource "aws_secretsmanager_secret" "application" {
   name                    = "${var.name}/application"
-  description             = "Runtime application configuration; value managed out-of-band"
+  description             = "Runtime application configuration with application-scoped database credentials; value managed out-of-band"
   kms_key_id              = aws_kms_key.primary.arn
   recovery_window_in_days = var.environment == "production" ? 30 : 7
 }

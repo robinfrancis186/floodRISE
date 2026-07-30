@@ -1,0 +1,17 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "road-nh-544",
+      "geometry": { "type": "LineString", "coordinates": [[76.3450000, 10.0940000], [76.3480000, 10.1030000], [76.3510000, 10.1120000]] },
+      "properties": { "name": "NH 544", "p50_depth_m": 0.04, "p90_depth_m": 0.11, "status": "OPEN", "route_cost_multiplier": 1.0, "is_simulated": true }
+    },
+    {
+      "type": "Feature",
+      "id": "road-aluva-main",
+      "geometry": { "type": "LineString", "coordinates": [[76.3480000, 10.1010000], [76.3530000, 10.1070000], [76.3570000, 10.1110000]] },
+      "properties": { "name": "Aluva–Paravur Road", "p50_depth_m": 0.42, "p90_depth_m": 0.68, "status": "EXCLUDED", "reason": "Community-corroborated flooding; pending official closure decision", "is_simulated": true }
+    }
+  ]
+}

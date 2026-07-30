@@ -1,13 +1,15 @@
+@import "maplibre-gl/dist/maplibre-gl.css";
+
 .fr-flood-map {
   --fr-map-canvas: #ffffff;
   --fr-map-surface: rgba(255, 255, 255, 0.96);
   --fr-map-subtle: #f6f8fb;
-  --fr-map-border: #dce2ea;
+  --fr-map-border: #cfd7e2;
   --fr-map-text: #0a1a3a;
-  --fr-map-muted: #5d6879;
-  --fr-map-primary: #062d78;
-  --fr-map-blue: #1468e8;
-  --fr-map-danger: #e3242b;
+  --fr-map-muted: #536174;
+  --fr-map-primary: #082b5c;
+  --fr-map-blue: #0969da;
+  --fr-map-danger: #c91f2b;
   --fr-map-warning: #ed8b00;
   --fr-map-success: #14833b;
   width: 100%;
@@ -16,7 +18,7 @@
   flex-direction: column;
   color: var(--fr-map-text);
   background: var(--fr-map-canvas);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
@@ -30,10 +32,8 @@
   min-height: 320px;
   overflow: hidden;
   border: 1px solid var(--fr-map-border);
-  border-radius: 10px;
-  background:
-    linear-gradient(115deg, rgba(20, 104, 232, 0.035), transparent 44%),
-    #f8fafc;
+  border-radius: 2px;
+  background: #f8fafc;
 }
 
 .fr-flood-map--explicit-height .fr-map-canvas-shell {
@@ -80,10 +80,10 @@
   gap: 6px;
   padding: 5px 10px;
   border: 1px solid #d5a000;
-  border-radius: 7px;
+  border-radius: 2px;
   color: #4b3400;
   background: #ffdf78;
-  box-shadow: 0 2px 8px rgba(10, 26, 58, 0.1);
+  box-shadow: 0 1px 3px rgba(10, 26, 58, 0.1);
   font-size: 11px;
   font-weight: 760;
   letter-spacing: 0.065em;
@@ -98,11 +98,10 @@
   width: min(208px, calc(100% - 28px));
   padding: 12px;
   border: 1px solid rgba(207, 215, 227, 0.96);
-  border-radius: 9px;
+  border-radius: 3px;
   color: var(--fr-map-text);
   background: var(--fr-map-surface);
-  box-shadow: 0 4px 14px rgba(10, 26, 58, 0.1);
-  backdrop-filter: blur(7px);
+  box-shadow: 0 2px 7px rgba(10, 26, 58, 0.11);
 }
 
 .fr-flood-map--field .fr-map-legend {
@@ -225,10 +224,9 @@
   padding: 5px;
   transform: translateX(-50%);
   border: 1px solid rgba(207, 215, 227, 0.96);
-  border-radius: 9px;
+  border-radius: 3px;
   background: var(--fr-map-surface);
-  box-shadow: 0 4px 14px rgba(10, 26, 58, 0.12);
-  backdrop-filter: blur(7px);
+  box-shadow: 0 2px 7px rgba(10, 26, 58, 0.12);
 }
 
 .fr-map-horizon button {
@@ -236,7 +234,7 @@
   min-height: 36px;
   padding: 7px 12px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 2px;
   color: #26344f;
   background: transparent;
   font: inherit;
@@ -269,7 +267,7 @@
   max-width: 190px;
   padding: 5px 8px;
   border: 1px solid rgba(220, 226, 234, 0.92);
-  border-radius: 6px;
+  border-radius: 2px;
   color: #4b5870;
   background: rgba(255, 255, 255, 0.92);
   font-size: 10px;
@@ -284,7 +282,7 @@
   max-width: calc(100% - 120px);
   padding: 3px 6px;
   border: 1px solid rgba(220, 226, 234, 0.94);
-  border-radius: 4px;
+  border-radius: 2px;
   color: #4b5870;
   background: rgba(255, 255, 255, 0.94);
   font-size: 9px;
@@ -467,12 +465,12 @@
   grid-template-columns: minmax(154px, 0.7fr) minmax(0, 3.3fr);
   border: 1px solid var(--fr-map-border);
   border-top: 0;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 4px 4px;
   background: #ffffff;
 }
 
 .fr-map-canvas-shell:has(+ .fr-map-summary) {
-  border-radius: 10px 10px 0 0;
+  border-radius: 4px 4px 0 0;
 }
 
 .fr-map-summary__intro {
@@ -582,9 +580,9 @@
 .fr-flood-map .maplibregl-ctrl-group {
   overflow: hidden;
   border: 1px solid rgba(207, 215, 227, 0.98);
-  border-radius: 8px;
+  border-radius: 3px;
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 3px 10px rgba(10, 26, 58, 0.12);
+  box-shadow: 0 2px 7px rgba(10, 26, 58, 0.11);
 }
 
 .fr-flood-map .maplibregl-ctrl-group button {
@@ -620,7 +618,7 @@
 @media (max-width: 720px) {
   .fr-map-canvas-shell {
     min-height: 320px;
-    border-radius: 8px;
+    border-radius: 4px;
   }
 
   .fr-map-legend {

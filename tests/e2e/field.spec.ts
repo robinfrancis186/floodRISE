@@ -10,9 +10,11 @@ test("field PWA stores an offline report and blocks fresh route claims", async (
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.goto("http://127.0.0.1:55174", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:55174", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveTitle(/floodRISE Field/);
   await expect(page.getByText(/DEMO DATA.*NOT LIVE/).first()).toBeVisible();
+  const conditionsMap = page.getByRole("region", { name: "Current flood conditions around Aluva" });
+  await expect(conditionsMap.getByText("Loading the detailed Kerala map…")).toBeHidden();
   await page.screenshot({ path: "artifacts/screenshots/field-conditions.png", fullPage: true });
 
   await page.getByRole("link", { name: "Report", exact: true }).click();
@@ -52,7 +54,7 @@ test("field demo reset requires explicit confirmation and clears only this brows
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.goto("http://127.0.0.1:55174/report?offline=1", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:55174/report?offline=1", { waitUntil: "domcontentloaded" });
   await page.getByRole("radio", { name: /Knee/ }).click();
   await page.getByRole("radio", { name: "Impassable" }).click();
   await expect(page.getByRole("button", { name: /Save report offline/ })).toBeVisible();
@@ -60,7 +62,7 @@ test("field demo reset requires explicit confirmation and clears only this brows
   await expect(page).toHaveURL(/\/queue$/);
   await expect(page.getByText("1", { exact: true }).first()).toBeVisible();
 
-  await page.goto("http://127.0.0.1:55174/demo-reset", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:55174/demo-reset", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Reset this demo device" })).toBeVisible();
   await expect(page.getByText("One browser profile at a time")).toBeVisible();
   await expect(page.getByText("This browser profile is clean")).toBeHidden();
@@ -84,7 +86,7 @@ test("field photo evidence reaches a private sanitized state before report recei
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.goto("http://127.0.0.1:55174/report", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:55174/report", { waitUntil: "domcontentloaded" });
   await page.locator('input[type="file"]').setInputFiles({
     name: "field-evidence.jpg",
     mimeType: "image/jpeg",

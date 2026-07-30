@@ -1,8 +1,12 @@
 import * as React from "react";
 import { cn } from "../lib/utils";
 
-export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
-  return <div className="relative w-full overflow-auto"><table className={cn("w-full caption-bottom text-sm", className)} {...props} /></div>;
+type TableProps = React.TableHTMLAttributes<HTMLTableElement> & {
+  scrollLabel: string;
+};
+
+export function Table({ className, scrollLabel, ...props }: TableProps) {
+  return <div className="relative w-full overflow-auto" role="region" aria-label={scrollLabel} tabIndex={0}><table className={cn("w-full caption-bottom text-sm", className)} {...props} /></div>;
 }
 export function TableHeader(props: React.HTMLAttributes<HTMLTableSectionElement>) { return <thead className={cn("border-b border-border bg-muted/55", props.className)} {...props} />; }
 export function TableBody(props: React.HTMLAttributes<HTMLTableSectionElement>) { return <tbody className={cn("divide-y divide-border", props.className)} {...props} />; }

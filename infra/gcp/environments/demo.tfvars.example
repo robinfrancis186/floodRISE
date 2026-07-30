@@ -1,0 +1,44 @@
+project_id              = "floodrise-demo-5305"
+environment             = "demo"
+deployment_boundary_ack = "floodrise-demo-5305:demo"
+deployment_phase        = "runtime"
+
+region          = "asia-south1"
+bucket_location = "ASIA-SOUTH1"
+
+api_image = "asia-south1-docker.pkg.dev/floodrise-demo-5305/floodrise-containers/floodrise-api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+# The default remote demo is static Hosting plus local packaged fixtures. With
+# runtime_config_ready=false Terraform creates no remote API, simulation Job, or
+# tile service. After separately provisioning the persistent demo database and
+# reviewing the deterministic model image, a private demo simulation Job may be
+# enabled by setting runtime_config_ready=true and supplying simulation_image.
+# The tile service additionally requires reviewed packaged-PGM objects already
+# in the model bucket, tile_image, and the exact acknowledgement below.
+#
+# simulation_image          = "asia-south1-docker.pkg.dev/floodrise-demo-5305/floodrise-containers/floodrise-api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+# tile_image                = "asia-south1-docker.pkg.dev/floodrise-demo-5305/floodrise-containers/floodrise-tile@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+# demo_tile_artifacts_ack   = "I_HAVE_REVIEWED_DEMO_TILE_ARTIFACTS"
+runtime_config_ready = false
+allowed_origins = [
+  "https://floodrise-demo-5305.web.app",
+  "https://floodrise-demo-5305.firebaseapp.com",
+]
+firebase_authorized_domains = [
+  "floodrise-demo-5305.web.app",
+  "floodrise-demo-5305.firebaseapp.com",
+]
+firebase_app_check_enabled = false
+firebase_app_check_app_ids = []
+
+notification_driver            = "demo_log"
+external_notifications_enabled = false
+live_integrations_enabled      = false
+
+api_min_instances          = 0
+database_high_availability = false
+deletion_protection        = false
+backup_retention_days      = 7
+target_rpo_minutes         = 5
+target_rto_minutes         = 30
+bucket_force_destroy       = false

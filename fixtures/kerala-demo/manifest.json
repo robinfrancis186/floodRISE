@@ -1,0 +1,22 @@
+{
+  "scenario_id": "demo-kerala-flood-v1",
+  "incident_id": "inc-demo-kerala-flood-2023",
+  "title": "Kerala extreme-rainfall deterministic replay",
+  "area": "Aluva–Eloor–Kalamassery and the Periyar floodplain",
+  "clock_start": "2023-12-04T14:10:00Z",
+  "timezone": "Asia/Kolkata",
+  "is_simulated": true,
+  "alert_gateway": "fake://notification-sink",
+  "live_integrations_enabled": false,
+  "model_version": "model-demo-20231204-001",
+  "evidence_version": "evidence-demo-001",
+  "files": [
+    { "path": "timeline.json", "sha256": "a64cea015960b0076d37321b4c674c27f2b8ab5c71f7e2a5fdb222a68f775b3c" },
+    { "path": "reports.json", "sha256": "25dd2db1dbe722cd17b4d9f8ac8d9f953dfedc6833e64551a20ccbb33365b8f0" },
+    { "path": "shelters.geojson", "sha256": "16c2fc40625fa1b795562ecc06a66fe0ee1321e78d7ff5c7657d3e1410fa5375" },
+    { "path": "roads.geojson", "sha256": "3bc1826b14ebb48b63889eb2f8dd8d5891870121b531a6f1505e9fc35f251216" },
+    { "path": "osm-baseline.geojson", "sha256": "a6f0271c54f8b842f607c0ecbeddb4c0f5e3263c22ba3597fc9e1851c13331d0" },
+    { "path": "osm-map-fallback.geojson", "sha256": "bd3302d7e94121786ad4fc66fdb21f122dedb23f7c6c839c9ee0db4b9c809f90" },
+    { "path": "rasters/manifest.json", "sha256": "b938c6b5dcfa1d4c6087b286e45efe8d34d4b7406d2da0098b3577741b9cfe2e" }
+  ]
+}

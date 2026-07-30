@@ -328,6 +328,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness */
+        get: operations["readiness_api_v1_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports": {
         parameters: {
             query?: never;
@@ -568,6 +585,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness */
+        get: operations["readiness_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -577,6 +611,69 @@ export interface components {
          * @enum {string}
          */
         ActionType: "AREA_CAUTION" | "ROAD_CLOSURE" | "SHELTER_CLOSURE" | "EVACUATION_GUIDANCE" | "EVACUATION_INSTRUCTION" | "OFFICIAL_WARNING" | "ALL_CLEAR";
+        /** Alert */
+        Alert: {
+            /** Approval Request Id */
+            approval_request_id?: string | null;
+            /** Approved At */
+            approved_at?: string | null;
+            /** Audience */
+            audience: string;
+            /** Body */
+            body: string;
+            /**
+             * Caution Only
+             * @default false
+             */
+            caution_only: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dispatched At */
+            dispatched_at?: string | null;
+            /** Evidence Version */
+            evidence_version: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Gateway */
+            gateway?: string | null;
+            /** Geometry */
+            geometry?: components["schemas"]["PointGeometry"] | components["schemas"]["LineStringGeometry"] | components["schemas"]["PolygonGeometry"] | null;
+            /** Id */
+            id: string;
+            /** Incident Id */
+            incident_id: string;
+            /**
+             * Is Demo
+             * @default true
+             */
+            is_demo: boolean;
+            /** Model Version */
+            model_version?: string | null;
+            /**
+             * Official
+             * @default false
+             */
+            official: boolean;
+            status: components["schemas"]["AlertStatus"];
+            /** Title */
+            title: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
+        /**
+         * AlertStatus
+         * @enum {string}
+         */
+        AlertStatus: "DRAFT" | "AWAITING_APPROVAL" | "APPROVED" | "DISPATCHING" | "DISPATCHED" | "FAILED" | "CANCELLED";
         /** ApprovalDecision */
         ApprovalDecision: {
             decision: components["schemas"]["ApprovalDecisionType"];
@@ -585,11 +682,90 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ApprovalDecisionResponse */
+        ApprovalDecisionResponse: {
+            alert?: components["schemas"]["Alert"] | null;
+            approval: components["schemas"]["ApprovalRecord"];
+        };
         /**
          * ApprovalDecisionType
          * @enum {string}
          */
         ApprovalDecisionType: "APPROVE" | "MODIFY" | "REJECT";
+        /** ApprovalRecord */
+        ApprovalRecord: {
+            /** Action Payload */
+            action_payload: {
+                [key: string]: unknown;
+            };
+            action_type: components["schemas"]["ActionType"];
+            /** Audience */
+            audience: string;
+            /** Binding */
+            binding: {
+                [key: string]: unknown;
+            };
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decided Role */
+            decided_role?: string | null;
+            /** Decision Authentication */
+            decision_authentication?: {
+                [key: string]: unknown;
+            } | null;
+            /** Decision Reason */
+            decision_reason?: string | null;
+            /** Evidence Version */
+            evidence_version: string;
+            /**
+             * Execution Status
+             * @enum {string}
+             */
+            execution_status: "NOT_STARTED" | "SUCCEEDED" | "FAILED";
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Geometry */
+            geometry?: components["schemas"]["PointGeometry"] | components["schemas"]["LineStringGeometry"] | components["schemas"]["PolygonGeometry"] | null;
+            /** Id */
+            id: string;
+            /** Incident Id */
+            incident_id: string;
+            /**
+             * Is Simulated
+             * @default false
+             */
+            is_simulated: boolean;
+            /** Model Version */
+            model_version: string;
+            /** Payload Digest */
+            payload_digest: string;
+            /** Reason */
+            reason: string;
+            /** Request Authentication */
+            request_authentication?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Requested By */
+            requested_by: string;
+            /** Requested Role */
+            requested_role: string;
+            status: components["schemas"]["ApprovalStatus"];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
         /** ApprovalRequestCreate */
         ApprovalRequestCreate: {
             /** Action Payload */
@@ -610,6 +786,11 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * ApprovalStatus
+         * @enum {string}
+         */
+        ApprovalStatus: "PENDING" | "APPROVED" | "MODIFIED" | "REJECTED" | "EXPIRED" | "CANCELLED";
         /** DemoAdvanceRequest */
         DemoAdvanceRequest: {
             /** Inject Report Ids */
@@ -991,9 +1172,9 @@ export interface components {
         /** ShelterUpdateInput */
         ShelterUpdateInput: {
             /** Access Status */
-            access_status?: string | null;
+            access_status?: ("REACHABLE" | "LIMITED" | "AT_RISK" | "UNKNOWN") | null;
             /** Activation Status */
-            activation_status?: string | null;
+            activation_status?: ("OPEN" | "LIMITED" | "FULL" | "UNKNOWN") | null;
             /** Capacity Remaining */
             capacity_remaining?: number | null;
             /** Expected Version */
@@ -1035,7 +1216,10 @@ export interface operations {
             query: {
                 incident_id: string;
             };
-            header?: never;
+            header?: {
+                "X-Demo-User"?: string | null;
+                "X-Demo-Role"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1104,9 +1288,11 @@ export interface operations {
     create_approval_api_v1_approvals_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1123,9 +1309,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ApprovalRecord"];
                 };
             };
             /** @description RFC 9457 problem detail */
@@ -1143,9 +1327,11 @@ export interface operations {
     decide_approval_api_v1_approvals__approval_id__decisions_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 approval_id: string;
@@ -1164,9 +1350,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ApprovalDecisionResponse"];
                 };
             };
             /** @description RFC 9457 problem detail */
@@ -1291,9 +1475,11 @@ export interface operations {
     demo_advance_api_v1_demo_advance_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1330,9 +1516,11 @@ export interface operations {
     demo_reset_api_v1_demo_reset_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1364,11 +1552,16 @@ export interface operations {
     };
     events_api_v1_events_get: {
         parameters: {
-            query?: {
+            query: {
+                incident_id: string;
                 once?: boolean;
             };
-            header?: {
+            header: {
                 "Last-Event-ID"?: string | null;
+                "X-Demo-User"?: string | null;
+                "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1607,6 +1800,8 @@ export interface operations {
                 "Idempotency-Key": string;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1680,6 +1875,8 @@ export interface operations {
                 "Idempotency-Key": string;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 upload_id: string;
@@ -1718,6 +1915,8 @@ export interface operations {
                 "Content-Length"?: number | null;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 upload_id: string;
@@ -1733,6 +1932,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MediaUploadMetadata"];
+                };
+            };
+            /** @description RFC 9457 problem detail */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    readiness_api_v1_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description RFC 9457 problem detail */
@@ -1791,6 +2022,8 @@ export interface operations {
                 "Idempotency-Key": string;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1930,9 +2163,11 @@ export interface operations {
     recommend_route_api_v1_routes_recommend_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -2003,9 +2238,11 @@ export interface operations {
     update_shelter_api_v1_shelters__shelter_id__patch: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 shelter_id: string;
@@ -2118,9 +2355,11 @@ export interface operations {
     decide_signal_api_v1_signals__signal_id__decisions_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 signal_id: string;
@@ -2193,9 +2432,11 @@ export interface operations {
     trigger_simulation_api_v1_simulations_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -2296,6 +2537,28 @@ export interface operations {
         };
     };
     health_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    readiness_ready_get: {
         parameters: {
             query?: never;
             header?: never;

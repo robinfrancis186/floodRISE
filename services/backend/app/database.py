@@ -27,10 +27,15 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     delete,
+    func,
     select,
+    text,
+    update,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool, StaticPool
+
+from .errors import ConflictError
 
 
 def utc_now() -> datetime:
@@ -117,7 +122,18 @@ class AuditRow(Base):
             "event_type",
             name="uq_audit_aggregate_version_event",
         ),
+        UniqueConstraint("previous_hash", name="uq_audit_previous_hash"),
     )
+
+
+class AuditChainHeadRow(Base):
+    """Singleton compare-and-swap head for the append-only audit chain."""
+
+    __tablename__ = "audit_chain_head"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_hash: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class OutboxRow(Base):
@@ -140,6 +156,7 @@ class EntityChange:
     entity_id: str
     payload: Mapping[str, Any]
     version: int
+    expected_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +170,26 @@ class EventInput:
     payload: Mapping[str, Any]
     incident_id: str | None = None
     supersedes_event_id: str | None = None
+
+
+class ConcurrentWriteError(ConflictError):
+    """Raised when another process wins an authoritative entity transition."""
+
+    def __init__(
+        self,
+        kind: str,
+        entity_id: str,
+        expected_version: int,
+        current_version: int | None,
+    ) -> None:
+        current = "missing" if current_version is None else str(current_version)
+        super().__init__(
+            (
+                f"{kind} '{entity_id}' changed concurrently; "
+                f"expected version {expected_version}, current version is {current}"
+            ),
+            code="VERSION_CONFLICT",
+        )
 
 
 class Database:
@@ -180,6 +217,20 @@ class Database:
 
     def initialize(self) -> None:
         Base.metadata.create_all(self.engine)
+        with self._lock, self.Session.begin() as session:
+            head = session.get(AuditChainHeadRow, 1)
+            if head is None:
+                latest = session.scalars(
+                    select(AuditRow).order_by(AuditRow.sequence.desc()).limit(1)
+                ).first()
+                event_count = int(session.scalar(select(func.count(AuditRow.sequence))) or 0)
+                session.add(
+                    AuditChainHeadRow(
+                        id=1,
+                        event_hash=latest.event_hash if latest else "0" * 64,
+                        version=event_count,
+                    )
+                )
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -189,6 +240,16 @@ class Database:
     def is_empty(self) -> bool:
         with self._lock, self.session() as session:
             return session.scalar(select(EntityRow.key).limit(1)) is None
+
+    def readiness_check(self) -> bool:
+        """Check database/schema readiness with one bounded primary-key lookup.
+
+        This deliberately does not verify the full audit history. Full hash-chain
+        verification remains an explicit authenticated auditor operation.
+        """
+
+        with self._lock, self.session() as session:
+            return session.get(AuditChainHeadRow, 1) is not None
 
     @staticmethod
     def entity_key(kind: str, entity_id: str) -> str:
@@ -240,6 +301,7 @@ class Database:
 
         emitted: list[dict[str, Any]] = []
         with self._lock, self.Session.begin() as session:
+            self._serialize_mutation(session)
             if idempotency:
                 scope, key, _, _ = idempotency
                 compound_key, _ = self._idempotency_storage_key(scope, key)
@@ -248,13 +310,25 @@ class Database:
 
             for change in changes:
                 key = self.entity_key(change.kind, change.entity_id)
-                existing = session.get(EntityRow, key)
                 now = utc_now()
-                if existing:
-                    existing.version = change.version
-                    existing.payload = canonical_json(change.payload)
-                    existing.updated_at = now
-                else:
+                expected_version = (
+                    change.expected_version
+                    if change.expected_version is not None
+                    else change.version - 1
+                )
+                if expected_version < 0 or change.version != expected_version + 1:
+                    raise ValueError(
+                        "entity changes must advance exactly one authoritative version"
+                    )
+                if expected_version == 0:
+                    existing = session.get(EntityRow, key)
+                    if existing is not None:
+                        raise ConcurrentWriteError(
+                            change.kind,
+                            change.entity_id,
+                            expected_version,
+                            int(existing.version),
+                        )
                     session.add(
                         EntityRow(
                             key=key,
@@ -265,6 +339,29 @@ class Database:
                             updated_at=now,
                         )
                     )
+                else:
+                    result = session.execute(
+                        update(EntityRow)
+                        .where(
+                            EntityRow.key == key,
+                            EntityRow.version == expected_version,
+                        )
+                        .values(
+                            version=change.version,
+                            payload=canonical_json(change.payload),
+                            updated_at=now,
+                        )
+                    )
+                    if result.rowcount != 1:
+                        current_version = session.scalar(
+                            select(EntityRow.version).where(EntityRow.key == key)
+                        )
+                        raise ConcurrentWriteError(
+                            change.kind,
+                            change.entity_id,
+                            expected_version,
+                            int(current_version) if current_version is not None else None,
+                        )
 
             for key, value in (state or {}).items():
                 row = session.get(StateRow, key)
@@ -273,10 +370,11 @@ class Database:
                 else:
                     session.add(StateRow(key=key, value=canonical_json(value)))
 
-            latest = session.scalars(
-                select(AuditRow).order_by(AuditRow.sequence.desc()).limit(1)
-            ).first()
-            previous_hash = latest.event_hash if latest else "0" * 64
+            head = session.get(AuditChainHeadRow, 1)
+            if head is None:
+                raise RuntimeError("audit chain head is not initialized")
+            head_version = int(head.version)
+            previous_hash = head.event_hash
             for event in events:
                 created_at = utc_now()
                 event_id = f"evt-{uuid4()}"
@@ -332,6 +430,28 @@ class Database:
                 emitted.append({**outbox_payload, "occurred_at": _json_default(created_at)})
                 previous_hash = event_hash
 
+            if events:
+                head_result = session.execute(
+                    update(AuditChainHeadRow)
+                    .where(
+                        AuditChainHeadRow.id == 1,
+                        AuditChainHeadRow.version == head_version,
+                    )
+                    .values(
+                        event_hash=previous_hash,
+                        version=head_version + len(events),
+                    )
+                )
+                if head_result.rowcount != 1:
+                    raise ConcurrentWriteError(
+                        "audit_chain",
+                        "head",
+                        head_version,
+                        session.scalar(
+                            select(AuditChainHeadRow.version).where(AuditChainHeadRow.id == 1)
+                        ),
+                    )
+
             if idempotency:
                 scope, key, status_code, response = idempotency
                 compound_key, key_digest = self._idempotency_storage_key(scope, key)
@@ -347,6 +467,18 @@ class Database:
                 )
         return emitted
 
+    def _serialize_mutation(self, session: Session) -> None:
+        """Serialize audit-head derivation across API and worker processes."""
+
+        dialect = session.get_bind().dialect.name
+        if dialect == "postgresql":
+            # Transaction-scoped and automatically released on commit/rollback.
+            session.execute(text("SELECT pg_advisory_xact_lock(5305, 1)"))
+        elif dialect == "sqlite":
+            # SQLite ignores SELECT FOR UPDATE. BEGIN IMMEDIATE acquires the
+            # writer reservation before any read-classify-write work below.
+            session.execute(text("BEGIN IMMEDIATE"))
+
     def reset(
         self,
         *,
@@ -356,7 +488,15 @@ class Database:
         actor_role: str = "identity_administrator",
     ) -> None:
         with self._lock, self.Session.begin() as session:
-            for model in (OutboxRow, AuditRow, IdempotencyRow, StateRow, EntityRow):
+            self._serialize_mutation(session)
+            for model in (
+                OutboxRow,
+                AuditRow,
+                AuditChainHeadRow,
+                IdempotencyRow,
+                StateRow,
+                EntityRow,
+            ):
                 session.execute(delete(model))
             for change in changes:
                 session.add(
@@ -389,6 +529,7 @@ class Database:
                 "supersedes_event_id": None,
             }
             event_hash = hashlib.sha256(canonical_json(material).encode()).hexdigest()
+            session.add(AuditChainHeadRow(id=1, event_hash=event_hash, version=1))
             session.add(
                 AuditRow(
                     event_id=event_id,
@@ -451,16 +592,37 @@ class Database:
                 for row in rows
             ]
 
-    def outbox_events(self, *, after_sequence: int = 0, limit: int = 200) -> list[dict[str, Any]]:
+    def outbox_events(
+        self,
+        *,
+        after_sequence: int = 0,
+        limit: int = 200,
+        incident_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 1_000))
         with self._lock, self.session() as session:
-            rows = session.scalars(
-                select(OutboxRow)
-                .where(OutboxRow.sequence > after_sequence)
-                .order_by(OutboxRow.sequence)
-                .limit(limit)
-            ).all()
+            statement = select(OutboxRow).where(OutboxRow.sequence > after_sequence)
+            if incident_id is not None:
+                statement = statement.where(OutboxRow.incident_id == incident_id)
+            rows = session.scalars(statement.order_by(OutboxRow.sequence).limit(limit)).all()
             return [{"sequence": row.sequence, **parse_json(row.payload)} for row in rows]
+
+    def outbox_event(self, event_id: str) -> dict[str, Any] | None:
+        """Return one authoritative event through its unique indexed identifier."""
+
+        with self._lock, self.session() as session:
+            row = session.scalars(
+                select(OutboxRow).where(OutboxRow.event_id == event_id).limit(1)
+            ).first()
+            if row is None:
+                return None
+            return {
+                "id": row.event_id,
+                "type": row.event_type,
+                "incident_id": row.incident_id,
+                "resource_id": row.resource_id,
+                "version": row.resource_version,
+            }
 
     def verify_audit_chain(self) -> bool:
         with self._lock, self.session() as session:
@@ -486,4 +648,7 @@ class Database:
                 if row.previous_hash != previous_hash or row.event_hash != expected:
                     return False
                 previous_hash = row.event_hash
-            return True
+            head = session.get(AuditChainHeadRow, 1)
+            return bool(
+                head and head.event_hash == previous_hash and int(head.version) == len(rows)
+            )

@@ -1,3 +1,9 @@
+import type { StaffApiIdentity } from "./models";
+import {
+  CloudCredentialUnavailableError,
+  cloudFetch,
+} from "./cloud-security";
+
 export type OperationsInvalidation = {
   id: string;
   type: string;
@@ -16,6 +22,7 @@ export type OperationsStreamStatus =
 type SubscribeOptions = {
   apiRoot: string;
   incidentId: string;
+  identity: StaffApiIdentity;
   onEvent: (event: OperationsInvalidation) => void;
   onStatus: (status: OperationsStreamStatus) => void;
   retryBaseMs?: number;
@@ -24,21 +31,21 @@ type SubscribeOptions = {
 const CURSOR_PREFIX = "floodrise.ops.events.cursor";
 const MAX_RETRY_MS = 15_000;
 
-function cursorKey(incidentId: string) {
-  return `${CURSOR_PREFIX}.${incidentId}`;
+function cursorKey(incidentId: string, subject: string) {
+  return `${CURSOR_PREFIX}.${encodeURIComponent(incidentId)}.${encodeURIComponent(subject)}`;
 }
 
-function readCursor(incidentId: string): string | null {
+function readCursor(incidentId: string, subject: string): string | null {
   try {
-    return window.localStorage.getItem(cursorKey(incidentId));
+    return window.localStorage.getItem(cursorKey(incidentId, subject));
   } catch {
     return null;
   }
 }
 
-function writeCursor(incidentId: string, cursor: string) {
+function writeCursor(incidentId: string, subject: string, cursor: string) {
   try {
-    window.localStorage.setItem(cursorKey(incidentId), cursor);
+    window.localStorage.setItem(cursorKey(incidentId, subject), cursor);
   } catch {
     // A blocked storage API only removes cross-reload resume. The live stream
     // remains ordered and reconnects with its in-memory cursor.
@@ -132,11 +139,13 @@ async function consumeEventStream(
  * A fetch stream is used instead of EventSource because browsers do not let an
  * application set Last-Event-ID when restoring a subscription after reload.
  * The server still emits standard text/event-stream frames, while this client
- * resumes explicitly and keeps cookie-backed sessions on the request.
+ * resumes explicitly and uses the same in-memory bearer/App Check bootstrap as
+ * ordinary API requests. Demo identity headers remain only in demo mode.
  */
 export function subscribeToOperationsEvents({
   apiRoot,
   incidentId,
+  identity,
   onEvent,
   onStatus,
   retryBaseMs = 1_000,
@@ -145,7 +154,7 @@ export function subscribeToOperationsEvents({
   let activeController: AbortController | null = null;
   let retryTimer: number | null = null;
   let retryCount = 0;
-  let cursor = readCursor(incidentId);
+  let cursor = readCursor(incidentId, identity.userId);
 
   if (typeof window.fetch !== "function" || typeof window.ReadableStream === "undefined") {
     onStatus("unavailable");
@@ -157,16 +166,25 @@ export function subscribeToOperationsEvents({
     onStatus(retryCount === 0 ? "connecting" : "reconnecting");
     activeController = new AbortController();
     const headers = new Headers({ Accept: "text/event-stream" });
+    headers.set("X-Demo-Role", identity.role);
+    headers.set("X-Demo-User", identity.userId);
     if (cursor) headers.set("Last-Event-ID", cursor);
 
     try {
-      const response = await window.fetch(`${apiRoot}/events`, {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-        headers,
-        signal: activeController.signal,
-      });
+      const response = await cloudFetch(
+        `${apiRoot.replace(/\/$/, "")}/events?incident_id=${encodeURIComponent(incidentId)}`,
+        {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+          headers,
+          signal: activeController.signal,
+        },
+      );
+      if (response.status === 401 || response.status === 403) {
+        onStatus("unavailable");
+        return;
+      }
       if (!response.ok) throw new Error(`SSE request failed with status ${response.status}.`);
       if (!response.headers.get("Content-Type")?.toLowerCase().includes("text/event-stream")) {
         throw new Error("The events endpoint did not return an SSE stream.");
@@ -176,11 +194,15 @@ export function subscribeToOperationsEvents({
       onStatus("live");
       await consumeEventStream(response, incidentId, onEvent, (nextCursor) => {
         cursor = nextCursor;
-        writeCursor(incidentId, nextCursor);
+        writeCursor(incidentId, identity.userId, nextCursor);
       });
       if (!stopped) throw new Error("The events stream ended.");
     } catch (error) {
       if (stopped || (error instanceof DOMException && error.name === "AbortError")) return;
+      if (error instanceof CloudCredentialUnavailableError) {
+        onStatus("unavailable");
+        return;
+      }
       retryCount += 1;
       onStatus("reconnecting");
       const delay = Math.min(MAX_RETRY_MS, retryBaseMs * 2 ** Math.min(retryCount - 1, 4));
@@ -197,6 +219,6 @@ export function subscribeToOperationsEvents({
   };
 }
 
-export function operationsEventCursorKey(incidentId: string) {
-  return cursorKey(incidentId);
+export function operationsEventCursorKey(incidentId: string, subject: string) {
+  return cursorKey(incidentId, subject);
 }

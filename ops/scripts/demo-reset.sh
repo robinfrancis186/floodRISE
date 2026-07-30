@@ -38,7 +38,7 @@ response="$(curl -fsS -X POST \
   -H 'X-Demo-User: demo-runbook-reset' \
   "${api_base}/api/v1/demo/reset")"
 
-printf '%s' "${response}" | grep -Fq '"incident_id":"inc-demo-michaung-2023"' || {
+printf '%s' "${response}" | grep -Fq '"incident_id":"inc-demo-kerala-flood-2023"' || {
   printf 'Reset response did not contain the canonical demo incident.\n' >&2
   exit 1
 }
