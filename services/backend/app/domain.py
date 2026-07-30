@@ -1097,9 +1097,41 @@ class FloodRiseService:
     def impacts(self, incident_id: str) -> list[dict[str, Any]]:
         return self._for_incident(self.database.list("impact"), incident_id)
 
+    def _simulation_idempotent_replay(
+        self,
+        idempotency_key: str,
+        request_binding: Mapping[str, str],
+    ) -> dict[str, Any] | None:
+        replay = self.database.idempotent_response("simulation.run", idempotency_key)
+        if replay is None:
+            return None
+        _, payload = replay
+        if payload.get("request") != dict(request_binding):
+            raise ConflictError(
+                "This simulation event ID was already used for a different incident or trigger",
+                code="IDEMPOTENCY_KEY_REUSED",
+            )
+        simulation = payload.get("simulation")
+        if not isinstance(simulation, dict):
+            raise RuntimeError("The stored simulation event receipt is invalid")
+        return simulation
+
     def run_simulation(
-        self, incident_id: str, *, trigger: str, principal: Principal
+        self,
+        incident_id: str,
+        *,
+        trigger: str,
+        principal: Principal,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
+        request_binding = {"incident_id": incident_id, "trigger": trigger}
+        if idempotency_key is not None:
+            if not idempotency_key or len(idempotency_key) > 360:
+                raise ValueError("idempotency_key must contain between 1 and 360 characters")
+            replay = self._simulation_idempotent_replay(idempotency_key, request_binding)
+            if replay is not None:
+                return replay
+
         self.incident(incident_id)
         if not self.is_demo:
             raise AppError(
@@ -1178,40 +1210,60 @@ class FloodRiseService:
             "is_simulated": self.is_demo,
             "version": impact_version,
         }
-        self.database.commit(
-            changes=[
-                EntityChange(
-                    "simulation",
-                    model_version,
-                    simulation,
-                    version,
-                    int(existing["version"]) if existing else 0,
+        try:
+            self.database.commit(
+                changes=[
+                    EntityChange(
+                        "simulation",
+                        model_version,
+                        simulation,
+                        version,
+                        int(existing["version"]) if existing else 0,
+                    ),
+                    EntityChange(
+                        "impact",
+                        impact_id,
+                        impact,
+                        impact_version,
+                        int(existing_impact["version"]) if existing_impact else 0,
+                    ),
+                ],
+                events=[
+                    EventInput(
+                        event_type="simulation.published",
+                        aggregate_kind="simulation",
+                        aggregate_id=model_version,
+                        aggregate_version=version,
+                        actor_id=principal.user_id,
+                        actor_role=principal.role,
+                        payload={
+                            "trigger": trigger,
+                            "model_version": model_version,
+                            "snapshot_checksum": model_result.get("snapshot_checksum"),
+                        },
+                        incident_id=incident_id,
+                    )
+                ],
+                idempotency=(
+                    (
+                        "simulation.run",
+                        idempotency_key,
+                        201,
+                        {"request": request_binding, "simulation": simulation},
+                    )
+                    if idempotency_key is not None
+                    else None
                 ),
-                EntityChange(
-                    "impact",
-                    impact_id,
-                    impact,
-                    impact_version,
-                    int(existing_impact["version"]) if existing_impact else 0,
-                ),
-            ],
-            events=[
-                EventInput(
-                    event_type="simulation.published",
-                    aggregate_kind="simulation",
-                    aggregate_id=model_version,
-                    aggregate_version=version,
-                    actor_id=principal.user_id,
-                    actor_role=principal.role,
-                    payload={
-                        "trigger": trigger,
-                        "model_version": model_version,
-                        "snapshot_checksum": model_result.get("snapshot_checksum"),
-                    },
-                    incident_id=incident_id,
-                )
-            ],
-        )
+            )
+        except ValueError as exc:
+            # Another job can win after the initial replay lookup. The
+            # idempotency record is committed with the model, impact, audit, and
+            # outbox rows, so the loser returns the exact authoritative result.
+            if idempotency_key is not None:
+                replay = self._simulation_idempotent_replay(idempotency_key, request_binding)
+                if replay is not None:
+                    return replay
+            raise exc
         return simulation
 
     def _latest_evidence_version(self, incident_id: str) -> str:

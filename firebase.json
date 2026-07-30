@@ -1,0 +1,142 @@
+{
+  "$schema": "https://raw.githubusercontent.com/firebase/firebase-tools/master/schema/firebase-config.json",
+  "hosting": {
+    "public": "dist/firebase",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "redirects": [
+      {
+        "source": "/",
+        "destination": "/ops/",
+        "type": 302
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "floodrise-api",
+          "region": "asia-south1",
+          "pinTag": true
+        }
+      },
+      {
+        "source": "/ops/**",
+        "destination": "/ops/index.html"
+      },
+      {
+        "source": "/field/**",
+        "destination": "/field/index.html"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; base-uri 'self'; connect-src 'self' https://tile.openstreetmap.org https://*.openstreetmap.org https://content-firebaseappcheck.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com/recaptcha/; font-src 'self' data:; form-action 'self'; frame-ancestors 'none'; frame-src https://apis.google.com https://__FLOODRISE_AUTH_DOMAIN__ https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.openstreetmap.org https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self' https://apis.google.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+          },
+          {
+            "key": "Cross-Origin-Opener-Policy",
+            "value": "same-origin"
+          },
+          {
+            "key": "Cross-Origin-Resource-Policy",
+            "value": "same-origin"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(self), geolocation=(self), microphone=(), payment=(), usb=()"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000; includeSubDomains"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          }
+        ]
+      },
+      {
+        "source": "/api/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "private, no-store"
+          }
+        ]
+      },
+      {
+        "source": "/field/@(sw.js|registerSW.js|manifest.webmanifest)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Service-Worker-Allowed",
+            "value": "/field/"
+          }
+        ]
+      },
+      {
+        "source": "/ops/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/field/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/field/icons/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400"
+          }
+        ]
+      }
+    ]
+  },
+  "emulators": {
+    "hosting": {
+      "host": "127.0.0.1",
+      "port": 5500
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  }
+}

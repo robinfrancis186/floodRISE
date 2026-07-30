@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings
 from app.database import Database, EventInput
@@ -124,8 +125,6 @@ def test_seeded_health_and_bootstrap_are_demo_labelled(client: TestClient) -> No
         "service": "floodrise-backend",
         "version": "0.1.0",
         "environment": "test",
-        "database": "reachable",
-        "audit_chain_valid": True,
         "demo_mode": True,
         "data_label": "DEMO DATA",
         "time": "ignored",
@@ -185,6 +184,82 @@ def test_seeded_health_and_bootstrap_are_demo_labelled(client: TestClient) -> No
         "record_version": 1,
         "incident_id": INCIDENT_ID,
     }
+
+
+def test_public_health_is_database_independent(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database: Database = client.app.state.database
+
+    def unexpected_database_access(*_args: Any, **_kwargs: Any) -> bool:
+        raise AssertionError("public liveness must not access the database")
+
+    monkeypatch.setattr(database, "is_empty", unexpected_database_access)
+    monkeypatch.setattr(database, "verify_audit_chain", unexpected_database_access)
+    monkeypatch.setattr(database, "readiness_check", unexpected_database_access)
+
+    for path in ("/health", f"{API}/health"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+
+def test_readiness_uses_only_the_bounded_database_check(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database: Database = client.app.state.database
+    readiness_calls = 0
+
+    def unexpected_full_verification(*_args: Any, **_kwargs: Any) -> bool:
+        raise AssertionError("public readiness must not verify the full audit history")
+
+    def bounded_readiness() -> bool:
+        nonlocal readiness_calls
+        readiness_calls += 1
+        return True
+
+    monkeypatch.setattr(database, "verify_audit_chain", unexpected_full_verification)
+    monkeypatch.setattr(database, "readiness_check", bounded_readiness)
+
+    for path in ("/ready", f"{API}/ready"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.json() | {"time": "ignored"} == {
+            "status": "ready",
+            "service": "floodrise-backend",
+            "environment": "test",
+            "database": "reachable",
+            "audit_chain_head": "initialized",
+            "time": "ignored",
+        }
+    assert readiness_calls == 2
+
+
+@pytest.mark.parametrize("failure_mode", ["missing_head", "database_error"])
+def test_readiness_fails_closed_without_exposing_database_errors(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+) -> None:
+    database: Database = client.app.state.database
+
+    if failure_mode == "missing_head":
+        monkeypatch.setattr(database, "readiness_check", lambda: False)
+    else:
+
+        def unavailable_database() -> bool:
+            raise SQLAlchemyError("postgresql://private-credential@database")
+
+        monkeypatch.setattr(database, "readiness_check", unavailable_database)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.headers["retry-after"] == "5"
+    assert response.json()["code"] == "SERVICE_NOT_READY"
+    assert "private-credential" not in response.text
+    assert client.get("/health").status_code == 200
 
 
 def test_bootstrap_omits_operational_approvals_for_non_operational_roles(

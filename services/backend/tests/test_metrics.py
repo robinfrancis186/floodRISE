@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -56,7 +59,10 @@ def test_metrics_are_emitted_without_identity_or_location_labels() -> None:
         assert simulation.status_code == 201
         assert route.status_code == 200
 
-        scrape = client.get("/metrics")
+        scrape = client.get(
+            "/metrics",
+            headers={"X-Demo-User": "metrics-auditor", "X-Demo-Role": "auditor"},
+        )
         assert scrape.status_code == 200
         body = scrape.text
         assert "floodrise_report_submit_seconds_count 1.0" in body
@@ -69,3 +75,42 @@ def test_metrics_are_emitted_without_identity_or_location_labels() -> None:
         assert "76.3517" not in body
 
     database.engine.dispose()
+
+
+def test_metrics_authorization_precedes_database_backed_render(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = Database("sqlite://")
+    app = create_app(
+        Settings(env="test", demo_mode=True, database_url="sqlite://"),
+        database=database,
+    )
+    render_calls: list[tuple[Any, Any]] = []
+
+    def render(database_value: Any, service_value: Any) -> bytes:
+        render_calls.append((database_value, service_value))
+        return b"floodrise_test_metric 1\n"
+
+    monkeypatch.setattr(app.state.metrics, "render", render)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            default_reporter = client.get("/metrics")
+            assert default_reporter.status_code == 403
+            assert render_calls == []
+
+            denied = client.get(
+                "/metrics",
+                headers={"X-Demo-User": "field-reporter", "X-Demo-Role": "reporter"},
+            )
+            assert denied.status_code == 403
+            assert render_calls == []
+
+            allowed = client.get(
+                "/metrics",
+                headers={"X-Demo-User": "metrics-auditor", "X-Demo-Role": "auditor"},
+            )
+            assert allowed.status_code == 200
+            assert allowed.text == "floodrise_test_metric 1\n"
+            assert len(render_calls) == 1
+    finally:
+        database.engine.dispose()

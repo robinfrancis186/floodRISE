@@ -92,7 +92,9 @@ test("operations controls filter, export, navigate, and preserve authority bound
   await expect(page.getByRole("button", { name: "Create incident unavailable in demo" })).toBeDisabled();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export incident brief" }).click();
-  expect((await download).suggestedFilename()).toContain("inc-kerala-flood-2023-demo-brief-demo.txt");
+  expect((await download).suggestedFilename()).toBe(
+    "inc-kerala-flood-2023-demo-incident-brief.txt",
+  );
   await expect(page.getByText(/Demo brief downloaded.*not an official public warning/i)).toBeVisible();
   await page.getByRole("button", { name: "Open command workspace" }).click();
   await expect(page).toHaveURL("http://127.0.0.1:55173/");

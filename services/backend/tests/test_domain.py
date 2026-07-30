@@ -8,9 +8,10 @@ from threading import Barrier, Lock
 from typing import Any
 
 import pytest
+from sqlalchemy import delete, event
 
 from app.auth import Principal
-from app.database import AuditRow, Database, EntityChange, EventInput
+from app.database import AuditChainHeadRow, AuditRow, Database, EntityChange, EventInput
 from app.domain import (
     CORROBORATION_MESSAGE,
     EXPIRY_MESSAGE,
@@ -158,6 +159,34 @@ def test_database_seed_commit_outbox_and_hash_chain(database: Database) -> None:
     ]
     assert events[-1]["previous_hash"] == events[-2]["event_hash"]
     assert database.verify_audit_chain() is True
+
+
+def test_database_readiness_is_one_bounded_audit_head_lookup(database: Database) -> None:
+    statements: list[str] = []
+
+    def capture_statement(
+        _connection: Any,
+        _cursor: Any,
+        statement: str,
+        _parameters: Any,
+        _context: Any,
+        _executemany: bool,
+    ) -> None:
+        statements.append(" ".join(statement.lower().split()))
+
+    event.listen(database.engine, "before_cursor_execute", capture_statement)
+    try:
+        assert database.readiness_check() is True
+    finally:
+        event.remove(database.engine, "before_cursor_execute", capture_statement)
+
+    assert len(statements) == 1
+    assert "from audit_chain_head" in statements[0]
+    assert "from audit_events" not in statements[0]
+
+    with database.Session.begin() as session:
+        session.execute(delete(AuditChainHeadRow).where(AuditChainHeadRow.id == 1))
+    assert database.readiness_check() is False
 
 
 def test_idempotency_keys_are_hashed_at_rest(

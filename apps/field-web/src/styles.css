@@ -17,6 +17,44 @@ button, input, textarea { letter-spacing: -0.005em; }
 .field-app button, .field-app input:not([type="file"]), .field-app select { min-height: 44px; }
 svg { stroke-width: 2; }
 
+.cloud-access-page {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  background: #e9eef4;
+  color: var(--foreground);
+}
+.cloud-access-panel {
+  width: min(100%, 520px);
+  border: 1px solid #ccd5e1;
+  border-top: 4px solid var(--flood);
+  border-radius: 4px;
+  background: #fff;
+  padding: clamp(24px, 6vw, 42px);
+  box-shadow: 0 14px 36px rgba(10, 26, 58, 0.1);
+}
+.cloud-access-product { display: block; margin-bottom: 18px; color: var(--flood); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.cloud-access-panel h1 { margin: 0 0 12px; font-size: clamp(25px, 7vw, 34px); line-height: 1.1; letter-spacing: -.035em; }
+.cloud-access-panel p { margin: 0; color: #435169; line-height: 1.55; }
+.cloud-access-action { width: 100%; min-height: 48px; margin-top: 24px; border: 1px solid #043f96; border-radius: 3px; background: var(--primary); color: #fff; font-weight: 760; }
+.cloud-access-action:disabled { cursor: wait; opacity: .7; }
+.cloud-access-action:focus-visible { outline: 3px solid #8fc4ff; outline-offset: 3px; }
+.cloud-access-secondary { border-color: #9eabba; background: #fff; color: var(--primary); }
+.cloud-access-error { margin-top: 14px !important; color: var(--destructive) !important; font-weight: 650; }
+.cloud-access-panel small { display: block; margin-top: 22px; color: #5e6a7d; line-height: 1.45; }
+.cloud-loading-panel { text-align: center; }
+.cloud-loading-mark {
+  display: block;
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 20px;
+  border: 3px solid #c9d8ec;
+  border-top-color: var(--flood);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 .field-app {
   --field-safe-area-top: env(safe-area-inset-top);
   position: relative;
@@ -96,6 +134,20 @@ svg { stroke-width: 2; }
 .network-dot { width: 12px; height: 12px; flex: none; border-radius: 50%; background: var(--success); }
 .network-strip-offline .network-dot { background: var(--warning); }
 .sync-announcement { padding: 8px 18px; background: #eaf7ee; color: #0d6c31; text-align: center; font-size: 13px; font-weight: 700; }
+.offline-access-notice {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  margin: 0;
+  border-width: 0 0 1px;
+  border-left: 4px solid var(--warning);
+  border-radius: 0;
+  background: #fff9e8;
+  padding: 14px max(32px, env(safe-area-inset-right)) 14px max(32px, env(safe-area-inset-left));
+}
+.offline-access-notice .alert-leading-icon { color: #855100; }
+.offline-access-notice [data-slot="alert-description"] { max-width: 650px; }
+.offline-access-notice button { min-height: 44px; margin-top: 12px; }
+.offline-access-notice button svg { width: 17px; height: 17px; }
 
 .field-main { min-height: calc(100dvh - 185px); padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
 .field-main.report-main { padding-bottom: 0; }
@@ -432,6 +484,10 @@ svg { stroke-width: 2; }
   .header-action-label { display: none; }
   .field-avatar { width: 40px; height: 40px; }
   .network-strip { min-height: 40px; padding-block: 7px; font-size: 12px; }
+  .offline-access-notice {
+    padding-right: max(20px, env(safe-area-inset-right));
+    padding-left: max(20px, env(safe-area-inset-left));
+  }
   .page-content { padding: 22px max(20px, env(safe-area-inset-right)) 34px max(20px, env(safe-area-inset-left)); }
   .map-place-overlay { right: max(12px, env(safe-area-inset-right)); bottom: 12px; left: max(12px, env(safe-area-inset-left)); min-width: 0; }
   .field-app .fr-map-legend { left: max(10px, env(safe-area-inset-left)); }
@@ -479,6 +535,10 @@ svg { stroke-width: 2; }
   .network-state { font-size: 0; gap: 0; }
   .field-avatar { width: 40px; height: 40px; }
   .page-content { padding-right: max(16px, env(safe-area-inset-right)); padding-left: max(16px, env(safe-area-inset-left)); }
+  .offline-access-notice {
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
   .bottom-navigation { padding-right: max(2px, env(safe-area-inset-right)); padding-left: max(2px, env(safe-area-inset-left)); }
   .bottom-navigation-item { font-size: 10px; }
   .report-title-row, .report-form { padding-right: max(16px, env(safe-area-inset-right)); padding-left: max(16px, env(safe-area-inset-left)); }

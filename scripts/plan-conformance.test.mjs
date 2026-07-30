@@ -161,6 +161,8 @@ test("the public API retains the complete versioned contract", async () => {
   const specification = JSON.parse(await text("packages/api-client/openapi.json"));
   const paths = Object.keys(specification.paths);
   const requiredPaths = [
+    "/ready",
+    "/api/v1/ready",
     "/api/v1/incidents/{incident_id}/bootstrap",
     "/api/v1/sources/status",
     "/api/v1/reports",
@@ -177,7 +179,7 @@ test("the public API retains the complete versioned contract", async () => {
     "/api/v1/events",
   ];
 
-  assert.equal(paths.length, 33);
+  assert.equal(paths.length, 35);
   for (const path of requiredPaths) assert.ok(paths.includes(path), `OpenAPI is missing ${path}`);
   assert.ok(specification.components.schemas.ProblemDetails, "RFC 9457 ProblemDetails schema is missing");
 });

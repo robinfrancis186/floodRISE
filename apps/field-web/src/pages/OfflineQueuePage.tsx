@@ -9,26 +9,29 @@ import {
   QUEUE_CHANGED_EVENT,
   QUEUE_LIMIT_BYTES,
   QUEUE_LIMIT_ITEMS,
-  type EncryptedQueueRecord,
-  type OfflineReportDraft
+  type QueuedReportListItem
 } from "../lib/db";
 import { formatBytes, formatDateTime, formatRelativeTime } from "../lib/format";
 import { syncQueuedReports } from "../lib/sync";
 
-type QueueItem = { record: EncryptedQueueRecord; draft: OfflineReportDraft };
-
 export function OfflineQueuePage() {
   const { isOnline } = useNetworkStatus();
   const summary = useQueueSummary();
-  const [items, setItems] = useState<QueueItem[]>([]);
+  const [items, setItems] = useState<QueuedReportListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [queueError, setQueueError] = useState(false);
 
   const refresh = useCallback(() => {
     setLoading(true);
+    setQueueError(false);
     void listQueuedReports()
       .then(setItems)
+      .catch(() => {
+        setItems([]);
+        setQueueError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -41,19 +44,29 @@ export function OfflineQueuePage() {
   async function sync() {
     setSyncing(true);
     setNotice(null);
-    const result = await syncQueuedReports();
-    setSyncing(false);
-    if (result.synced) setNotice(`${result.synced} ${result.synced === 1 ? "report" : "reports"} submitted.`);
-    else if (result.needsAction) setNotice("Some reports need action before they can be submitted. Remove the affected draft and submit it again with supported evidence.");
-    else if (result.failed) setNotice("Reports remain encrypted on this device and will retry later.");
-    refresh();
+    try {
+      const result = await syncQueuedReports();
+      if (result.synced) setNotice(`${result.synced} ${result.synced === 1 ? "report" : "reports"} submitted.`);
+      else if (result.needsAction) setNotice("Some reports need action before they can be submitted. Remove the affected draft and submit it again with supported evidence.");
+      else if (result.failed) setNotice("Reports remain encrypted on this device and will retry later.");
+    } catch {
+      setNotice("The encrypted queue could not be submitted. No draft was removed; close and reopen the app before trying again.");
+    } finally {
+      setSyncing(false);
+      refresh();
+    }
   }
 
   async function remove(id: string) {
     if (!window.confirm("Remove this unsent report and its evidence from this device?")) return;
-    await deleteQueuedReport(id);
-    setNotice("Unsent report removed from this device.");
-    refresh();
+    try {
+      await deleteQueuedReport(id);
+      setNotice("Unsent report removed from this device.");
+    } catch {
+      setNotice("The report could not be removed. Close and reopen the app before trying again.");
+    } finally {
+      refresh();
+    }
   }
 
   return (
@@ -96,7 +109,15 @@ export function OfflineQueuePage() {
         </div>
 
         {loading ? <p className="loading-row" role="status">Opening encrypted queue…</p> : null}
-        {!loading && !items.length ? (
+        {!loading && queueError ? (
+          <Alert variant="warning" role="alert">
+            <AlertTitle>Encrypted queue could not be opened</AlertTitle>
+            <AlertDescription>
+              No draft was removed. Close and reopen the app, then contact the incident desk if this continues.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {!loading && !queueError && !items.length ? (
           <div className="queue-empty-state">
             <CheckCircle2 aria-hidden />
             <h3>No reports waiting</h3>
@@ -109,11 +130,17 @@ export function OfflineQueuePage() {
             <li key={record.id}>
               <div className="queue-item-head">
                 <div>
-                  <strong>{draft.place_label}</strong>
-                  <span>Observed {formatDateTime(draft.observed_at)}</span>
+                  <strong>{draft?.place_label ?? "Encrypted draft unavailable"}</strong>
+                  <span>
+                    {draft
+                      ? `Observed ${formatDateTime(draft.observed_at)}`
+                      : "Report details could not be decrypted on this device"}
+                  </span>
                 </div>
-                <Badge variant={record.state === "RETRY" || record.state === "NEEDS_ACTION" ? "warning" : "secondary"}>
-                  {record.state === "SYNCING"
+                <Badge variant={!draft || record.state === "RETRY" || record.state === "NEEDS_ACTION" ? "warning" : "secondary"}>
+                  {!draft
+                    ? "Needs removal"
+                    : record.state === "SYNCING"
                     ? "Submitting"
                     : record.state === "RETRY"
                       ? "Will retry"
@@ -122,12 +149,18 @@ export function OfflineQueuePage() {
                         : "Queued"}
                 </Badge>
               </div>
-              <div className="queue-item-tags">
-                <span>{draft.water_depth.replace("_", " ").toLowerCase()} depth</span>
-                <span>{draft.road_status.toLowerCase()} road</span>
-                {draft.photo ? <span>photo attached</span> : null}
-              </div>
-              {record.lastError ? <p className="queue-error">{record.lastError}</p> : null}
+              {draft ? (
+                <div className="queue-item-tags">
+                  <span>{draft.water_depth.replace("_", " ").toLowerCase()} depth</span>
+                  <span>{draft.road_status.toLowerCase()} road</span>
+                  {draft.photo ? <span>photo attached</span> : null}
+                </div>
+              ) : (
+                <p className="queue-error">
+                  Remove this unreadable draft and create a new report. No encrypted evidence is displayed.
+                </p>
+              )}
+              {draft && record.lastError ? <p className="queue-error">{record.lastError}</p> : null}
               <footer>
                 <span>{formatBytes(record.sizeBytes)} · {formatRelativeTime(record.expiresAt)}</span>
                 <Button type="button" variant="ghost" size="sm" onClick={() => void remove(record.id)}>

@@ -294,4 +294,81 @@ describe("operations approval API", () => {
     expect(result.snapshot.routes).toEqual([]);
     expect(result.snapshot.sources).toEqual([]);
   });
+
+  it("keeps an empty live bootstrap free of every deterministic fixture collection", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        items: [{
+          id: "inc-live-authority-17",
+          name: "District flood incident 17",
+          status: "ACTIVE",
+          scenario_time: "2026-07-30T11:40:00Z",
+        }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        scenario_clock: "2026-07-30T11:40:00Z",
+        incident: {
+          id: "inc-live-authority-17",
+          name: "District flood incident 17",
+          status: "ACTIVE",
+          scenario_time: "2026-07-30T11:40:00Z",
+        },
+        signals: [],
+        reports: [],
+        approvals: [],
+        shelters: [],
+        sources: [],
+        routes: [],
+        resilience: [],
+      })));
+
+    const result = await fetchOperationsSnapshot(
+      apiIdentityForRole("Incident commander"),
+      { allowDemoFallback: false },
+    );
+
+    expect(result).toMatchObject({
+      connected: true,
+      snapshot: {
+        incidentId: "inc-live-authority-17",
+        modelVersion: "Unavailable",
+        evidenceVersion: "Unavailable",
+        signals: [],
+        shelters: [],
+        routes: [],
+        actions: [],
+        priorities: [],
+        audit: [],
+      },
+    });
+    expect(result.snapshot.incidents).toEqual([expect.objectContaining({
+      id: "inc-live-authority-17",
+      name: "District flood incident 17",
+    })]);
+    expect(JSON.stringify(result.snapshot)).not.toContain("INC-KERALA");
+    expect(JSON.stringify(result.snapshot)).not.toContain("ALV-042");
+    expect(JSON.stringify(result.snapshot)).not.toContain("RES-KDG");
+  });
+
+  it("rejects a demo-labelled bootstrap at the live authority boundary", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [{ id: "inc-demo-misconfigured" }] }))
+      .mockResolvedValueOnce(jsonResponse({
+        demo_mode: true,
+        data_label: "DEMO DATA",
+        incident: {
+          id: "inc-demo-misconfigured",
+          is_demo: true,
+          data_label: "DEMO DATA",
+        },
+      })));
+
+    await expect(fetchOperationsSnapshot(
+      apiIdentityForRole("Incident commander"),
+      { allowDemoFallback: false },
+    )).rejects.toMatchObject({
+      status: 503,
+      code: "DEMO_LIVE_BOUNDARY_VIOLATION",
+    });
+  });
 });

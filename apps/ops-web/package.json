@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@floodrise/cloud-auth": "workspace:*",
     "@floodrise/contracts": "workspace:*",
     "@floodrise/map": "workspace:*",
     "@floodrise/ui": "workspace:*",

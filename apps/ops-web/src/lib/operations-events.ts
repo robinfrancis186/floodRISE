@@ -1,4 +1,8 @@
 import type { StaffApiIdentity } from "./models";
+import {
+  CloudCredentialUnavailableError,
+  cloudFetch,
+} from "./cloud-security";
 
 export type OperationsInvalidation = {
   id: string;
@@ -135,7 +139,8 @@ async function consumeEventStream(
  * A fetch stream is used instead of EventSource because browsers do not let an
  * application set Last-Event-ID when restoring a subscription after reload.
  * The server still emits standard text/event-stream frames, while this client
- * resumes explicitly and keeps cookie-backed sessions on the request.
+ * resumes explicitly and uses the same in-memory bearer/App Check bootstrap as
+ * ordinary API requests. Demo identity headers remain only in demo mode.
  */
 export function subscribeToOperationsEvents({
   apiRoot,
@@ -166,7 +171,7 @@ export function subscribeToOperationsEvents({
     if (cursor) headers.set("Last-Event-ID", cursor);
 
     try {
-      const response = await window.fetch(
+      const response = await cloudFetch(
         `${apiRoot.replace(/\/$/, "")}/events?incident_id=${encodeURIComponent(incidentId)}`,
         {
           method: "GET",
@@ -194,6 +199,10 @@ export function subscribeToOperationsEvents({
       if (!stopped) throw new Error("The events stream ended.");
     } catch (error) {
       if (stopped || (error instanceof DOMException && error.name === "AbortError")) return;
+      if (error instanceof CloudCredentialUnavailableError) {
+        onStatus("unavailable");
+        return;
+      }
       retryCount += 1;
       onStatus("reconnecting");
       const delay = Math.min(MAX_RETRY_MS, retryBaseMs * 2 ** Math.min(retryCount - 1, 4));

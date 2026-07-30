@@ -34,15 +34,19 @@ import type {
 } from "../lib/models";
 
 type Horizon = "now" | "1h" | "3h";
+export type OperationsMode = "demo" | "live";
 
 type Notice = { id: number; tone: "success" | "warning" | "info"; message: string };
 
 type OperationsContextValue = {
   snapshot: OperationsSnapshot;
+  mode: OperationsMode;
   connected: boolean;
   streamStatus: "offline" | OperationsStreamStatus;
   loading: boolean;
+  refreshing: boolean;
   role: StaffRole;
+  roleSelectionEnabled: boolean;
   setRole: (role: StaffRole) => void;
   horizon: Horizon;
   setHorizon: (value: Horizon) => void;
@@ -56,18 +60,47 @@ type OperationsContextValue = {
   updateShelter: (id: string, status: "OPEN" | "LIMITED" | "FULL", occupancy: number, reason: string) => Promise<boolean>;
   advanceDemo: () => void;
   resetDemo: () => void;
+  refreshOperations: () => void;
 };
 
 const OperationsContext = createContext<OperationsContextValue | null>(null);
 
-export function OperationsProvider({ children }: { children: ReactNode }) {
+export function OperationsProvider({
+  children,
+  mode = "demo",
+  initialRole = "Incident commander",
+  principalUserId,
+}: {
+  children: ReactNode;
+  mode?: OperationsMode;
+  initialRole?: StaffRole;
+  principalUserId?: string;
+}) {
   const queryClient = useQueryClient();
-  const [role, setRole] = useState<StaffRole>("Incident commander");
+  const [demoRole, setDemoRole] = useState<StaffRole>(initialRole);
+  const role = mode === "demo" ? demoRole : initialRole;
+  const setRole = useCallback((nextRole: StaffRole) => {
+    if (mode === "demo") setDemoRole(nextRole);
+  }, [mode]);
+  const identity = useMemo(() => ({
+    ...apiIdentityForRole(role),
+    userId: mode === "live" && principalUserId
+      ? principalUserId
+      : apiIdentityForRole(role).userId,
+  }), [mode, principalUserId, role]);
+  const bootstrapQueryKey = useMemo(
+    () => ["operations-bootstrap", role, identity.userId] as const,
+    [identity.userId, role],
+  );
   const query = useQuery({
-    queryKey: ["operations-bootstrap", role],
-    queryFn: () => fetchOperationsSnapshot(apiIdentityForRole(role)),
+    queryKey: bootstrapQueryKey,
+    queryFn: () => fetchOperationsSnapshot(
+      identity,
+      { allowDemoFallback: mode === "demo" },
+    ),
   });
   const [snapshot, setSnapshot] = useState<OperationsSnapshot>(() => structuredClone(demoSnapshot));
+  const [authoritativeSnapshotReady, setAuthoritativeSnapshotReady] = useState(mode === "demo");
   const [connected, setConnected] = useState(false);
   const [streamStatus, setStreamStatus] = useState<"offline" | OperationsStreamStatus>("offline");
   const [horizon, setHorizon] = useState<Horizon>("now");
@@ -79,7 +112,8 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     if (!query.data) return;
     setSnapshot(query.data.snapshot);
     setConnected(query.data.connected);
-  }, [query.data]);
+    if (mode === "live") setAuthoritativeSnapshotReady(true);
+  }, [mode, query.data]);
 
   useEffect(() => {
     const apiConnected = query.data?.connected ?? false;
@@ -93,13 +127,13 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     const unsubscribe = subscribeToOperationsEvents({
       apiRoot: API_ROOT,
       incidentId,
-      identity: apiIdentityForRole(role),
+      identity,
       onStatus: setStreamStatus,
       onEvent: () => {
         if (invalidationTimer !== null) window.clearTimeout(invalidationTimer);
         invalidationTimer = window.setTimeout(() => {
           void queryClient.invalidateQueries({
-            queryKey: ["operations-bootstrap", role],
+            queryKey: bootstrapQueryKey,
             exact: true,
           });
         }, 50);
@@ -110,7 +144,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       if (invalidationTimer !== null) window.clearTimeout(invalidationTimer);
       unsubscribe();
     };
-  }, [query.data?.connected, query.data?.snapshot.incidentId, queryClient, role]);
+  }, [bootstrapQueryKey, identity, query.data?.connected, query.data?.snapshot.incidentId, queryClient]);
 
   const announce = useCallback((message: string, tone: Notice["tone"] = "info") => {
     const id = Date.now();
@@ -144,7 +178,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         decision,
         note || copy,
         expectedVersion,
-        apiIdentityForRole(role),
+        identity,
       );
       setSnapshot((current) => ({
         ...current,
@@ -164,7 +198,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       announce(`FloodSignal decision not recorded. ${describeApiError(error)} Evidence remains unchanged.`, "warning");
       return false;
     }
-  }, [announce, connected, role, snapshot.signals]);
+  }, [announce, connected, identity, role, snapshot.signals]);
 
   const decideAction = useCallback(async (id: string, decision: "APPROVE" | "MODIFY" | "REJECT", note = "") => {
     if (!(["Incident commander", "Verifier", "Field responder"] as StaffRole[]).includes(role)) {
@@ -186,7 +220,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         decision,
         note || `Action ${verb}`,
         action.approvalVersion,
-        apiIdentityForRole(role),
+        identity,
       );
       setSnapshot((current) => ({
         ...current,
@@ -195,7 +229,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
           approvalVersion: response.approval.version,
           status: actionStatusFromApproval(response.approval.status),
           detail: note || candidate.detail,
-          decidedById: response.approval.decided_by ?? apiIdentityForRole(role).userId,
+          decidedById: response.approval.decided_by ?? identity.userId,
           decisionReason: response.approval.decision_reason ?? (note || `Action ${verb}`),
           executionStatus: response.approval.execution_status,
         } : candidate),
@@ -206,7 +240,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       announce(`Approval not recorded. ${describeApiError(error)} The action remains pending.`, "warning");
       return false;
     }
-  }, [announce, role, snapshot.actions]);
+  }, [announce, identity, role, snapshot.actions]);
 
   const updateShelter = useCallback(async (id: string, status: "OPEN" | "LIMITED" | "FULL", occupancy: number, reason: string) => {
     if (!(role === "Shelter manager" || role === "Incident commander")) {
@@ -214,19 +248,27 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       return false;
     }
     const shelter = snapshot.shelters.find((candidate) => candidate.id === id);
-    if (!connected || !shelter?.apiId || !shelter.apiVersion) {
+    if (
+      !connected
+      || !shelter?.apiId
+      || !shelter.apiVersion
+      || shelter.capacity === null
+      || shelter.occupancy === null
+      || shelter.status === "UNKNOWN"
+    ) {
       announce("Shelter update not recorded. The authoritative shelter version is unavailable; reconnect and refresh before saving.", "warning");
       return false;
     }
+    const knownCapacity = shelter.capacity;
     try {
       const updated = await submitShelterUpdate(
         shelter,
         status,
-        Math.min(shelter.capacity, Math.max(0, occupancy)),
+        Math.min(knownCapacity, Math.max(0, occupancy)),
         reason,
-        apiIdentityForRole(role),
+        identity,
       );
-      const capacity = updated.capacity_total ?? updated.capacity ?? shelter.capacity;
+      const capacity = updated.capacity_total ?? updated.capacity ?? knownCapacity;
       const confirmedOccupancy = updated.occupancy
         ?? (updated.capacity_remaining === undefined ? occupancy : Math.max(0, capacity - updated.capacity_remaining));
       setSnapshot((current) => ({
@@ -247,9 +289,13 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       announce(`Shelter update not recorded. ${describeApiError(error)} Displayed shelter data is unchanged.`, "warning");
       return false;
     }
-  }, [announce, connected, role, snapshot.shelters]);
+  }, [announce, connected, identity, role, snapshot.shelters]);
 
   const advanceDemo = useCallback(() => {
+    if (mode !== "demo") {
+      announce("Demo controls are disabled for authority sessions.", "warning");
+      return;
+    }
     if (role !== "Incident commander" && role !== "Resilience engineer") {
       announce("Only an incident commander or resilience engineer can advance demo evidence.", "warning");
       return;
@@ -260,9 +306,9 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     }
     void (async () => {
       try {
-        await advanceDemoApi(10, apiIdentityForRole(role));
+        await advanceDemoApi(10, identity);
         await queryClient.invalidateQueries({
-          queryKey: ["operations-bootstrap", role],
+          queryKey: bootstrapQueryKey,
           exact: true,
         });
         announce("Scenario advanced 10 minutes. Authoritative estimates refreshed.", "success");
@@ -270,9 +316,13 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         announce(`Scenario was not advanced. ${describeApiError(error)}`, "warning");
       }
     })();
-  }, [announce, connected, queryClient, role]);
+  }, [announce, bootstrapQueryKey, connected, identity, mode, queryClient, role]);
 
   const resetDemo = useCallback(() => {
+    if (mode !== "demo") {
+      announce("Demo controls are disabled for authority sessions.", "warning");
+      return;
+    }
     if (role !== "Identity administrator") {
       announce("Only an identity administrator can reset the deterministic replay.", "warning");
       return;
@@ -283,12 +333,12 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     }
     void (async () => {
       try {
-        await resetDemoApi(apiIdentityForRole(role));
+        await resetDemoApi(identity);
         setHorizon("now");
         setSelectedSignalId("ALV-042");
         setSelectedPriorityId("RES-KDG-01");
         await queryClient.invalidateQueries({
-          queryKey: ["operations-bootstrap", role],
+          queryKey: bootstrapQueryKey,
           exact: true,
         });
         announce("Kerala extreme-rainfall replay reset to the judging checkpoint.", "success");
@@ -296,14 +346,24 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         announce(`Replay was not reset. ${describeApiError(error)}`, "warning");
       }
     })();
-  }, [announce, connected, queryClient, role]);
+  }, [announce, bootstrapQueryKey, connected, identity, mode, queryClient, role]);
+
+  const refreshOperations = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: bootstrapQueryKey,
+      exact: true,
+    });
+  }, [bootstrapQueryKey, queryClient]);
 
   const value = useMemo<OperationsContextValue>(() => ({
     snapshot,
+    mode,
     connected,
     streamStatus,
     loading: query.isLoading,
+    refreshing: query.isFetching,
     role,
+    roleSelectionEnabled: mode === "demo",
     setRole,
     horizon,
     setHorizon,
@@ -317,7 +377,32 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
     updateShelter,
     advanceDemo,
     resetDemo,
-  }), [snapshot, connected, streamStatus, query.isLoading, role, horizon, selectedSignalId, selectedPriorityId, notice, decideSignal, decideAction, updateShelter, advanceDemo, resetDemo]);
+    refreshOperations,
+  }), [snapshot, mode, connected, streamStatus, query.isLoading, query.isFetching, role, setRole, horizon, selectedSignalId, selectedPriorityId, notice, decideSignal, decideAction, updateShelter, advanceDemo, resetDemo, refreshOperations]);
+
+  if (mode === "live" && query.isError) {
+    return (
+      <main className="operations-session-state" id="main-content">
+        <section role="alert" aria-labelledby="operations-unavailable-title">
+          <h1 id="operations-unavailable-title">Authoritative operations unavailable</h1>
+          <p>The live incident service could not verify this session or return current operational data. No demo data is displayed.</p>
+          <button type="button" onClick={() => void query.refetch()}>Retry live connection</button>
+        </section>
+      </main>
+    );
+  }
+
+  if (mode === "live" && !authoritativeSnapshotReady) {
+    return (
+      <main className="operations-session-state" id="main-content">
+        <section role="status" aria-live="polite" aria-labelledby="operations-loading-title">
+          <span className="cloud-loading-indicator" aria-hidden />
+          <h1 id="operations-loading-title">Loading authoritative incident</h1>
+          <p>The verified staff session is ready. Current operations data is now being requested.</p>
+        </section>
+      </main>
+    );
+  }
 
   return <OperationsContext.Provider value={value}>{children}</OperationsContext.Provider>;
 }

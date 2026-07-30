@@ -9,15 +9,19 @@ import { LowerRiskRoutePage } from "./LowerRiskRoutePage";
 import { ReportFloodingPage } from "./ReportFloodingPage";
 
 const {
+  enqueueReportMock,
   fetchAlertsMock,
   fetchRoutesMock,
   navigateMock,
+  rememberReceiptForSessionMock,
   saveReceiptMock,
   submitReportMock,
 } = vi.hoisted(() => ({
+  enqueueReportMock: vi.fn(),
   fetchAlertsMock: vi.fn(),
   fetchRoutesMock: vi.fn(),
   navigateMock: vi.fn(),
+  rememberReceiptForSessionMock: vi.fn(),
   saveReceiptMock: vi.fn(),
   submitReportMock: vi.fn(),
 }));
@@ -65,6 +69,8 @@ vi.mock("../lib/db", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/db")>();
   return {
     ...original,
+    enqueueReport: enqueueReportMock,
+    rememberReceiptForSession: rememberReceiptForSessionMock,
     saveReceipt: saveReceiptMock,
   };
 });
@@ -123,6 +129,7 @@ beforeEach(() => {
     message: "Report received.",
   });
   navigateMock.mockResolvedValue(undefined);
+  enqueueReportMock.mockResolvedValue(undefined);
   saveReceiptMock.mockResolvedValue(undefined);
 });
 
@@ -132,6 +139,33 @@ afterEach(() => {
 });
 
 describe("field location safety policy", () => {
+  it("preserves the accepted client ID and receipt when local receipt persistence fails", async () => {
+    const user = userEvent.setup();
+    saveReceiptMock.mockRejectedValueOnce(
+      new DOMException("Receipt quota reached", "QuotaExceededError"),
+    );
+    renderWithQuery(<ReportFloodingPage />);
+
+    await user.click(screen.getByRole("button", { name: /Submit report/i }));
+
+    await waitFor(() => expect(submitReportMock).toHaveBeenCalledTimes(1));
+    const submittedDraft = submitReportMock.mock.calls[0]?.[0];
+    expect(rememberReceiptForSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "report-authoritative-1" }),
+    );
+    expect(enqueueReportMock).toHaveBeenCalledWith(
+      submittedDraft,
+      expect.any(Number),
+      expect.objectContaining({
+        lastError: expect.stringMatching(/accepted by the API.*receipt storage will retry/i),
+      }),
+    );
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/receipt/$receiptId",
+      params: { receiptId: "report-authoritative-1" },
+    });
+  });
+
   it("preserves an imprecise report reading and announces that it is ineligible for live corroboration", async () => {
     const user = userEvent.setup();
     mockGeolocation(247.4);

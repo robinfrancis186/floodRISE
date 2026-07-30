@@ -10,6 +10,7 @@ route exists in v1.
 from __future__ import annotations
 
 import hashlib
+import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ from uuid import uuid4
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .auth import Principal, audit_actor_id
-from .database import Database, EntityChange, EventInput
+from .database import ConcurrentWriteError, Database, EntityChange, EventInput
 from .errors import AppError, ConflictError, NotFoundError, PermissionDeniedError
 from .schemas import MediaUploadRequest
 
@@ -42,6 +43,8 @@ AUTHORIZED_MEDIA_ROLES = {
     "incident_commander",
     "identity_administrator",
 }
+QUARANTINE_CLEANUP_KIND = "media_quarantine_cleanup"
+logger = logging.getLogger(__name__)
 
 
 def _iso(value: datetime) -> str:
@@ -532,7 +535,124 @@ class MediaService:
             )
 
     def _cleanup_expired(self) -> None:
-        self.blob_store.cleanup_expired(self._now())
+        try:
+            self.blob_store.cleanup_expired(self._now())
+        except Exception:
+            logger.warning(
+                "Private media retention cleanup failed; the primary operation will continue.",
+            )
+
+    @staticmethod
+    def _warn_quarantine_deletion_pending() -> None:
+        logger.warning(
+            (
+                "Private quarantine deletion remains pending; the authoritative media "
+                "result is unchanged and a later reconciliation will retry."
+            ),
+        )
+
+    def _quarantine_cleanup_change(
+        self,
+        record: dict[str, Any],
+        quarantine_blob_ref: str,
+    ) -> EntityChange:
+        upload_id = str(record["upload_id"])
+        cleanup = {
+            "id": upload_id,
+            "upload_id": upload_id,
+            "incident_id": str(record["incident_id"]),
+            "blob_ref": quarantine_blob_ref,
+            "state": "PENDING",
+            "scheduled_at": _iso(self._now()),
+            "completed_at": None,
+            "version": 1,
+        }
+        return EntityChange(
+            QUARANTINE_CLEANUP_KIND,
+            upload_id,
+            cleanup,
+            1,
+            0,
+        )
+
+    def _reconcile_quarantine_deletion(self, upload_id: str) -> bool:
+        """Delete one terminal raw upload without invalidating its committed result.
+
+        A READY/REJECTED transition creates this cleanup record in the same
+        transaction as its idempotency receipt. The external delete happens only
+        after that commit. Any transport/database outage therefore leaves a
+        durable PENDING marker that completion replay or metadata polling can
+        safely retry.
+        """
+
+        try:
+            cleanup = self.database.get(QUARANTINE_CLEANUP_KIND, upload_id)
+        except Exception:
+            self._warn_quarantine_deletion_pending()
+            return False
+        if cleanup is None or cleanup.get("state") == "DELETED":
+            return True
+        blob_ref = cleanup.get("blob_ref")
+        if cleanup.get("state") != "PENDING" or not isinstance(blob_ref, str) or not blob_ref:
+            self._warn_quarantine_deletion_pending()
+            return False
+
+        try:
+            self.blob_store.delete_quarantine(upload_id, blob_ref=blob_ref)
+        except Exception:
+            self._warn_quarantine_deletion_pending()
+            return False
+
+        now = self._now()
+        updated = {
+            **cleanup,
+            "blob_ref": None,
+            "state": "DELETED",
+            "completed_at": _iso(now),
+            "version": int(cleanup["version"]) + 1,
+        }
+        try:
+            self.database.commit(
+                changes=[
+                    EntityChange(
+                        QUARANTINE_CLEANUP_KIND,
+                        upload_id,
+                        updated,
+                        updated["version"],
+                        int(cleanup["version"]),
+                    )
+                ],
+                events=[
+                    EventInput(
+                        event_type="media.quarantine_deleted",
+                        aggregate_kind=QUARANTINE_CLEANUP_KIND,
+                        aggregate_id=upload_id,
+                        aggregate_version=updated["version"],
+                        actor_id="media-pipeline",
+                        actor_role="system",
+                        payload={
+                            "status": "DELETED",
+                            "visibility": "PRIVATE",
+                            "deletion_reconciled": True,
+                        },
+                        incident_id=str(cleanup["incident_id"]),
+                    )
+                ],
+            )
+        except ConcurrentWriteError:
+            try:
+                refreshed = self.database.get(QUARANTINE_CLEANUP_KIND, upload_id)
+            except Exception:
+                self._warn_quarantine_deletion_pending()
+                return False
+            if refreshed is not None and refreshed.get("state") == "DELETED":
+                return True
+            self._warn_quarantine_deletion_pending()
+            return False
+        except Exception:
+            self._warn_quarantine_deletion_pending()
+            return False
+        return True
 
     def _record(self, upload_id: str) -> dict[str, Any]:
         record = self.database.get("media_upload", upload_id)
@@ -871,6 +991,8 @@ class MediaService:
             replay = self.database.idempotent_response(idempotency_scope, idempotency_key)
             if replay:
                 status_code, payload = replay
+                if status_code != 202:
+                    self._reconcile_quarantine_deletion(upload_id)
                 if status_code >= 400:
                     raise _image_error(
                         str(payload.get("failure_code", "MEDIA_DECODE_FAILED")),
@@ -879,8 +1001,10 @@ class MediaService:
                 headers = {"Retry-After": "30"} if status_code == 202 else {}
                 return status_code, payload, headers
             if record["status"] in {"READY_PRIVATE", "DUPLICATE_PRIVATE"}:
+                self._reconcile_quarantine_deletion(upload_id)
                 return 200, self.public_metadata(record), {}
             if record["status"] == "REJECTED":
+                self._reconcile_quarantine_deletion(upload_id)
                 raise _image_error(
                     str(record.get("failure_code") or "MEDIA_DECODE_FAILED"),
                     str(record.get("failure_detail") or "The evidence image was rejected."),
@@ -946,10 +1070,7 @@ class MediaService:
                     idempotency_scope=idempotency_scope,
                     idempotency_key=idempotency_key,
                 )
-                self.blob_store.delete_quarantine(
-                    upload_id,
-                    blob_ref=quarantine_blob_ref,
-                )
+                self._reconcile_quarantine_deletion(upload_id)
                 raise _image_error(
                     "MEDIA_MALWARE_DETECTED",
                     detail,
@@ -967,10 +1088,7 @@ class MediaService:
                     idempotency_scope=idempotency_scope,
                     idempotency_key=idempotency_key,
                 )
-                self.blob_store.delete_quarantine(
-                    upload_id,
-                    blob_ref=quarantine_blob_ref,
-                )
+                self._reconcile_quarantine_deletion(upload_id)
                 raise
 
             duplicate: dict[str, Any] | None = None
@@ -1043,9 +1161,13 @@ class MediaService:
                 "version": int(record["version"]) + 1,
             }
             response = self.public_metadata(updated)
+            cleanup_change = self._quarantine_cleanup_change(updated, quarantine_blob_ref)
             try:
                 self.database.commit(
-                    changes=[EntityChange("media_upload", upload_id, updated, updated["version"])],
+                    changes=[
+                        EntityChange("media_upload", upload_id, updated, updated["version"]),
+                        cleanup_change,
+                    ],
                     events=[
                         EventInput(
                             event_type="media.ready_private",
@@ -1059,6 +1181,7 @@ class MediaService:
                                 "scanner_status": scan_result,
                                 "duplicate_detected": duplicate is not None,
                                 "metadata_stripped": True,
+                                "quarantine_deletion_state": "PENDING",
                                 "visibility": "PRIVATE",
                             },
                             incident_id=updated["incident_id"],
@@ -1072,10 +1195,7 @@ class MediaService:
                     blob_ref=clean_blob_ref,
                 )
                 raise
-            self.blob_store.delete_quarantine(
-                upload_id,
-                blob_ref=quarantine_blob_ref,
-            )
+            self._reconcile_quarantine_deletion(upload_id)
             return 200, response, {}
 
     def _reject(
@@ -1098,6 +1218,7 @@ class MediaService:
             "updated_at": _iso(self._now()),
             "version": int(record["version"]) + 1,
         }
+        quarantine_blob_ref = self._required_blob_ref(record, "quarantine_blob_ref")
         self.database.commit(
             changes=[
                 EntityChange(
@@ -1105,7 +1226,8 @@ class MediaService:
                     record["upload_id"],
                     updated,
                     updated["version"],
-                )
+                ),
+                self._quarantine_cleanup_change(updated, quarantine_blob_ref),
             ],
             events=[
                 EventInput(
@@ -1118,6 +1240,7 @@ class MediaService:
                     payload={
                         "failure_code": failure_code,
                         "quarantine_deletion_requested": True,
+                        "quarantine_deletion_state": "PENDING",
                     },
                     incident_id=updated["incident_id"],
                 )
@@ -1135,6 +1258,8 @@ class MediaService:
             self._cleanup_expired()
             record = self._record(upload_id)
             self._authorize(record, principal)
+            if record["status"] in {"READY_PRIVATE", "DUPLICATE_PRIVATE", "REJECTED"}:
+                self._reconcile_quarantine_deletion(upload_id)
             return self.public_metadata(record)
 
     @staticmethod
@@ -1182,6 +1307,7 @@ __all__ = [
     "MediaService",
     "MediaStoreCapacityError",
     "MemoryMediaBlobStore",
+    "QUARANTINE_CLEANUP_KIND",
     "RejectingScanner",
     "UnavailableScanner",
 ]

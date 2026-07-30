@@ -29,7 +29,7 @@ flood guidance.
 | Production-path artifacts | Six checks passed against the built `/ops/` and `/field/` trees and the actual CloudFront rewrite function. They prove canonical redirects, nested routes, prefix-rooted assets, install icons, a Field service worker that cannot claim Operations, and complete shared map CSS in both optimized applications. Total automated unit/service/conformance/artifact checks: 248. |
 | Contracts and fixtures | Seven fixture files, two raster artifacts, 3,967 full OpenStreetMap road segments, and 800 fallback segments validated. The 33-path OpenAPI snapshot and generated TypeScript client match FastAPI. |
 | Local performance acceptance | Twenty samples each produced report p95 7.50 ms, route p95 3.13 ms, and nine-member model-publication p95 5.50 ms. Fourth-report corroboration and route recalculation completed in 5.24 ms. These are deterministic local timings, not deployed k6 evidence. |
-| Production builds | Both Vite applications built under their CloudFront prefixes. The Field PWA generated a 27-entry, 2,276.77 KiB precache with Android, maskable, and Apple install icons; its compiled service worker permits runtime caching only for same-origin `GET /api/v1/alerts`. |
+| Production builds | Both Vite applications built under their CloudFront prefixes. The Field PWA retains its static application-shell and install-asset precache, excludes `/api/**` from navigation fallback, contains no API runtime-caching strategy, and imports an activation-time purge for both historical API cache names. |
 | Browser journeys | 26 real-Chromium Playwright journeys passed in 2.3 minutes. They cover axe WCAG AA smoke checks, every Operations and Field route, 320×568 through 768×1024 plus 844×390 touch layouts, safe-area handling, offline restrictions, private photo sanitization, FloodSignal review, two-person approval, and working filters/exports/navigation boundaries. |
 | Repeatability | The deterministic reset/fourth-report browser replay passed three consecutive runs in 4.0 seconds. Every fourth report produced the explicitly unofficial signal and retained the route/audit invariants. This automated proof does not replace the three-run operator record required by the demo runbook. |
 | Infrastructure conformance | Docker, Terraform, and Trivy were unavailable in this local environment. The repository conformance tests for service isolation, immutable images, WAF, Cognito, CloudFront, and Terraform-required resources passed; exact-commit Compose/Terraform/Trivy evidence remains a hosted gate. No plan or apply was performed. |
@@ -67,9 +67,11 @@ safety defects found during validation:
 - routes fail closed for ambiguous, unknown, inaccurate, out-of-area, or
   unsnappable origins, stale route versions, and unverified or unusable
   shelters;
-- private media metadata is never admitted to the shared Field service-worker
-  cache; expired alerts are not rendered as current; and an online API fallback
-  is visibly labeled deterministic `DEMO DATA`;
+- no API response—including authenticated alerts, media metadata, receipts, or
+  routes—is admitted to Field CacheStorage; worker activation removes both
+  historical API cache names even on offline or sign-in-required cold starts,
+  expired alerts are not rendered as current, and an online API fallback is
+  visibly labeled deterministic `DEMO DATA`;
 - production assets are rooted at `/ops/` and `/field/`; the PWA scope is
   limited to `/field/`, while packaged route geometry is hidden from Field and
   Evacuation views that do not have matching authoritative GeoJSON;

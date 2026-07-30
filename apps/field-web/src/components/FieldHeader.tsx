@@ -2,9 +2,11 @@ import { FloodRiseLogo } from "@floodrise/ui";
 import { Cloud, CloudOff, Download, UserRound } from "lucide-react";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { useFieldCloudAccess } from "../lib/cloud-access";
 
 export function FieldHeader() {
   const { isOnline } = useNetworkStatus();
+  const { runtime } = useFieldCloudAccess();
   const { canInstall, install } = useInstallPrompt();
 
   return (
@@ -26,7 +28,11 @@ export function FieldHeader() {
             {isOnline ? <Cloud aria-hidden /> : <CloudOff aria-hidden />}
             {isOnline ? "Online" : "Offline"}
           </span>
-          <span className="field-avatar" role="img" aria-label="Guest field reporter">
+          <span
+            className="field-avatar"
+            role="img"
+            aria-label={runtime.mode === "demo" ? "Guest field reporter" : "Field reporter session"}
+          >
             <UserRound aria-hidden />
           </span>
         </div>

@@ -144,6 +144,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
           terraform_version: 1.12.2
@@ -155,6 +158,16 @@ jobs:
         run: terraform -chdir=infra/terraform init -backend=false -input=false
       - name: Terraform validation
         run: terraform -chdir=infra/terraform validate
+      - name: Google Cloud Terraform formatting
+        run: terraform -chdir=infra/gcp fmt -check -recursive
+      - name: Google Cloud provider initialization
+        run: terraform -chdir=infra/gcp init -backend=false -input=false
+      - name: Google Cloud Terraform validation
+        run: terraform -chdir=infra/gcp validate
+      - name: Google Cloud Terraform policy tests
+        run: terraform -chdir=infra/gcp test
+      - name: Firebase and Google Cloud source conformance
+        run: node --test scripts/gcp-conformance.test.mjs
       - name: Prometheus rules
         run: |
           docker run --rm \

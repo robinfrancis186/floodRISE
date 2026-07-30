@@ -5,6 +5,7 @@ import {
   type OperationsInvalidation,
   type OperationsStreamStatus,
 } from "./operations-events";
+import { configureCloudSecurity } from "./cloud-security";
 
 const INCIDENT_ID = "inc-demo-kerala-flood-2023";
 const IDENTITY = {
@@ -147,6 +148,64 @@ describe("operations SSE subscription", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(statuses).toEqual(["connecting", "unavailable"]);
     unsubscribe();
+    vi.useRealTimers();
+  });
+
+  it("uses the in-memory App Check and bearer providers for the SSE handshake", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const disposeCloudSecurity = configureCloudSecurity({
+      appCheck: { getToken: () => "app-check-token" },
+      bearer: { getToken: () => "staff-bearer-token" },
+    });
+    const statuses: OperationsStreamStatus[] = [];
+
+    const unsubscribe = subscribeToOperationsEvents({
+      apiRoot: "/api/v1",
+      incidentId: INCIDENT_ID,
+      identity: IDENTITY,
+      onEvent: () => undefined,
+      onStatus: (status) => statuses.push(status),
+    });
+
+    await vi.waitFor(() => expect(statuses.at(-1)).toBe("unavailable"));
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get("X-Firebase-AppCheck")).toBe("app-check-token");
+    expect(headers.get("Authorization")).toBe("Bearer staff-bearer-token");
+    expect(headers.has("X-Demo-Role")).toBe(false);
+    expect(headers.has("X-Demo-User")).toBe(false);
+
+    unsubscribe();
+    disposeCloudSecurity();
+  });
+
+  it("does not open or retry the stream when a live credential is unavailable", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const disposeCloudSecurity = configureCloudSecurity({
+      appCheck: { getToken: () => "app-check-token" },
+      bearer: { getToken: () => null },
+    });
+    const statuses: OperationsStreamStatus[] = [];
+
+    const unsubscribe = subscribeToOperationsEvents({
+      apiRoot: "/api/v1",
+      incidentId: INCIDENT_ID,
+      identity: IDENTITY,
+      onEvent: () => undefined,
+      onStatus: (status) => statuses.push(status),
+      retryBaseMs: 10,
+    });
+
+    await vi.waitFor(() => expect(statuses.at(-1)).toBe("unavailable"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(statuses).toEqual(["connecting", "unavailable"]);
+
+    unsubscribe();
+    disposeCloudSecurity();
     vi.useRealTimers();
   });
 

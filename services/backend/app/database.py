@@ -241,6 +241,16 @@ class Database:
         with self._lock, self.session() as session:
             return session.scalar(select(EntityRow.key).limit(1)) is None
 
+    def readiness_check(self) -> bool:
+        """Check database/schema readiness with one bounded primary-key lookup.
+
+        This deliberately does not verify the full audit history. Full hash-chain
+        verification remains an explicit authenticated auditor operation.
+        """
+
+        with self._lock, self.session() as session:
+            return session.get(AuditChainHeadRow, 1) is not None
+
     @staticmethod
     def entity_key(kind: str, entity_id: str) -> str:
         return f"{kind}:{entity_id}"
@@ -596,6 +606,23 @@ class Database:
                 statement = statement.where(OutboxRow.incident_id == incident_id)
             rows = session.scalars(statement.order_by(OutboxRow.sequence).limit(limit)).all()
             return [{"sequence": row.sequence, **parse_json(row.payload)} for row in rows]
+
+    def outbox_event(self, event_id: str) -> dict[str, Any] | None:
+        """Return one authoritative event through its unique indexed identifier."""
+
+        with self._lock, self.session() as session:
+            row = session.scalars(
+                select(OutboxRow).where(OutboxRow.event_id == event_id).limit(1)
+            ).first()
+            if row is None:
+                return None
+            return {
+                "id": row.event_id,
+                "type": row.event_type,
+                "incident_id": row.incident_id,
+                "resource_id": row.resource_id,
+                "version": row.resource_version,
+            }
 
     def verify_audit_chain(self) -> bool:
         with self._lock, self.session() as session:

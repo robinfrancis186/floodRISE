@@ -41,14 +41,17 @@ is removed.
 
 | Plan requirement | Status | Implementation and evidence |
 | --- | --- | --- |
-| pnpm/uv monorepo, generated OpenAPI client and RFC 9457 errors | Executed | Seven workspaces, 33-path snapshot, generated TypeScript schema and contract drift gate. |
+| pnpm/uv monorepo, generated OpenAPI client and RFC 9457 errors | Executed | Eight workspaces, 35-path snapshot, generated TypeScript schema and contract drift gate. |
 | Local PostGIS, Redis, MinIO and LocalStack profile | Scaffolded | Isolated `infra/compose.yaml`; requires Docker on the target machine. |
 | PostgreSQL spatial extensions and normalized operational tables | Scaffolded | Alembic `0002_postgis_operational_schema`; production query migration still requires an authorized database rehearsal. |
 | Celery worker over an allow-listed SQS queue | Scaffolded | `app.worker:celery_app`, eager offline demo tasks, predefined SQS queue transport and ECS command. |
 | Reproducible backend container image | Scaffolded | Non-root, frozen-uv `services/backend/Dockerfile`; immutable registry build requires the deployment account. |
 | AWS Mumbai CloudFront, WAF, ECS, RDS, S3, SQS, Cognito, KMS and Secrets Manager | Scaffolded | Terraform modules and hosted validation; Redis is intentionally omitted until an authenticated remote fanout need exists. No AWS apply is claimed. |
+| Firebase Hosting for `/ops/` and `/field/` | Scaffolded | The CSP template, reviewed target map, deterministic per-app source/config receipts, complete artifact hashes, exact project confirmation, and clean-tree execution guard preserve demo/live isolation, both prefixes, and Field PWA scope. The direct `floodrise-api` rewrite is limited to short requests; no Firebase project selection or deploy is claimed. |
+| Google Cloud Mumbai-equivalent regional runtime | Scaffolded | `infra/gcp` declares Cloud Run API/tile services, an asynchronous simulation job, private Cloud SQL/PostGIS, private Storage, KMS, Secret Manager, Artifact Registry, service identities and recovery controls in `asia-south1`. CI initializes and validates without credentials; no plan/apply is claimed. |
 | Multi-AZ, PITR, cross-region backup, RPO 5 and RTO 30 controls | Scaffolded | Terraform production preconditions and backup resources; measured restoration remains external evidence. |
 | Cognito/OIDC and phishing-resistant step-up | Scaffolded | Resource-server verification, claim enforcement and Cognito resources. Real web PKCE/session enrollment needs the authority’s identity environment. |
+| Identity Platform OIDC, App Check and FCM | Scaffolded | Generic OIDC can feed the same server-side roles/step-up contract; optional App Check covers modifying API requests plus SSE; guarded, opt-in FCM accepts only production activation. Project registration, passkey enrollment, App Check enforcement and real delivery are external activation. |
 | Private production object storage, approved malware scanner and COG service | External activation | Interfaces and locked tile boundary exist; provider, scanner and production COG adapter require credentials, licences and infrastructure. |
 | Real IMD/CWC/KSDMA or local-authority feeds | External activation | Deterministic contract-faithful adapters are used; permission-gated feeds are never scraped. |
 | Real official alerts or evacuation dispatch | External activation | Demo uses only `fake://notification-sink`; a reviewed authority gateway and separate approval rehearsal are required. |
@@ -63,4 +66,5 @@ is removed.
 | WCAG automated gate | Executed | axe serious/critical WCAG A/AA/2.2 AA scans. |
 | Three reset rehearsals and degraded-network journey | Automated path executed; operator record pending | Three consecutive deterministic fourth-report replays and the degraded offline browser journey pass. The demo runbook still requires the three-run operator record on the actual judging environment. |
 | Hosted CodeQL, Trivy, secret and dependency gates | Configured; release run pending | Immutable GitHub workflows are checked in. The exact pushed release commit must pass them before publication. |
+| Credential-free Firebase/GCP conformance | Executed | Firebase artifact/rewrite checks, `scripts/gcp-conformance.test.mjs`, Terraform formatting, provider initialization without a backend, and validation run in CI without choosing a project or creating resources. |
 | Hydraulic benchmark tolerances, VoiceOver device review, ZAP, k6, backup restore and AWS smoke | External activation | Require accepted reference data or the authorized judging/deployment environment; deterministic checks and repository configuration are not substituted for that evidence. |

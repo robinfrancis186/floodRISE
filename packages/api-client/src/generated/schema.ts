@@ -328,6 +328,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness */
+        get: operations["readiness_api_v1_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports": {
         parameters: {
             query?: never;
@@ -560,6 +577,23 @@ export interface paths {
         };
         /** Health */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness */
+        get: operations["readiness_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1254,9 +1288,11 @@ export interface operations {
     create_approval_api_v1_approvals_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1291,9 +1327,11 @@ export interface operations {
     decide_approval_api_v1_approvals__approval_id__decisions_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 approval_id: string;
@@ -1437,9 +1475,11 @@ export interface operations {
     demo_advance_api_v1_demo_advance_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1476,9 +1516,11 @@ export interface operations {
     demo_reset_api_v1_demo_reset_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1514,10 +1556,12 @@ export interface operations {
                 incident_id: string;
                 once?: boolean;
             };
-            header?: {
+            header: {
                 "Last-Event-ID"?: string | null;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1756,6 +1800,8 @@ export interface operations {
                 "Idempotency-Key": string;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -1829,6 +1875,8 @@ export interface operations {
                 "Idempotency-Key": string;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 upload_id: string;
@@ -1867,6 +1915,8 @@ export interface operations {
                 "Content-Length"?: number | null;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 upload_id: string;
@@ -1882,6 +1932,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MediaUploadMetadata"];
+                };
+            };
+            /** @description RFC 9457 problem detail */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    readiness_api_v1_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description RFC 9457 problem detail */
@@ -1940,6 +2022,8 @@ export interface operations {
                 "Idempotency-Key": string;
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -2079,9 +2163,11 @@ export interface operations {
     recommend_route_api_v1_routes_recommend_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -2152,9 +2238,11 @@ export interface operations {
     update_shelter_api_v1_shelters__shelter_id__patch: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 shelter_id: string;
@@ -2267,9 +2355,11 @@ export interface operations {
     decide_signal_api_v1_signals__signal_id__decisions_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path: {
                 signal_id: string;
@@ -2342,9 +2432,11 @@ export interface operations {
     trigger_simulation_api_v1_simulations_post: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 "X-Demo-User"?: string | null;
                 "X-Demo-Role"?: string | null;
+                /** @description Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role. */
+                "X-Firebase-AppCheck": string;
             };
             path?: never;
             cookie?: never;
@@ -2445,6 +2537,28 @@ export interface operations {
         };
     };
     health_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    readiness_ready_get: {
         parameters: {
             query?: never;
             header?: never;

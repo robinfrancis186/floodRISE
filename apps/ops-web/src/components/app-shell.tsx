@@ -21,7 +21,7 @@ import {
   Waves,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
-import type { StaffRole, ViewId } from "../lib/models";
+import type { OperationsSnapshot, StaffRole, ViewId } from "../lib/models";
 import { useOperations } from "../state/operations-context";
 
 export const viewConfig: Record<ViewId, { label: string; shortLabel: string; title: string; icon: typeof Map }> = {
@@ -38,12 +38,36 @@ export const viewConfig: Record<ViewId, { label: string; shortLabel: string; tit
 const roles: StaffRole[] = ["Incident commander", "Verifier", "Field responder", "Resilience engineer", "Shelter manager", "Auditor", "Identity administrator"];
 
 export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavigate: (view: ViewId) => void; children: ReactNode }) {
-  const { snapshot, connected, streamStatus, role, setRole, advanceDemo, resetDemo, notice } = useOperations();
+  const {
+    snapshot,
+    mode,
+    connected,
+    streamStatus,
+    role,
+    roleSelectionEnabled,
+    setRole,
+    advanceDemo,
+    resetDemo,
+    refreshOperations,
+    refreshing,
+    notice,
+  } = useOperations();
   const activeNavigationRef = useRef<HTMLButtonElement>(null);
-  const time = new Date(snapshot.scenarioTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
+  const selectedIncident = snapshot.incidents.find(
+    (incident) => incident.id === snapshot.incidentId,
+  ) ?? snapshot.incidents[0];
+  const incidentLabel = mode === "demo"
+    ? "Ernakulam • Kerala extreme-rainfall"
+    : selectedIncident?.name ?? "Incident unavailable";
+  const incidentAriaLabel = mode === "demo"
+    ? "Selected incident: Ernakulam Kerala extreme-rainfall replay"
+    : `Selected incident: ${incidentLabel}`;
+  const time = formatOperationalTime(snapshot.scenarioTime);
   const liveUpdatesConnected = connected && streamStatus === "live";
   const syncLabel = !connected
-    ? "Local deterministic mode"
+    ? mode === "demo"
+      ? "Local deterministic mode"
+      : "Authoritative API unavailable"
     : streamStatus === "live"
       ? "API synced"
       : streamStatus === "connecting"
@@ -57,26 +81,35 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
 
   return (
     <div className="app-frame">
-      <DemoBanner />
+      {roleSelectionEnabled
+        ? <DemoBanner />
+        : <div className="authority-session-banner" role="status">AUTHORITY SESSION • SERVER-VERIFIED ACCESS</div>}
       <header className="topbar">
         <div className="topbar-brand"><FloodRiseLogo /><span className="topbar-divider" aria-hidden /><h1 aria-label={viewConfig[view].title}><span className="topbar-title-full" aria-hidden>{viewConfig[view].title}</span><span className="topbar-title-mobile" aria-hidden>{viewConfig[view].shortLabel}</span></h1></div>
-        <div className="incident-select" role="status" aria-label="Selected incident: Ernakulam Kerala extreme-rainfall replay">
-          Ernakulam <span aria-hidden>•</span> Kerala extreme-rainfall
+        <div className="incident-select" role="status" aria-label={incidentAriaLabel}>
+          {incidentLabel}
         </div>
         <div className="topbar-sync" aria-live="polite">
-          <span>Scenario {time} IST</span><span className={liveUpdatesConnected ? "sync-dot connected" : "sync-dot"} aria-hidden />
+          <span>{mode === "demo" ? "Scenario" : "Data time"} {time}</span><span className={liveUpdatesConnected ? "sync-dot connected" : "sync-dot"} aria-hidden />
           <span>{syncLabel}</span>
         </div>
-        <label className="global-search" title="Cross-incident search is unavailable in the deterministic demo.">
+        {mode === "demo" ? <label className="global-search" title="Cross-incident search is unavailable in the deterministic demo.">
           <Search aria-hidden />
           <span className="sr-only">Search unavailable in demo mode</span>
           <input type="search" disabled aria-label="Search unavailable in demo mode" placeholder="Search unavailable in demo" />
-        </label>
-        <Button className="notification-button" variant="ghost" size="icon" disabled title="Notification delivery is unavailable in this deterministic demo." aria-label="Notifications unavailable in demo"><Bell /></Button>
-        <label className="role-select">
-          <span className="sr-only">Active role</span>
-          <Select value={role} onChange={(event) => setRole(event.target.value as StaffRole)}>{roles.map((item) => <option key={item}>{item}</option>)}</Select>
-        </label>
+        </label> : null}
+        {mode === "demo" ? <Button className="notification-button" variant="ghost" size="icon" disabled title="Notification delivery is unavailable in this deterministic demo." aria-label="Notifications unavailable in demo"><Bell /></Button> : null}
+        {roleSelectionEnabled ? (
+          <label className="role-select">
+            <span className="sr-only">Active role</span>
+            <Select value={role} onChange={(event) => setRole(event.target.value as StaffRole)}>{roles.map((item) => <option key={item}>{item}</option>)}</Select>
+          </label>
+        ) : (
+          <div className="authenticated-role" aria-label={`Authenticated operational role: ${role}`}>
+            <ShieldCheck aria-hidden />
+            <span>{role}</span>
+          </div>
+        )}
       </header>
 
       <aside className="sidebar" aria-label="Primary navigation">
@@ -86,23 +119,51 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
             return <button ref={view === id ? activeNavigationRef : undefined} key={id} className="nav-item" data-active={view === id || undefined} onClick={() => onNavigate(id)} aria-label={item.label} title={item.label} aria-current={view === id ? "page" : undefined}><Icon aria-hidden /><span className="nav-label-full">{item.label}</span><span className="nav-label-short" aria-hidden>{item.shortLabel}</span></button>;
           })}
         </nav>
-        <div className="sidebar-demo">
+        {roleSelectionEnabled ? <div className="sidebar-demo">
           <span>DEMO CONTROLS</span>
           <Button variant="outline" size="sm" onClick={advanceDemo} disabled={role !== "Incident commander" && role !== "Resilience engineer"} aria-label="Advance 10 min" title="Advance replay 10 minutes"><History />Advance 10 min</Button>
           <Button variant="ghost" size="sm" onClick={resetDemo} disabled={role !== "Identity administrator"} aria-label="Reset replay" title="Reset deterministic replay"><RotateCcw />Reset replay</Button>
-        </div>
+        </div> : null}
       </aside>
 
       <main className="main-region" id="main-content" tabIndex={-1}>{children}</main>
 
       <footer className="status-rail" aria-label="Operational status">
-        <StatusItem icon={CloudRain} label="IMD warning" value="Red · Heavy to very heavy rain" tone="danger" />
-        <StatusItem icon={Waves} label="CWC river feed" value="Periyar River: Rising" />
+        {mode === "demo" ? <>
+          <StatusItem icon={CloudRain} label="IMD warning" value="Red · Heavy to very heavy rain" tone="danger" />
+          <StatusItem icon={Waves} label="CWC river feed" value="Periyar River: Rising" />
+        </> : <>
+          <StatusItem
+            icon={CloudRain}
+            label="Weather feed"
+            value={sourceStatus(snapshot.sources.find((source) => /imd|weather|rain/iu.test(`${source.id} ${source.provider}`)))}
+          />
+          <StatusItem
+            icon={Waves}
+            label="River feed"
+            value={sourceStatus(snapshot.sources.find((source) => /cwc|river|gauge/iu.test(`${source.id} ${source.provider}`)))}
+          />
+        </>}
         <StatusItem icon={Gauge} label="Simulation run" value={snapshot.modelVersion} />
         <StatusItem icon={ClipboardList} label="Pending reports" value={`${snapshot.signals.filter((signal) => signal.decision === "UNREVIEWED").length} clusters`} />
         <StatusItem icon={HeartHandshake} label="Shelters" value={`${snapshot.shelters.filter((shelter) => shelter.status === "OPEN").length} records open`} tone="success" />
-        <StatusItem icon={CheckCircle2} label="Offline packets" value="3,142 records ready" tone="success" />
-        <button type="button" className="rail-refresh" onClick={advanceDemo} disabled={role !== "Incident commander" && role !== "Resilience engineer"}><RefreshCcw aria-hidden />Refresh</button>
+        {mode === "demo"
+          ? <StatusItem icon={CheckCircle2} label="Offline packets" value="3,142 records ready" tone="success" />
+          : <StatusItem
+              icon={DatabaseZap}
+              label="Source health"
+              value={snapshot.sources.length
+                ? `${snapshot.sources.filter((source) => source.status === "HEALTHY").length}/${snapshot.sources.length} healthy`
+                : "Unavailable"}
+            />}
+        <button
+          type="button"
+          className="rail-refresh"
+          onClick={mode === "demo" ? advanceDemo : refreshOperations}
+          disabled={mode === "demo"
+            ? role !== "Incident commander" && role !== "Resilience engineer"
+            : refreshing}
+        ><RefreshCcw aria-hidden />{refreshing && mode === "live" ? "Refreshing" : "Refresh"}</button>
       </footer>
 
       {notice && <div className={`toast toast-${notice.tone}`} role="status">{notice.tone === "success" ? <CheckCircle2 aria-hidden /> : <AlertTriangle aria-hidden />}{notice.message}</div>}
@@ -112,4 +173,20 @@ export function AppShell({ view, onNavigate, children }: { view: ViewId; onNavig
 
 function StatusItem({ icon: Icon, label, value, tone = "default" }: { icon: typeof Map; label: string; value: string; tone?: "default" | "danger" | "success" }) {
   return <div className="status-item" data-tone={tone}><Icon aria-hidden /><span><strong>{label}</strong><small>{value}</small></span></div>;
+}
+
+function formatOperationalTime(value: string): string {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.valueOf())) return "unavailable";
+  return `${timestamp.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Kolkata",
+  })} IST`;
+}
+
+function sourceStatus(source: OperationsSnapshot["sources"][number] | undefined): string {
+  if (!source) return "Unavailable";
+  return `${source.status} · ${formatOperationalTime(source.observed_at)}`;
 }

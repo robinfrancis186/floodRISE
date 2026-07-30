@@ -1858,6 +1858,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1947,6 +1956,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2260,6 +2278,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -2349,6 +2376,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2459,6 +2495,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2851,6 +2896,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -3030,6 +3084,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3144,6 +3207,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3177,6 +3249,40 @@
         "summary": "Upload Media Content",
         "tags": [
           "reports"
+        ]
+      }
+    },
+    "/api/v1/ready": {
+      "get": {
+        "operationId": "readiness_api_v1_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Readiness Api V1 Ready Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "RFC 9457 problem detail"
+          }
+        },
+        "summary": "Readiness",
+        "tags": [
+          "system"
         ]
       }
     },
@@ -3303,6 +3409,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -3562,6 +3677,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -3698,6 +3822,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -3955,6 +4088,15 @@
               ],
               "title": "X-Demo-Role"
             }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -4080,6 +4222,15 @@
                 }
               ],
               "title": "X-Demo-Role"
+            }
+          },
+          {
+            "description": "Firebase App Check JWT required by the production browser contract. The isolated local demo may run with enforcement disabled. This verifies the calling app and does not grant a user identity or role.",
+            "in": "header",
+            "name": "X-Firebase-AppCheck",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -4226,6 +4377,29 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "readiness_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Readiness Ready Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness",
         "tags": [
           "system"
         ]

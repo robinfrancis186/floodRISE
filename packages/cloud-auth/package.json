@@ -1,0 +1,19 @@
+{
+  "name": "@floodrise/cloud-auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "firebase": "12.16.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

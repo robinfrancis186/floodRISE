@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "demo": "replace-with-floodrise-demo-project-id",
+    "live": "replace-with-floodrise-live-project-id"
+  }
+}

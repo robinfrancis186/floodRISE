@@ -10,23 +10,39 @@ import {
   isLiveEligibleLocationAccuracy,
   MAX_LIVE_LOCATION_ACCURACY_M
 } from "../lib/location-policy";
+import { useFieldCloudAccess } from "../lib/cloud-access";
 
 export function LowerRiskRoutePage() {
   const { isOnline } = useNetworkStatus();
+  const { runtime } = useFieldCloudAccess();
+  const isDemo = runtime.mode === "demo";
   const queryClient = useQueryClient();
-  const [origin, setOrigin] = useState({
+  const [origin, setOrigin] = useState<{
+    latitude: number;
+    longitude: number;
+    accuracy_m: number;
+    label: string;
+  } | null>(() => isDemo ? {
     latitude: 10.1041000,
     longitude: 76.3519000,
     accuracy_m: 12,
     label: "Aluva–Paravur Road"
-  });
+  } : null);
   const [locating, setLocating] = useState(false);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
-  const originIsEligible = isLiveEligibleLocationAccuracy(origin.accuracy_m);
+  const originIsEligible = origin
+    ? isLiveEligibleLocationAccuracy(origin.accuracy_m)
+    : false;
   const routes = useQuery({
-    queryKey: ["field-routes", origin.latitude, origin.longitude, origin.accuracy_m],
-    queryFn: () => fetchRoutes(origin),
-    enabled: isOnline && originIsEligible
+    queryKey: [
+      "field-routes",
+      runtime.incidentId,
+      origin?.latitude,
+      origin?.longitude,
+      origin?.accuracy_m,
+    ],
+    queryFn: () => fetchRoutes(origin!, runtime),
+    enabled: Boolean(isOnline && runtime.incidentId && origin && originIsEligible)
   });
   const guidanceAvailable = originIsEligible && routes.data?.availability === "CURRENT";
   const selectedRoute = guidanceAvailable
@@ -56,7 +72,7 @@ export function LowerRiskRoutePage() {
   return (
     <div className="page route-page">
       <section className="map-region compact-map-region">
-        {originIsEligible ? (
+        {originIsEligible && isDemo ? (
           <FloodMap
             variant="field"
             horizon="now"
@@ -66,14 +82,27 @@ export function LowerRiskRoutePage() {
             showRouteGeometry={false}
             ariaLabel="Non-navigational demo context map showing flood estimates, road risk, and nearby shelters; route geometry is not shown"
           />
+        ) : originIsEligible ? (
+          <div className="route-map-paused field-live-map-boundary" role="status">
+            <MapPin aria-hidden />
+            <strong>Live route map is unavailable</strong>
+            <span>
+              The current device origin is ready, but the authority response does not include field-safe route geometry.
+              No deterministic Kerala map is substituted.
+            </span>
+          </div>
         ) : (
           <div className="route-map-paused" role="status">
             <MapPin aria-hidden />
             <strong>Route map paused</strong>
-            <span>Improve the device location fix before showing flood and shelter context.</span>
+            <span>
+              {origin
+                ? "Improve the device location fix before showing flood and shelter context."
+                : "Use the current device location before requesting route guidance."}
+            </span>
           </div>
         )}
-        {originIsEligible ? (
+        {originIsEligible && isDemo ? (
           <div className="route-map-context-note" role="note" aria-label="Route map safety boundary">
             <Route aria-hidden />
             <span><strong>Context only</strong>Route geometry is not provided by the recommendation API and is not shown.</span>
@@ -111,7 +140,7 @@ export function LowerRiskRoutePage() {
           </Alert>
         ) : null}
 
-        {isOnline && !originIsEligible ? (
+        {isOnline && origin && !originIsEligible ? (
           <Alert variant="warning" className="location-policy-alert">
             <ShieldAlert aria-hidden className="alert-leading-icon" />
             <div>
@@ -124,11 +153,23 @@ export function LowerRiskRoutePage() {
           </Alert>
         ) : null}
 
+        {isOnline && !origin ? (
+          <Alert variant="info" className="location-policy-alert">
+            <MapPin aria-hidden className="alert-leading-icon" />
+            <div>
+              <AlertTitle>Choose a live starting location</AlertTitle>
+              <AlertDescription>
+                Live mode never selects a demo origin. Use the current device location to request guidance.
+              </AlertDescription>
+            </div>
+          </Alert>
+        ) : null}
+
         <div className="route-origin-row">
           <MapPin aria-hidden />
-          <div><span>Starting near</span><strong>{origin.label}</strong></div>
+          <div><span>Starting near</span><strong>{origin?.label ?? "Location not selected"}</strong></div>
           <Button variant="link" type="button" disabled={!isOnline || locating} onClick={useCurrentOrigin}>
-            {locating ? "Locating…" : "Use current"}
+            {locating ? "Locating…" : isDemo ? "Use current" : origin ? "Update location" : "Use current"}
           </Button>
         </div>
 
@@ -142,7 +183,7 @@ export function LowerRiskRoutePage() {
           <section aria-labelledby="route-options-heading">
             <div className="section-heading-row">
               <h2 id="route-options-heading">Route options</h2>
-              <span><Clock3 aria-hidden />Demo estimate</span>
+              <span><Clock3 aria-hidden />{isDemo ? "Demo estimate" : "Current estimate"}</span>
             </div>
             <div className="route-list" aria-busy={routes.isLoading}>
               {(routes.data?.alternatives ?? []).map((route, index) => {

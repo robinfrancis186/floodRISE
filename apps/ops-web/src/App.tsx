@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "./components/app-shell";
 import { appPathForView, viewFromAppPath } from "./lib/app-paths";
-import type { ViewId } from "./lib/models";
-import { OperationsProvider } from "./state/operations-context";
+import type { StaffRole, ViewId } from "./lib/models";
+import {
+  OperationsProvider,
+  type OperationsMode,
+} from "./state/operations-context";
 import { AuditView } from "./views/audit-view";
 import { EvacuationView } from "./views/evacuation-view";
 import { FloodSignalView } from "./views/flood-signal-view";
@@ -40,6 +43,22 @@ function RoutedApp() {
   return <AppShell view={view} onNavigate={navigate}>{content}</AppShell>;
 }
 
-export function App() {
-  return <OperationsProvider><RoutedApp /></OperationsProvider>;
+export function App({
+  mode = "demo",
+  initialRole = "Incident commander",
+  principalUserId,
+}: {
+  mode?: OperationsMode;
+  initialRole?: StaffRole;
+  principalUserId?: string;
+}) {
+  return (
+    <OperationsProvider
+      mode={mode}
+      initialRole={initialRole}
+      principalUserId={principalUserId}
+    >
+      <RoutedApp />
+    </OperationsProvider>
+  );
 }

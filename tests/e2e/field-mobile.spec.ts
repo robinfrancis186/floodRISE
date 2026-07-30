@@ -52,6 +52,11 @@ async function createTouchPage(browser: Browser, viewport: (typeof viewports)[nu
     contentType: "image/png",
     body: transparentPng,
   }));
+  await page.route("**/api/v1/reports/mobile-compatibility-missing", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ unavailable: true }),
+  }));
   await page.route("**/api/v1/routes/recommend", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",

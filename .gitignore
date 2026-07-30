@@ -3,6 +3,12 @@ node_modules/
 dist/
 coverage/
 .vite/
+.firebase/
+.firebaserc
+.firebase-targets.json
+firebase.deploy.generated.json
+firebase-debug.log
+firebase-debug.*.log
 .turbo/
 .tmp/
 .pytest_cache/

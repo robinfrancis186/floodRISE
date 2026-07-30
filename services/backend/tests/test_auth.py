@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import Iterator
@@ -9,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
+import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -16,9 +18,15 @@ from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 from pydantic import SecretStr, ValidationError
 
-from app.auth import Principal, audit_actor_id
+from app.auth import (
+    OIDC_JWKS_REFRESH_COOLDOWN_SECONDS,
+    OIDCVerifier,
+    Principal,
+    audit_actor_id,
+)
 from app.config import Settings
 from app.database import Database, EntityChange
+from app.errors import AppError, AuthenticationError
 from app.main import create_app
 
 API = "/api/v1"
@@ -102,7 +110,8 @@ def production_client(jwks_json: str) -> Iterator[TestClient]:
     settings = Settings(
         env="staging",
         demo_mode=False,
-        database_url="sqlite://",
+        database_url="postgresql+psycopg://test.invalid/floodrise?sslmode=require",
+        database_allowed_host="test.invalid",
         oidc_issuer=ISSUER,
         oidc_audience=AUDIENCE,
         oidc_jwks_json=SecretStr(jwks_json),
@@ -119,6 +128,7 @@ def production_client(jwks_json: str) -> Iterator[TestClient]:
 def _token(
     signing_key: rsa.RSAPrivateKey,
     *,
+    key_id: str = KEY_ID,
     subject: str = "staff-user-1",
     roles: list[str] | None = None,
     audience: str = AUDIENCE,
@@ -147,7 +157,7 @@ def _token(
         claims,
         signing_key,
         algorithm="RS256",
-        headers={"kid": KEY_ID},
+        headers={"kid": key_id},
     )
 
 
@@ -182,6 +192,65 @@ def test_staging_settings_fail_closed_without_oidc_or_non_demo_secret() -> None:
             oidc_issuer=ISSUER,
             oidc_jwks_json=SecretStr('{"keys": []}'),
         )
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        "sqlite:///floodrise.db",
+        "mysql://database.invalid/floodrise?sslmode=require",
+        "postgresql+psycopg://database.invalid/floodrise",
+        "postgresql+psycopg://database.invalid/floodrise?sslmode=disable",
+        "postgresql+psycopg://database.invalid/floodrise?sslmode=prefer",
+    ],
+)
+def test_live_settings_reject_non_postgresql_or_non_encrypted_database_urls(
+    database_url: str,
+) -> None:
+    with pytest.raises(ValidationError, match="database_url"):
+        Settings(
+            env="staging",
+            demo_mode=False,
+            database_url=database_url,
+            database_allowed_host="database.invalid",
+            oidc_issuer=ISSUER,
+            oidc_jwks_json=SecretStr('{"keys": []}'),
+            session_secret=SecretStr("staging-database-transport-test-secret"),
+        )
+
+
+@pytest.mark.parametrize("sslmode", ["require", "verify-ca", "verify-full"])
+def test_live_settings_accept_encrypted_postgresql_database_urls(sslmode: str) -> None:
+    settings = Settings(
+        env="production",
+        demo_mode=False,
+        database_url=(f"postgresql+psycopg://database.invalid/floodrise?sslmode={sslmode}"),
+        database_allowed_host="database.invalid",
+        oidc_issuer=ISSUER,
+        oidc_jwks_json=SecretStr('{"keys": []}'),
+        session_secret=SecretStr("production-database-transport-test-secret"),
+    )
+
+    assert settings.database_url.endswith(f"sslmode={sslmode}")
+
+
+def test_live_settings_bind_database_url_to_the_approved_host() -> None:
+    common = {
+        "env": "production",
+        "demo_mode": False,
+        "database_url": ("postgresql+psycopg://database.internal/floodrise?sslmode=verify-full"),
+        "oidc_issuer": ISSUER,
+        "oidc_jwks_json": SecretStr('{"keys": []}'),
+        "session_secret": SecretStr("production-database-host-test-secret"),
+    }
+
+    with pytest.raises(ValidationError, match="database_allowed_host"):
+        Settings(**common)
+    with pytest.raises(ValidationError, match="approved database host"):
+        Settings(**common, database_allowed_host="other.internal")
+
+    settings = Settings(**common, database_allowed_host="database.internal")
+    assert settings.database_allowed_host == "database.internal"
 
 
 def test_reporter_audit_pseudonym_is_keyed_and_incident_scoped() -> None:
@@ -431,3 +500,196 @@ def test_stale_step_up_is_not_accepted(
 
     assert denied.status_code == 403
     assert "recent step-up" in denied.json()["detail"]
+
+
+class _MutableOidcClock:
+    def __init__(self) -> None:
+        self.value = 1_000.0
+
+    def __call__(self) -> float:
+        return self.value
+
+    def advance_past_refresh_cooldown(self) -> None:
+        self.value += OIDC_JWKS_REFRESH_COOLDOWN_SECONDS + 0.001
+
+
+class _RemoteOidcJwksEndpoint:
+    def __init__(self, documents: list[str | None]) -> None:
+        self.documents = documents
+        self.request_count = 0
+
+    async def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.request_count += 1
+        await asyncio.sleep(0)
+        if not self.documents:
+            raise AssertionError("Unexpected additional OIDC JWKS request")
+        document = self.documents.pop(0)
+        if document is None:
+            raise httpx.ConnectError("simulated OIDC JWKS outage", request=request)
+        return httpx.Response(
+            200,
+            content=document.encode(),
+            headers={"Content-Type": "application/json"},
+            request=request,
+        )
+
+
+def _patch_remote_oidc_jwks(endpoint: _RemoteOidcJwksEndpoint) -> Any:
+    real_async_client = httpx.AsyncClient
+
+    def client_factory(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        kwargs["transport"] = httpx.MockTransport(endpoint)
+        return real_async_client(*args, **kwargs)
+
+    return patch("app.auth.httpx.AsyncClient", side_effect=client_factory)
+
+
+def _remote_oidc_verifier(clock: _MutableOidcClock) -> OIDCVerifier:
+    return OIDCVerifier(
+        Settings(
+            env="development",
+            demo_mode=False,
+            database_url="sqlite://",
+            oidc_issuer=ISSUER,
+            oidc_audience=AUDIENCE,
+        ),
+        monotonic_clock=clock,
+    )
+
+
+def _assert_authentication_errors(results: list[Any]) -> None:
+    assert results
+    assert all(isinstance(result, AuthenticationError) for result in results)
+
+
+@pytest.mark.asyncio
+async def test_sequential_unknown_oidc_keys_share_one_rotation_refresh(
+    signing_key: rsa.RSAPrivateKey,
+    jwks_json: str,
+) -> None:
+    clock = _MutableOidcClock()
+    verifier = _remote_oidc_verifier(clock)
+    endpoint = _RemoteOidcJwksEndpoint([jwks_json, jwks_json])
+    trusted = _token(signing_key, amr=["webauthn"])
+    unknown_tokens = [
+        _token(signing_key, key_id=f"sequential-unknown-{index}", amr=["webauthn"])
+        for index in range(8)
+    ]
+
+    with _patch_remote_oidc_jwks(endpoint):
+        principal = await verifier.verify(trusted)
+        clock.advance_past_refresh_cooldown()
+        results: list[Any] = []
+        for token in unknown_tokens:
+            try:
+                await verifier.verify(token)
+            except AppError as error:
+                results.append(error)
+
+    assert principal.user_id == "staff-user-1"
+    _assert_authentication_errors(results)
+    assert endpoint.request_count == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_unknown_oidc_key_spray_coalesces_one_rotation_refresh(
+    signing_key: rsa.RSAPrivateKey,
+    jwks_json: str,
+) -> None:
+    clock = _MutableOidcClock()
+    verifier = _remote_oidc_verifier(clock)
+    endpoint = _RemoteOidcJwksEndpoint([jwks_json, jwks_json])
+    trusted = _token(signing_key, amr=["webauthn"])
+    unknown_tokens = [
+        _token(signing_key, key_id=f"concurrent-unknown-{index}", amr=["webauthn"])
+        for index in range(16)
+    ]
+
+    with _patch_remote_oidc_jwks(endpoint):
+        await verifier.verify(trusted)
+        clock.advance_past_refresh_cooldown()
+        results = await asyncio.gather(
+            *(verifier.verify(token) for token in unknown_tokens),
+            return_exceptions=True,
+        )
+
+    _assert_authentication_errors(results)
+    assert endpoint.request_count == 2
+
+
+@pytest.mark.asyncio
+async def test_rotated_oidc_key_is_accepted_after_one_coalesced_refresh(
+    signing_key: rsa.RSAPrivateKey,
+    jwks_json: str,
+) -> None:
+    rotated_key = rsa.generate_private_key(public_exponent=65_537, key_size=2_048)
+    rotated_key_id = "rotated-oidc-key"
+    rotated_jwk = RSAAlgorithm.to_jwk(rotated_key.public_key(), as_dict=True)
+    rotated_jwk.update({"kid": rotated_key_id, "alg": "RS256", "use": "sig"})
+    rotated_document = json.dumps({"keys": [*json.loads(jwks_json)["keys"], rotated_jwk]})
+    clock = _MutableOidcClock()
+    verifier = _remote_oidc_verifier(clock)
+    endpoint = _RemoteOidcJwksEndpoint([jwks_json, rotated_document])
+    trusted = _token(signing_key, amr=["webauthn"])
+    rotated = _token(
+        rotated_key,
+        key_id=rotated_key_id,
+        subject="rotated-key-user",
+        amr=["webauthn"],
+    )
+
+    with _patch_remote_oidc_jwks(endpoint):
+        await verifier.verify(trusted)
+        clock.advance_past_refresh_cooldown()
+        results = await asyncio.gather(
+            *(verifier.verify(rotated) for _ in range(8)),
+            return_exceptions=True,
+        )
+
+    assert all(getattr(result, "user_id", None) == "rotated-key-user" for result in results)
+    assert endpoint.request_count == 2
+
+
+@pytest.mark.asyncio
+async def test_failed_oidc_rotation_refresh_is_cooled_down_and_recovers(
+    signing_key: rsa.RSAPrivateKey,
+    jwks_json: str,
+) -> None:
+    clock = _MutableOidcClock()
+    verifier = _remote_oidc_verifier(clock)
+    endpoint = _RemoteOidcJwksEndpoint([jwks_json, None, jwks_json])
+    trusted = _token(signing_key, amr=["webauthn"])
+    unknown_tokens = [
+        _token(signing_key, key_id=f"outage-unknown-{index}", amr=["webauthn"])
+        for index in range(8)
+    ]
+
+    with _patch_remote_oidc_jwks(endpoint):
+        await verifier.verify(trusted)
+        clock.advance_past_refresh_cooldown()
+        failed = await asyncio.gather(
+            *(verifier.verify(token) for token in unknown_tokens),
+            return_exceptions=True,
+        )
+        trusted_during_outage = await verifier.verify(trusted)
+        within_cooldown = await asyncio.gather(
+            verifier.verify(unknown_tokens[0]),
+            return_exceptions=True,
+        )
+        clock.advance_past_refresh_cooldown()
+        recovered = await asyncio.gather(
+            verifier.verify(unknown_tokens[0]),
+            return_exceptions=True,
+        )
+
+    assert all(
+        isinstance(result, AppError) and result.code == "IDENTITY_PROVIDER_UNAVAILABLE"
+        for result in failed
+    )
+    assert trusted_during_outage.user_id == "staff-user-1"
+    assert (
+        isinstance(within_cooldown[0], AppError)
+        and within_cooldown[0].code == "IDENTITY_PROVIDER_UNAVAILABLE"
+    )
+    _assert_authentication_errors(recovered)
+    assert endpoint.request_count == 3

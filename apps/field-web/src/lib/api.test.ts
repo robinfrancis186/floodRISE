@@ -2,17 +2,202 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SCENARIO_TIME, demoAlerts, demoRoutes } from "../data/demo";
 import type { OfflineReportDraft } from "./db";
 import {
+  configureFieldApiRuntime,
   currentRoutesAt,
   fetchAlerts,
+  fetchFieldIncidentBootstrap,
   fetchRoutes,
   isActiveAt,
   ReportSubmissionError,
   submitReport
 } from "./api";
+import {
+  DEMO_FIELD_RUNTIME,
+  type LiveFieldRuntime,
+} from "./field-runtime";
+
+const LIVE_RUNTIME: LiveFieldRuntime = {
+  mode: "live",
+  incidentId: "inc-live-ernakulam-2026",
+  referenceTime: "2026-07-30T10:00:00.000Z",
+  incidentName: "Ernakulam monsoon response",
+  areaName: "Ernakulam district",
+  incidentStatus: "ACTIVE",
+};
 
 afterEach(() => {
+  configureFieldApiRuntime(DEMO_FIELD_RUNTIME);
   vi.unstubAllGlobals();
   sessionStorage.clear();
+});
+
+describe("live Field authority boundary", () => {
+  it("accepts only a non-demo authoritative incident bootstrap", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      server_time: LIVE_RUNTIME.referenceTime,
+      scenario_clock: LIVE_RUNTIME.referenceTime,
+      demo_mode: false,
+      data_label: "LIVE",
+      incident: {
+        id: LIVE_RUNTIME.incidentId,
+        name: LIVE_RUNTIME.incidentName,
+        status: LIVE_RUNTIME.incidentStatus,
+        area_name: LIVE_RUNTIME.areaName,
+        is_demo: false,
+        is_simulated: false,
+        data_label: "LIVE",
+      },
+    })));
+
+    await expect(fetchFieldIncidentBootstrap()).resolves.toEqual(LIVE_RUNTIME);
+  });
+
+  it("rejects a deterministic bootstrap presented to live Field", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      server_time: DEMO_SCENARIO_TIME,
+      demo_mode: true,
+      data_label: "DEMO DATA",
+      incident: {
+        id: "inc-demo-kerala-flood-2023",
+        name: "Kerala replay",
+        status: "ACTIVE",
+        area_name: "Aluva, Kerala",
+        is_demo: true,
+        is_simulated: true,
+        data_label: "DEMO DATA",
+      },
+    })));
+
+    await expect(fetchFieldIncidentBootstrap()).rejects.toThrow(
+      /deterministic or simulated incident data/i,
+    );
+  });
+
+  it("rejects a live bootstrap that does not explicitly prove the incident is non-simulated", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      server_time: LIVE_RUNTIME.referenceTime,
+      demo_mode: false,
+      data_label: "LIVE",
+      incident: {
+        id: LIVE_RUNTIME.incidentId,
+        name: LIVE_RUNTIME.incidentName,
+        status: LIVE_RUNTIME.incidentStatus,
+        area_name: LIVE_RUNTIME.areaName,
+        is_demo: false,
+        data_label: "LIVE",
+      },
+    })));
+
+    await expect(fetchFieldIncidentBootstrap()).rejects.toThrow(
+      /invalid incident bootstrap/i,
+    );
+  });
+
+  it("never substitutes deterministic alerts or route inputs in live mode", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("authority unavailable"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const alerts = await fetchAlerts(LIVE_RUNTIME);
+    const routes = await fetchRoutes({
+      latitude: 9.9816,
+      longitude: 76.2999,
+      accuracy_m: 18,
+    }, LIVE_RUNTIME);
+
+    expect(alerts).toMatchObject({
+      source: "UNAVAILABLE",
+      items: [],
+      referenceTime: LIVE_RUNTIME.referenceTime,
+      message: expect.stringMatching(/No deterministic alerts are substituted/i),
+    });
+    expect(routes).toMatchObject({
+      availability: "UNAVAILABLE",
+      alternatives: [],
+      referenceTime: LIVE_RUNTIME.referenceTime,
+      message: expect.stringMatching(/No deterministic route is substituted/i),
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      `incident_id=${LIVE_RUNTIME.incidentId}`,
+    );
+    const routeBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      incident_id: string;
+      origin: { latitude: number; longitude: number };
+    };
+    expect(routeBody).toMatchObject({
+      incident_id: LIVE_RUNTIME.incidentId,
+      origin: { latitude: 9.9816, longitude: 76.2999 },
+    });
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain("inc-demo-kerala-flood-2023");
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(DEMO_SCENARIO_TIME);
+  });
+
+  it("withholds a non-demo alert returned for a different live incident", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      items: [{
+        id: "alert-cross-incident",
+        incident_id: "inc-live-other",
+        title: "Wrong incident alert",
+        body: "This must not cross the incident boundary.",
+        audience: "Other district",
+        caution_only: false,
+        official: true,
+        created_at: LIVE_RUNTIME.referenceTime,
+        dispatched_at: LIVE_RUNTIME.referenceTime,
+        expires_at: "2026-07-30T11:00:00.000Z",
+        is_demo: false,
+      }],
+      next_cursor: null,
+    })));
+
+    await expect(fetchAlerts(LIVE_RUNTIME)).resolves.toMatchObject({
+      source: "UNAVAILABLE",
+      items: [],
+      message: expect.stringMatching(/could not be verified/i),
+    });
+  });
+
+  it("accepts live routes only when the response is bound to the verified incident", async () => {
+    const liveRoute = {
+      ...demoRoutes[0],
+      id: "route-live-authority-1",
+      shelter: "Authority shelter 17",
+      valid_until: "2026-07-30T10:10:00.000Z",
+      model_version: "model-live-17",
+      evidence_version: "evidence-live-22",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      incident_id: LIVE_RUNTIME.incidentId,
+      generated_at: LIVE_RUNTIME.referenceTime,
+      is_simulated: false,
+      alternatives: [liveRoute],
+      no_route_reason: null,
+    })));
+
+    await expect(fetchRoutes({
+      latitude: 9.9816,
+      longitude: 76.2999,
+      accuracy_m: 18,
+    }, LIVE_RUNTIME)).resolves.toMatchObject({
+      source: "API",
+      availability: "CURRENT",
+      alternatives: [{ id: "route-live-authority-1" }],
+      referenceTime: LIVE_RUNTIME.referenceTime,
+    });
+  });
+
+  it("refuses an old deterministic queued report after live activation", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    configureFieldApiRuntime(LIVE_RUNTIME);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(submitReport(reportDraft(false))).rejects.toMatchObject({
+      name: "ReportSubmissionError",
+      retryable: false,
+      message: expect.stringMatching(/different or deterministic incident/i),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 function reportDraft(withPhoto = true): OfflineReportDraft {

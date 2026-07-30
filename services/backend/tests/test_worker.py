@@ -22,7 +22,8 @@ def test_production_worker_uses_only_the_predefined_sqs_queue() -> None:
         Settings(
             env="production",
             demo_mode=False,
-            database_url="postgresql+psycopg://example.invalid/floodrise",
+            database_url=("postgresql+psycopg://example.invalid/floodrise?sslmode=require"),
+            database_allowed_host="example.invalid",
             oidc_issuer="https://identity.example.test/pool",
             oidc_jwks_url="https://identity.example.test/pool/.well-known/jwks.json",
             session_secret="test-production-session-secret",
@@ -47,7 +48,8 @@ def test_production_worker_fails_closed_without_an_https_queue() -> None:
     settings = Settings(
         env="production",
         demo_mode=False,
-        database_url="postgresql+psycopg://example.invalid/floodrise",
+        database_url="postgresql+psycopg://example.invalid/floodrise?sslmode=require",
+        database_allowed_host="example.invalid",
         oidc_issuer="https://identity.example.test/pool",
         oidc_jwks_url="https://identity.example.test/pool/.well-known/jwks.json",
         session_secret="test-production-session-secret",

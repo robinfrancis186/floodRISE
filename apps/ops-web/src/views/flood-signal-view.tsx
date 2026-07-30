@@ -32,7 +32,7 @@ import type { SignalDecision } from "../lib/models";
 import { useOperations } from "../state/operations-context";
 
 export function FloodSignalView() {
-  const { snapshot, selectedSignalId, setSelectedSignalId, decideSignal, horizon, setHorizon } = useOperations();
+  const { snapshot, mode, selectedSignalId, setSelectedSignalId, decideSignal, horizon, setHorizon } = useOperations();
   const [status, setStatus] = useState("all");
   const [ward, setWard] = useState("all");
   const [freshness, setFreshness] = useState("3h");
@@ -48,7 +48,8 @@ export function FloodSignalView() {
     const statusMatch = status === "all" || (status === "review" && signal.decision === "UNREVIEWED") || (status === "verified" && signal.decision === "VERIFIED") || (status === "field" && signal.decision === "FIELD_CHECK");
     const wardMatch = ward === "all" || signal.ward === ward;
     const freshnessMinutes = freshness === "5m" ? 5 : freshness === "1h" ? 60 : freshness === "3h" ? 180 : 1_440;
-    const freshnessMatch = signal.updatedMinutesAgo <= freshnessMinutes;
+    const freshnessMatch = signal.updatedMinutesAgo !== null
+      && signal.updatedMinutesAgo <= freshnessMinutes;
     const confidenceMatch = confidence === "all" || (confidence === "high" && signal.confidence >= 80) || (confidence === "medium" && signal.confidence >= 65 && signal.confidence < 80);
     return statusMatch && wardMatch && freshnessMatch && confidenceMatch;
   }), [snapshot.signals, status, ward, freshness, confidence]);
@@ -64,7 +65,7 @@ export function FloodSignalView() {
 
   const verificationRows = selected ? [
     ["Spatial match (within 250 m)", `${selected.independentReports} / ${selected.receivedReports}`],
-    ["Time window (within 30 min)", "8 / 30 min"],
+    ["Time window (within 30 min)", selected.updatedMinutesAgo === null ? "Freshness unavailable" : `${selected.updatedMinutesAgo} min age`],
     ["Identity / device independence", `${selected.independentReports} unique`],
     ["Evidence consistency", selected.status === "DISPUTED" ? "Conflict" : "High"],
   ] : [];
@@ -90,8 +91,8 @@ export function FloodSignalView() {
         <div className="cluster-list">
           {filteredSignals.map((signal) => <button key={signal.id} className="cluster-row" data-selected={signal.id === selected?.id || undefined} onClick={() => setSelectedSignalId(signal.id)}>
             <span className={`signal-dot signal-${signal.decision.toLowerCase()}`} aria-hidden />
-            <span className="cluster-main"><strong>{signal.id} · {signal.name}</strong><small>{signal.ward} · {signal.area}</small><span><MessageSquareText aria-hidden />{signal.receivedReports}<Smartphone aria-hidden />{signal.authenticatedReports}<Globe2 aria-hidden />1<UserCheck aria-hidden />{signal.independentReports}</span></span>
-            <span className="cluster-meta"><time>{signal.updatedMinutesAgo} min ago</time><Confidence value={signal.confidence} /><small>{signal.decision === "UNREVIEWED" ? "Pending approval" : signal.decision.replaceAll("_", " ")}</small></span>
+            <span className="cluster-main"><strong>{signal.id} · {signal.name}</strong><small>{signal.ward} · {signal.area}</small><span><MessageSquareText aria-hidden />{signal.receivedReports}<Smartphone aria-hidden />{signal.authenticatedReports}{mode === "demo" ? <><Globe2 aria-hidden />1</> : null}<UserCheck aria-hidden />{signal.independentReports}</span></span>
+            <span className="cluster-meta"><time>{signal.updatedMinutesAgo === null ? "Freshness unavailable" : `${signal.updatedMinutesAgo} min ago`}</time><Confidence value={signal.confidence} /><small>{signal.decision === "UNREVIEWED" ? "Needs review" : signal.decision.replaceAll("_", " ")}</small></span>
           </button>)}
           {!filteredSignals.length && <div className="empty-state"><Filter /><strong>No clusters match</strong><span>Change a filter to see available evidence.</span></div>}
         </div>
@@ -100,14 +101,14 @@ export function FloodSignalView() {
 
       <section className="signal-map-pane" aria-label="Selected FloodSignal map">
         {selected ? <>
-        <div className="map-layer-key">
+        {mode === "demo" ? <><div className="map-layer-key">
           <span><i className="key-flood" />Current flooding</span>
           <span><i className="key-predicted" />Predicted {horizon}</span>
           <span><i className="key-boundary" />Cluster boundary (250 m)</span>
           <span><i className="key-report" />Counted reports ({selected.independentReports})</span>
           <span><i className="key-excluded" />Excluded evidence</span>
         </div>
-        <FloodMap variant="signals" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={mapFeatureId} onFeatureSelect={handleMapSelection} showLegend={false} cooperativeGestures className="shared-map" height="100%" ariaLabel={`Evidence map for ${selected.name} cluster`} />
+        <FloodMap variant="signals" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={mapFeatureId} onFeatureSelect={handleMapSelection} showLegend={false} cooperativeGestures className="shared-map" height="100%" ariaLabel={`Evidence map for ${selected.name} cluster`} /></> : <div className="empty-state authoritative-map-empty" role="status"><MapPin /><strong>Authoritative cluster geometry unavailable</strong><span>No replay evidence overlay is shown. Review the versioned report table and aggregate counts.</span></div>}
         </> : <div className="empty-state signal-empty-state"><Filter /><strong>No cluster selected</strong><span>No evidence review is available for the current filters.</span></div>}
       </section>
 
@@ -115,7 +116,7 @@ export function FloodSignalView() {
         {selected ? <>
         <header className="review-header">
           <div><span className="signal-dot signal-unreviewed" aria-hidden /><h2>{selected.id} · {selected.name}</h2></div>
-          <p>{selected.independentReports} independent of {selected.receivedReports} received <span>•</span> {selected.confidence}% confidence <span>•</span> <strong>Expires in {selected.expiresInMinutes} min</strong></p>
+          <p>{selected.independentReports} independent of {selected.receivedReports} received <span>•</span> {selected.confidence}% confidence <span>•</span> <strong>{selected.expiresInMinutes === null ? "Expiry unavailable" : `Expires in ${selected.expiresInMinutes} min`}</strong></p>
           {selected.decision === "VERIFIED" && <StatusPill tone="success">Community corroborated — not an official confirmation</StatusPill>}
         </header>
 
@@ -140,15 +141,15 @@ export function FloodSignalView() {
               <TableCell><span className={report.counted ? "report-id" : "report-id excluded"}>{report.counted ? index + 1 : "D1"}</span></TableCell>
               <TableCell>{report.reporter}</TableCell>
               <TableCell>{report.source === "Mobile app" ? <Smartphone aria-label="Mobile app" /> : report.source === "Responder" ? <ShieldCheck aria-label="Responder" /> : <Globe2 aria-label="Web" />}</TableCell>
-              <TableCell>{report.depth}</TableCell><TableCell>{report.roadStatus}</TableCell><TableCell>{report.observedAt}</TableCell><TableCell>{report.distanceM} m</TableCell>
+              <TableCell>{report.depth}</TableCell><TableCell>{report.roadStatus}</TableCell><TableCell>{report.observedAt}</TableCell><TableCell>{report.distanceM === null ? "Unavailable" : `${report.distanceM} m`}</TableCell>
             </TableRow>)}</TableBody>
           </Table>
         </section>
 
-        <section className="model-comparison">
+        {mode === "demo" ? <section className="model-comparison">
           <span><strong>Model comparison</strong><small>Observed reports align with predicted depth 0.6–0.9 m.</small></span>
           <span>Model residual <strong>+0.1 m</strong></span>
-        </section>
+        </section> : null}
 
         <footer className="review-actions">
           <p><FileClockIcon />Decision and evidence hashes will be written to the audit trail.</p>

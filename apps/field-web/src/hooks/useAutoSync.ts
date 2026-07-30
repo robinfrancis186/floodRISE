@@ -23,12 +23,23 @@ export function useAutoSync() {
     };
     const run = async () => {
       setIsSyncing(true);
-      const result = await syncQueuedReports();
-      if (cancelled) return;
-      setLastResult(result);
-      setIsSyncing(false);
-      if (result.nextRetryAt) {
-        schedule(Math.max(1_000, result.nextRetryAt - Date.now()));
+      try {
+        const result = await syncQueuedReports();
+        if (cancelled) return;
+        setLastResult(result);
+        if (result.nextRetryAt) {
+          schedule(Math.max(1_000, result.nextRetryAt - Date.now()));
+        }
+      } catch {
+        if (cancelled) return;
+        setLastResult({
+          synced: 0,
+          failed: 1,
+          needsAction: 0,
+          nextRetryAt: null
+        });
+      } finally {
+        if (!cancelled) setIsSyncing(false);
       }
     };
     const onEnqueued = () => schedule(0);

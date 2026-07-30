@@ -17,9 +17,9 @@ floodRISE has two clients and one authoritative application boundary:
   audit events, and authoritative state. A client hiding a button is never an
   authorization control.
 
-## Target production topology
+## AWS target production topology
 
-The following diagram is the intended production boundary. CloudFront, WAF,
+The following diagram is the original AWS production boundary. CloudFront, WAF,
 Cognito, PostgreSQL/PostGIS/pgRouting, SQS workers, S3, and a production
 COG service are not part of the local judging request path. Terraform contains
 a partial, un-applied scaffold for this topology; see
@@ -52,6 +52,70 @@ flowchart LR
   API --> Tiles
   Tiles --> Objects
 ```
+
+## Firebase and Google Cloud target topology
+
+Firebase/Google Cloud is a second, un-applied deployment option; it does not
+replace the AWS target. Demo and live use different projects, state, identities,
+data, domains, and gateways. Because isolation is provided by the project
+boundary, both projects use the same service identifiers: `floodrise-api`,
+`floodrise-tile`, and `floodrise-simulation`.
+
+```mermaid
+flowchart LR
+  subgraph Clients
+    Field["Field PWA under /field/"]
+    Ops["Operations console under /ops/"]
+  end
+  Hosting["Firebase Hosting"]
+  FutureEdge["Optional future API domain + Cloud Armor"]
+  API["Cloud Run: floodrise-api"]
+  Job["Cloud Run Job: floodrise-simulation"]
+  Tiles["Restricted Cloud Run: floodrise-tile"]
+  DB[("Private Cloud SQL: PostGIS / pgRouting")]
+  Objects[("Private Cloud Storage")]
+  Identity["Identity Platform + authority OIDC"]
+  Attestation["Firebase App Check"]
+  FCM["FCM opt-in delivery"]
+
+  Field --> Hosting
+  Ops --> Hosting
+  Hosting -- "short-request rewrite" --> API
+  Field -. "not implemented" .-> FutureEdge
+  Ops -. "not implemented" .-> FutureEdge
+  FutureEdge -. "serverless NEG option" .-> API
+  API --> Identity
+  API --> Attestation
+  API --> DB
+  API --> Job
+  Job --> DB
+  Job --> Objects
+  API --> Tiles
+  Tiles --> Objects
+  API -. "approved live only" .-> FCM
+```
+
+The checked-in Firebase configuration assembles static products into
+`dist/firebase/ops/` and `dist/firebase/field/`, preserving the Field manifest
+and service-worker scope. A demo rewrite may forward short `/api/**` requests to
+Cloud Run in `asia-south1`. Firebase Hosting has a 60-second dynamic rewrite
+boundary and forwards only the `__session` cookie; simulations therefore run as
+idempotent asynchronous jobs in the intended production boundary. The current
+demo `POST /simulations` remains synchronous. The checked-in Cloud Run dispatcher
+and job command are isolated adapters; wiring a persisted `202`/outbox dispatch
+flow remains deployment activation. Cloud Armor is not on the checked-in
+Hosting rewrite path. A dedicated API domain, serverless NEG, explicit CORS, and
+Cloud Armor are an optional future topology, not an implemented control.
+
+Cloud SQL remains authoritative. Firestore is not substituted for PostGIS,
+pgRouting, immutable model versions, approvals, audit, or outbox state. Firebase
+App Check is a client-attestation control layered below authentication and
+server-side authorization. FCM is an opt-in delivery transport, never the
+source of truth. Demo remains bound to the fake notification sink.
+
+The Google Cloud Terraform and Firebase files are source-validated scaffolds;
+they have not been applied or deployed. See
+[GCP_FIREBASE_DEPLOYMENT.md](GCP_FIREBASE_DEPLOYMENT.md).
 
 ## Implemented judging topology
 
@@ -130,6 +194,11 @@ deployment concern and its TileJSON endpoint remains
 - The Terraform target gives private ECS tasks no public IP or NAT route and
   declares private AWS endpoints. No AWS plan, apply, or network test is evidence
   in this repository.
+- The Google Cloud target declares separate service identities, private database
+  connectivity, private object buckets, KMS, App Check settings, and guarded
+  notification configuration. No Google Cloud plan/apply, Firebase deploy,
+  project binding, Identity Platform enrollment, App Check enforcement, FCM
+  delivery, domain, or Cloud Armor test is evidence in this repository.
 - The backend is an OIDC **bearer-token resource server**. It validates signature,
   issuer, expiry, audience/client ID, and configured JWKS, and accepts
   `X-Demo-*` identities only in demo/test profiles. Terraform declares a public
@@ -168,11 +237,13 @@ expiry, or a no-route result. It never describes a route as safe.
 ## Target availability and recovery
 
 The local judging path is deterministic and has no upstream data-provider
-dependency. The Terraform target has variables and preconditions for origin TLS,
-Multi-AZ RDS, RDS continuous recovery, 35-day retention, deletion
-protection, and cross-region recovery points. Those resources have not been
-applied or restored. RPO 5 minutes and RTO 30 minutes remain objectives;
-measured restore exercises—not HCL values—would be the acceptance evidence.
+dependency. The AWS Terraform target has variables and preconditions for origin
+TLS, Multi-AZ RDS, RDS continuous recovery, 35-day retention, deletion
+protection, and cross-region recovery points. The Google Cloud target declares
+Cloud SQL high availability, PITR/backups, protected buckets, and the same
+recovery objectives. Neither target has been applied or restored. RPO 5 minutes
+and RTO 30 minutes remain objectives; measured restore exercises—not HCL values—
+would be the acceptance evidence.
 
 See [SAFETY.md](SAFETY.md), [PRIVACY_RETENTION.md](PRIVACY_RETENTION.md), and
 [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) for operating controls.

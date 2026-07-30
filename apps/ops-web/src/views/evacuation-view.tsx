@@ -55,7 +55,10 @@ function resolveDestination(
 
 function destinationIsUsable(destination: DestinationRecord | null): boolean {
   if (!destination) return true;
-  return destination.status !== "FULL" && destination.access === "Reachable";
+  return (
+    (destination.status === "OPEN" || destination.status === "LIMITED")
+    && destination.access === "Reachable"
+  );
 }
 
 function destinationSummary(destination: DestinationRecord | null): string {
@@ -75,7 +78,7 @@ function formatIstClock(value: string): string {
 }
 
 export function EvacuationView() {
-  const { snapshot, horizon, setHorizon, decideAction, role } = useOperations();
+  const { snapshot, mode, horizon, setHorizon, decideAction, role } = useOperations();
   const routeEntries = useMemo(() => snapshot.routes
     .map((route) => ({ route, destination: resolveDestination(route, snapshot.shelters) }))
     .filter(({ destination }) => destinationIsUsable(destination)), [snapshot.routes, snapshot.shelters]);
@@ -103,7 +106,7 @@ export function EvacuationView() {
     }
   }, [routeEntries, selectedId]);
   if (!selected) {
-    return <NoRouteState reason={withheldRouteCount > 0
+    return <NoRouteState showDemoStagingPoint={mode === "demo"} reason={withheldRouteCount > 0
       ? "Every current alternative leads to a shelter recorded as full or not reachable. Await a newly calculated route or responder direction."
       : undefined} />;
   }
@@ -111,10 +114,12 @@ export function EvacuationView() {
     <ViewHeader title="Evacuation Routing" description="Compare lower-risk alternatives against current evidence and rapid impact estimates." actions={<><StatusPill tone="warning">Valid until {formatIstClock(selected.valid_until)} IST</StatusPill><Button disabled={!reviewable} title={reviewable ? undefined : reviewUnavailableReason} onClick={() => setDialogOpen(true)}><ShieldAlert />{action?.status === "APPROVED" ? "Guidance approved" : "Review guidance approval"}</Button></>} />
     <div className="evacuation-layout">
       <section className="evacuation-map">
-        <FloodMap variant="operations" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={null} showRouteGeometry={false} cooperativeGestures className="shared-map" height="100%" ariaLabel="Flood and shelter context map; route geometry is not displayed" />
+        {mode === "demo"
+          ? <FloodMap variant="operations" horizon={horizon} onHorizonChange={setHorizon} selectedFeatureId={null} showRouteGeometry={false} cooperativeGestures className="shared-map" height="100%" ariaLabel="Flood and shelter context map; route geometry is not displayed" />
+          : <div className="empty-state authoritative-map-empty" role="status"><Navigation /><strong>Authoritative route geometry unavailable</strong><span>Use the versioned alternatives below. No replay route or flood overlay is shown.</span></div>}
         <p className="evacuation-map-boundary" role="note">Route geometry is not displayed because the authoritative alternatives do not include matching GeoJSON. Use the versioned route list; do not infer a path from this context map.</p>
       </section>
-      <section className="route-list-panel"><header><h3>Route alternatives</h3><span>Origin: Aluva–Paravur Road</span></header>
+      <section className="route-list-panel"><header><h3>Route alternatives</h3><span>{mode === "demo" ? "Origin: Aluva–Paravur Road" : "Origin: unavailable in route response"}</span></header>
         {withheldRouteCount > 0 && <p className="route-withheld-note" role="status"><AlertTriangle />{withheldRouteCount} alternative{withheldRouteCount === 1 ? "" : "s"} withheld because the linked shelter is full or not currently reachable.</p>}
         <div className="route-list">{routeEntries.map(({ route, destination }, index) => <button key={route.id} className="route-option" data-selected={selected.id === route.id || undefined} onClick={() => setSelectedId(route.id)}>
           <span className="route-rank">{index + 1}</span><span><strong>{route.label}</strong><small><Navigation />{route.distance_km} km · <Clock3 />{route.duration_min} min</small><em>{route.shelter} · {destinationSummary(destination)}</em></span><StatusPill tone={route.risk === "LOWER" ? "success" : "warning"}>{route.risk === "LOWER" ? "Lower risk" : "Elevated"}</StatusPill>
@@ -123,30 +128,38 @@ export function EvacuationView() {
       <aside className="route-detail-panel"><h3>{selected.label}</h3><p className="route-disclaimer"><AlertTriangle />This is a lower-risk route, not a guarantee of safety. Conditions can change quickly.</p>
         {action && <p className="route-disclaimer"><ShieldAlert /><span><strong>Two-person approval {action.status === "PENDING_APPROVAL" ? "pending" : action.status.toLowerCase().replaceAll("_", " ")}</strong><br />Requested by {action.requestedBy}. Active reviewer: {role}. Request {action.approvalId ?? "unavailable"} · version {action.approvalVersion ?? "unavailable"}.</span></p>}
         <div className="route-destination" data-verified={selectedDestination ? "true" : "false"}><Building2 /><span><small>Destination</small><strong>{selected.shelter}</strong>{selectedDestination
-          ? <em>Shelter record: {selectedDestination.status} · {selectedDestination.access} · {selectedDestination.updatedMinutesAgo >= 0 ? `updated ${selectedDestination.updatedMinutesAgo} min ago` : "freshness unavailable"}</em>
+          ? <em>Shelter record: {selectedDestination.status} · {selectedDestination.access} · {selectedDestination.updatedMinutesAgo !== null && selectedDestination.updatedMinutesAgo >= 0 ? `updated ${selectedDestination.updatedMinutesAgo} min ago` : "freshness unavailable"}</em>
           : <em>Shelter status unverified; confirm with the shelter desk before movement.</em>}</span></div>
         {selectedDestination?.source === "ROUTE_SNAPSHOT" && <p className="route-shelter-note">Status comes from the route’s bound shelter snapshot; recheck it before dispatch.</p>}
         {selectedDestination?.warnings.map((warning) => <p key={warning} className="route-shelter-note"><AlertTriangle />Shelter warning: {warning.toLowerCase().replaceAll("_", " ")}</p>)}
         <h4>Why this route</h4><ul>{selected.reasons.map((reason) => <li key={reason}><CheckCircle2 />{reason}</li>)}</ul>
         <dl className="detail-list"><div><dt>Model version</dt><dd>{selected.model_version}</dd></div><div><dt>Evidence version</dt><dd>{selected.evidence_version}</dd></div><div><dt>Distance</dt><dd>{selected.distance_km} km</dd></div><div><dt>Estimated travel</dt><dd>{selected.duration_min} min</dd></div></dl>
-        <Button variant="outline" disabled title="Field dispatch requires an approved external gateway and is unavailable in this deterministic demo." aria-describedby="field-dispatch-boundary"><Route />Send to field team</Button>
-        <p id="field-dispatch-boundary" className="workflow-boundary">Field dispatch is unavailable in demo mode. Exported or displayed routes are lower-risk estimates only and must not be treated as official instructions.</p>
+        <Button variant="outline" disabled title={mode === "demo" ? "Field dispatch requires an approved external gateway and is unavailable in this deterministic demo." : "Field dispatch requires an approved external gateway that is not connected for this authority session."} aria-describedby="field-dispatch-boundary"><Route />Send to field team</Button>
+        <p id="field-dispatch-boundary" className="workflow-boundary">{mode === "demo" ? "Field dispatch is unavailable in demo mode." : "Field dispatch is unavailable for this authority session."} Exported or displayed routes are lower-risk estimates only and must not be treated as official instructions.</p>
       </aside>
     </div>
     <DecisionDialog open={dialogOpen} title="Approve evacuation guidance" description={`Broad evacuation guidance requires two distinct authorized people. Requester: ${action?.requestedBy ?? "unavailable"}. This decision binds approval version ${action?.approvalVersion ?? "unavailable"}, the exact route, audience, evidence, and model versions.`} confirmLabel="Approve guidance" onClose={() => setDialogOpen(false)} onConfirm={(note) => action ? decideAction(action.id, "APPROVE", note) : false} />
   </div>;
 }
 
-export function NoRouteState({ reason }: { reason?: string } = {}) {
+export function NoRouteState({
+  reason,
+  showDemoStagingPoint = true,
+}: {
+  reason?: string;
+  showDemoStagingPoint?: boolean;
+} = {}) {
   const [showStagingPoint, setShowStagingPoint] = useState(false);
   return <div className="page-workspace">
     <ViewHeader title="Evacuation Routing" description="No compliant lower-risk route is currently available." />
     <section className="no-route-state">
       <AlertTriangle />
       <h3>No compliant route available</h3>
-      <p>{reason ?? "Do not infer that unlisted roads are safe. Hold at the designated staging point and await a field update."}</p>
-      <Button variant="outline" aria-expanded={showStagingPoint} aria-controls="staging-point-details" onClick={() => setShowStagingPoint((visible) => !visible)}><MapPin />{showStagingPoint ? "Hide staging point" : "View staging point"}</Button>
-      {showStagingPoint && <div id="staging-point-details" className="staging-point-details" role="status"><strong>Aluva Fire &amp; Rescue Station forecourt</strong><span>Staging reference STG-ALV-01 · confirm local access with field command before moving.</span></div>}
+      <p>{reason ?? (showDemoStagingPoint
+        ? "Do not infer that unlisted roads are safe. Hold at the designated staging point and await a field update."
+        : "Do not infer that unlisted roads are safe. No authoritative staging point was supplied; await responder direction.")}</p>
+      {showDemoStagingPoint ? <Button variant="outline" aria-expanded={showStagingPoint} aria-controls="staging-point-details" onClick={() => setShowStagingPoint((visible) => !visible)}><MapPin />{showStagingPoint ? "Hide staging point" : "View staging point"}</Button> : null}
+      {showDemoStagingPoint && showStagingPoint && <div id="staging-point-details" className="staging-point-details" role="status"><strong>Aluva Fire &amp; Rescue Station forecourt</strong><span>Staging reference STG-ALV-01 · confirm local access with field command before moving.</span></div>}
     </section>
   </div>;
 }

@@ -1,20 +1,32 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-export default defineConfig(({ command }) => {
+import { firebaseBuildMetadataPlugin } from "../../scripts/firebase-build-metadata.mjs";
+
+const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
+
+export default defineConfig(({ command, mode }) => {
   // CloudFront publishes this application below /field/. Keep the development
   // server at / so existing local and Playwright workflows remain convenient.
   const appBase = command === "build" ? "/field/" : "/";
+  const environment = loadEnv(mode, repositoryRoot, "");
 
   return {
     base: appBase,
+    envDir: repositoryRoot,
     root: fileURLToPath(new URL(".", import.meta.url)),
     plugins: [
       react(),
       tailwindcss(),
+      firebaseBuildMetadataPlugin({
+        application: "field",
+        apiConfigKey: "VITE_API_BASE_URL",
+        environment,
+        repositoryRoot,
+      }),
       VitePWA({
         registerType: "autoUpdate",
         scope: appBase,
@@ -58,25 +70,16 @@ export default defineConfig(({ command }) => {
           ]
         },
         workbox: {
+          // Imported activation code deletes historical API response caches
+          // before this worker takes control, including on offline and
+          // sign-in-required cold starts.
+          importScripts: [`${appBase}service-worker-purge.js`],
           navigateFallback: `${appBase}index.html`,
+          // API requests are always network-only. The denylist also prevents a
+          // future root-scoped worker from treating an API navigation as the
+          // offline application shell.
+          navigateFallbackDenylist: [/^\/api(?:\/|$)/],
           globPatterns: ["**/*.{js,css,html,svg,woff2}"],
-          runtimeCaching: [
-            {
-              // Only the public alert feed may be retained for last-known offline
-              // awareness. Reporter-scoped media, receipts, routes, health and
-              // commands always cross the network and are never cached.
-              urlPattern: ({ url, request, sameOrigin }) => sameOrigin
-                && request.method === "GET"
-                && url.pathname === "/api/v1/alerts",
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "field-public-alerts-v2",
-                networkTimeoutSeconds: 3,
-                cacheableResponse: { statuses: [200] },
-                expiration: { maxEntries: 8, maxAgeSeconds: 3600 }
-              }
-            }
-          ]
         }
       })
     ],

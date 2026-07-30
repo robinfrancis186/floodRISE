@@ -1,0 +1,43 @@
+{
+  "format": 1,
+  "targets": {
+    "demo": {
+      "projectId": "replace-with-floodrise-demo-project-id",
+      "authDomain": "replace-with-floodrise-demo-auth-domain",
+      "apiBase": "/api/v1",
+      "applications": {
+        "ops": {
+          "appId": "replace-with-floodrise-demo-ops-app-id",
+          "apiKey": "replace-with-floodrise-demo-ops-api-key",
+          "appCheckSiteKey": "replace-with-floodrise-demo-ops-app-check-site-key",
+          "authProviderId": "replace-with-floodrise-demo-ops-oidc-provider-id"
+        },
+        "field": {
+          "appId": "replace-with-floodrise-demo-field-app-id",
+          "apiKey": "replace-with-floodrise-demo-field-api-key",
+          "appCheckSiteKey": "replace-with-floodrise-demo-field-app-check-site-key",
+          "authProviderId": "replace-with-floodrise-demo-field-oidc-provider-id"
+        }
+      }
+    },
+    "live": {
+      "projectId": "replace-with-floodrise-live-project-id",
+      "authDomain": "replace-with-floodrise-live-auth-domain",
+      "apiBase": "/api/v1",
+      "applications": {
+        "ops": {
+          "appId": "replace-with-floodrise-live-ops-app-id",
+          "apiKey": "replace-with-floodrise-live-ops-api-key",
+          "appCheckSiteKey": "replace-with-floodrise-live-ops-app-check-site-key",
+          "authProviderId": "replace-with-floodrise-live-ops-oidc-provider-id"
+        },
+        "field": {
+          "appId": "replace-with-floodrise-live-field-app-id",
+          "apiKey": "replace-with-floodrise-live-field-api-key",
+          "appCheckSiteKey": "replace-with-floodrise-live-field-app-check-site-key",
+          "authProviderId": "replace-with-floodrise-live-field-oidc-provider-id"
+        }
+      }
+    }
+  }
+}

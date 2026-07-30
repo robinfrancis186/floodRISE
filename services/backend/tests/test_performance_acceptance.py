@@ -96,8 +96,16 @@ def test_local_judging_path_meets_the_published_latency_thresholds() -> None:
             assert status_code == 201
             simulation_samples.append(elapsed)
 
-        assert client.get("/health").json()["audit_chain_valid"] is True
-        assert "floodrise_corroboration_seconds_count 1.0" in client.get("/metrics").text
+        assert database.verify_audit_chain() is True
+        metrics = client.get(
+            "/metrics",
+            headers={
+                "X-Demo-User": "performance-auditor",
+                "X-Demo-Role": "auditor",
+            },
+        )
+        assert metrics.status_code == 200
+        assert "floodrise_corroboration_seconds_count 1.0" in metrics.text
 
     database.engine.dispose()
 

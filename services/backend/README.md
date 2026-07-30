@@ -41,6 +41,13 @@ only allow-listed roles from `cognito:groups`, `roles`, or `custom:roles`.
 Static JWKS JSON is supported for isolated tests; production should use the
 issuer's HTTPS JWKS endpoint.
 
+When Firebase App Check is enabled, a separate verifier also requires a valid
+`X-Firebase-AppCheck` token for every API mutation and the SSE handshake. It
+pins Firebase's RS256/JWT contract, project number, audience, expiry, and
+allow-listed web app IDs. App Check is only an application-integrity signal: it
+never grants a user identity, role, or approval authority, and OIDC remains
+mandatory.
+
 This is currently a bearer-token resource-server boundary. The web clients do
 not implement authorization-code/PKCE, token exchange/refresh, logout, or a
 secure HttpOnly session, and the API does not mint a session cookie. The
@@ -50,6 +57,8 @@ deployed profile; it is not evidence that server-side sessions exist.
 ```bash
 FLOODRISE_ENV=production
 FLOODRISE_DEMO_MODE=false
+FLOODRISE_DATABASE_URL=postgresql+psycopg://.../floodrise?sslmode=require
+FLOODRISE_DATABASE_ALLOWED_HOST=PRIVATE_DATABASE_HOST
 FLOODRISE_OIDC_ISSUER=https://cognito-idp.ap-south-1.amazonaws.com/ap-south-1_POOL_ID
 FLOODRISE_OIDC_AUDIENCE=COGNITO_APP_CLIENT_ID
 FLOODRISE_OIDC_JWKS_URL=https://cognito-idp.ap-south-1.amazonaws.com/ap-south-1_POOL_ID/.well-known/jwks.json
@@ -64,9 +73,11 @@ customization must emit the configured `amr`/`acr` or custom evidence claims;
 absence fails closed. Identity-administrator tokens cannot also carry an
 operational role.
 
-Set `FLOODRISE_DATABASE_URL=postgresql+psycopg://...` for PostgreSQL. Mutations
-store versioned documents and atomically append hash-chained audit and durable
-outbox records.
+Staging and production fail startup unless `FLOODRISE_DATABASE_URL` uses
+PostgreSQL, sets `sslmode=require`, `verify-ca`, or `verify-full`, and its parsed
+hostname exactly matches `FLOODRISE_DATABASE_ALLOWED_HOST`. Mutations store
+versioned documents and atomically append hash-chained audit and durable outbox
+records.
 
 ## Safety contract
 
@@ -105,6 +116,28 @@ retains quarantine in the configured blob adapter, and blocks evidence
 attachment. The in-memory adapter must be replaced by private object storage,
 an approved scanner, and deployed retention/deletion jobs before non-demo media
 is enabled.
+
+`app.media_gcs.GCSPrivateMediaBlobStore` implements the private GCS side of that
+boundary with immutable generation-bound objects, separate quarantine/clean
+buckets, checksums, bounded multi-page retention sweeps, and no public URLs.
+The terminal sanitized/rejected database transition also creates a durable
+private raw-quarantine cleanup record. Deletion is generation-bound, attempted
+after commit, and retried idempotently by completion replay or metadata polling;
+a cleanup outage cannot turn an already committed terminal result into an
+ambiguous failure. General expiry sweeps remain best-effort on user requests,
+with bucket lifecycle as a maximum-retention fallback. The adapter remains
+intentionally unselected until a production credential adapter and an
+independently approved malware scanner are configured.
+
+`/metrics` requires an authenticated `auditor`, `engineer`, or
+`incident_commander` before database-backed gauges are refreshed.
+
+`app.gcp_job` is the container command used by the Google Cloud simulation job.
+`app.cloud_run_jobs` and `app.notifications` provide fail-closed, injected
+Cloud Run Jobs and FCM HTTP v1 adapters. They do not bypass the transactional
+outbox: live integration must use persistent deduplication and delivery-attempt
+records, and an alert may be marked delivered only after provider acceptance.
+The default demo continues to use only its token-free fake notification sink.
 
 ## Verify
 

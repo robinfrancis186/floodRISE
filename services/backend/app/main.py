@@ -16,7 +16,14 @@ from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Respons
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import SQLAlchemyError
 
+from .app_check import (
+    APP_CHECK_HEADER,
+    MUTATING_METHODS,
+    FirebaseAppCheckVerifier,
+    require_firebase_app_check,
+)
 from .auth import (
     OIDCVerifier,
     Principal,
@@ -27,7 +34,13 @@ from .auth import (
 from .config import Settings, get_settings
 from .database import Database, canonical_json
 from .domain import FloodRiseService, iso_utc
-from .errors import AppError, NotFoundError, install_exception_handlers, problem_openapi_response
+from .errors import (
+    AppError,
+    NotFoundError,
+    app_error_handler,
+    install_exception_handlers,
+    problem_openapi_response,
+)
 from .media import MAX_MEDIA_BYTES, DemoCleanScanner, MediaService, UnavailableScanner
 from .metrics import FloodRiseMetrics
 from .schemas import (
@@ -209,6 +222,7 @@ def create_app(
     )
     application.state.settings = runtime
     application.state.oidc_verifier = OIDCVerifier(runtime)
+    application.state.firebase_app_check_verifier = FirebaseAppCheckVerifier(runtime)
     application.state.database = target_database
     application.state.service = target_service
     application.state.media_service = target_media_service
@@ -216,23 +230,18 @@ def create_app(
     application.state.sse_connection_lock = Lock()
     application.state.sse_connection_count = 0
     application.state.sse_principal_connections = {}
-    application.add_middleware(
-        CORSMiddleware,
-        allow_origins=runtime.allowed_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
-        allow_headers=[
-            "Authorization",
-            "Content-Type",
-            "Idempotency-Key",
-            "Last-Event-ID",
-            "X-Checksum-SHA256",
-            "X-Request-ID",
-        ]
-        + (["X-Demo-Role", "X-Demo-User"] if runtime.allow_demo_headers else []),
-        expose_headers=["X-Request-ID", "X-floodRISE-Data-Label"],
-    )
     install_exception_handlers(application)
+
+    @application.middleware("http")
+    async def firebase_app_check_boundary(request: Request, call_next: Any) -> Response:
+        try:
+            await require_firebase_app_check(
+                request,
+                token=request.headers.get("X-Firebase-AppCheck"),
+            )
+        except AppError as exc:
+            return await app_error_handler(request, exc)
+        return await call_next(request)
 
     @application.middleware("http")
     async def request_context(request: Request, call_next: Any) -> Response:
@@ -245,6 +254,27 @@ def create_app(
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
+    # Starlette makes the most recently registered middleware outermost. CORS
+    # must wrap the security boundary so allowed browser origins can read
+    # fail-closed App Check responses and preflight never reaches a route.
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=runtime.allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "Last-Event-ID",
+            "X-Checksum-SHA256",
+            "X-Firebase-AppCheck",
+            "X-Request-ID",
+        ]
+        + (["X-Demo-Role", "X-Demo-User"] if runtime.allow_demo_headers else []),
+        expose_headers=["X-Request-ID", "X-floodRISE-Data-Label"],
+    )
+
     router = APIRouter(prefix=runtime.api_prefix, responses=problem_openapi_response())
 
     def service(request: Request) -> FloodRiseService:
@@ -255,22 +285,54 @@ def create_app(
 
     @application.get("/health", tags=["system"])
     @router.get("/health", tags=["system"])
-    async def health(request: Request) -> dict[str, Any]:
-        database_value: Database = request.app.state.database
+    async def health() -> dict[str, Any]:
         return {
             "status": "ok",
             "service": "floodrise-backend",
             "version": application.version,
             "environment": runtime.environment,
-            "database": "reachable" if not database_value.is_empty() else "empty",
-            "audit_chain_valid": database_value.verify_audit_chain(),
             "demo_mode": runtime.is_demo,
             "data_label": "DEMO DATA" if runtime.is_demo else "LIVE",
             "time": iso_utc(datetime.now(UTC)),
         }
 
+    @application.get("/ready", tags=["system"])
+    @router.get("/ready", tags=["system"])
+    async def readiness(request: Request) -> dict[str, Any]:
+        database_value: Database = request.app.state.database
+        try:
+            database_ready = await to_thread(database_value.readiness_check)
+        except SQLAlchemyError as exc:
+            raise AppError(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                title="Service not ready",
+                detail="The authoritative database is not available for bounded readiness checks.",
+                code="SERVICE_NOT_READY",
+                headers={"Retry-After": "5"},
+            ) from exc
+        if not database_ready:
+            raise AppError(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                title="Service not ready",
+                detail="The authoritative database schema is not initialized.",
+                code="SERVICE_NOT_READY",
+                headers={"Retry-After": "5"},
+            )
+        return {
+            "status": "ready",
+            "service": "floodrise-backend",
+            "environment": runtime.environment,
+            "database": "reachable",
+            "audit_chain_head": "initialized",
+            "time": iso_utc(datetime.now(UTC)),
+        }
+
     @application.get("/metrics", include_in_schema=False)
-    async def metrics(request: Request) -> Response:
+    async def metrics(
+        request: Request,
+        principal: PrincipalDependency,
+    ) -> Response:
+        ensure_role(principal, "auditor", "engineer", "incident_commander")
         database_value: Database = request.app.state.database
         metrics_value: FloodRiseMetrics = request.app.state.metrics
         payload = metrics_value.render(database_value, service(request))
@@ -868,6 +930,50 @@ def create_app(
         }
 
     application.include_router(router)
+
+    default_openapi = application.openapi
+
+    def app_check_openapi() -> dict[str, Any]:
+        if application.openapi_schema:
+            return application.openapi_schema
+        schema = default_openapi()
+        for path, path_item in schema.get("paths", {}).items():
+            if not isinstance(path_item, dict):
+                continue
+            for method, operation in path_item.items():
+                if not isinstance(operation, dict):
+                    continue
+                upper_method = method.upper()
+                protected = upper_method in MUTATING_METHODS or (
+                    upper_method == "GET" and path.rstrip("/") == f"{runtime.api_prefix}/events"
+                )
+                if not protected:
+                    continue
+                parameters = operation.setdefault("parameters", [])
+                if any(
+                    parameter.get("in") == "header"
+                    and str(parameter.get("name", "")).lower() == APP_CHECK_HEADER.lower()
+                    for parameter in parameters
+                ):
+                    continue
+                parameters.append(
+                    {
+                        "name": APP_CHECK_HEADER,
+                        "in": "header",
+                        "required": True,
+                        "description": (
+                            "Firebase App Check JWT required by the production browser "
+                            "contract. The isolated local demo may run with enforcement "
+                            "disabled. This verifies the calling app and does not grant "
+                            "a user identity or role."
+                        ),
+                        "schema": {"type": "string"},
+                    }
+                )
+        application.openapi_schema = schema
+        return schema
+
+    application.openapi = app_check_openapi  # type: ignore[method-assign]
     return application
 
 
