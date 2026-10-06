@@ -1,7 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { parseBasemapTileUrl } from "./basemap";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { configuredBasemapTileUrl, parseBasemapTileUrl } from "./basemap";
+import { createMapStyle, initialViews } from "./style";
 
-describe("optional self-hosted basemap", () => {
+describe("OpenStreetMap basemap", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("uses direct OSM tiles by default, allows an override, and supports explicit offline mode", () => {
+    vi.stubEnv("VITE_OSM_TILE_URL", undefined);
+    expect(configuredBasemapTileUrl()).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+    vi.stubEnv("VITE_OSM_TILE_URL", "https://tiles.example.in/{z}/{x}/{y}.png");
+    expect(configuredBasemapTileUrl()).toBe("https://tiles.example.in/{z}/{x}/{y}.png");
+    vi.stubEnv("VITE_OSM_TILE_URL", "");
+    expect(configuredBasemapTileUrl()).toBeNull();
+  });
   it("accepts HTTPS and loopback tile templates", () => {
     expect(parseBasemapTileUrl(" https://tiles.example.in/osm/{z}/{x}/{y}.png ")).toBe(
       "https://tiles.example.in/osm/{z}/{x}/{y}.png",
@@ -16,11 +27,8 @@ describe("optional self-hosted basemap", () => {
     }
   });
 
-  it("refuses public OSM tile servers, plain HTTP hosts, credentials, and other schemes", () => {
+  it("refuses plain HTTP hosts, credentials, and other schemes", () => {
     for (const value of [
-      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      "https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
       "http://tiles.example.in/{z}/{x}/{y}.png",
       "https://user:secret@tiles.example.in/{z}/{x}/{y}.png",
       "file:///tiles/{z}/{x}/{y}.png",
@@ -28,4 +36,20 @@ describe("optional self-hosted basemap", () => {
       expect(parseBasemapTileUrl(value), value).toBeNull();
     }
   });
+});
+
+
+it("keeps street details visible under flood overlays and permits building-level zoom", () => {
+  const style = createMapStyle("operations", "3h", "https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+  const layer = (id: string) => style.layers.find((item) => item.id === id)!;
+  expect(layer("basemap")).toMatchObject({ paint: { "raster-opacity": 1 } });
+  expect(layer("ward-fill")).toMatchObject({ paint: { "fill-opacity": 0 } });
+  for (const id of ["road-line", "road-casing", "marsh-fill", "river-line", "river-casing"]) {
+    expect(layer(id)).toMatchObject({ layout: { visibility: "none" } });
+  }
+  expect(layer("predicted-flood-3h-fill")).toMatchObject({ layout: { visibility: "visible" } });
+  expect(layer("current-flood-fill")).toMatchObject({ paint: { "fill-opacity": 0.3 } });
+  for (const view of Object.values(initialViews)) expect(view.maxZoom).toBe(19);
+  expect(createMapStyle("field", "now").layers.find((item) => item.id === "road-line"))
+    .toMatchObject({ layout: { visibility: "visible" } });
 });

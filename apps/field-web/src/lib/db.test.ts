@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   clearDemoFieldData,
   clearFieldDatabaseForTests,
+  configureFieldAccount,
   decryptQueueRecord,
   enqueueReport,
   fieldDb,
@@ -79,5 +80,19 @@ describe("encrypted offline queue", () => {
     await expect(getQueueSummary()).resolves.toMatchObject({ count: 0, bytes: 0 });
     await expect(fieldDb.receipts.count()).resolves.toBe(0);
     await expect(fieldDb.keys.count()).resolves.toBe(0);
+  });
+
+  it("isolates saved evidence and keys between signed-in accounts", async () => {
+    await configureFieldAccount("account-a");
+    await clearFieldDatabaseForTests();
+    await enqueueReport(draft(), now);
+    await configureFieldAccount("account-b");
+    await clearFieldDatabaseForTests();
+    await expect(getQueueSummary()).resolves.toMatchObject({ count: 0 });
+    await expect(fieldDb.keys.count()).resolves.toBe(0);
+    await fieldDb.delete();
+    await configureFieldAccount("account-a");
+    await expect(listQueuedReports()).resolves.toMatchObject([{ draft: draft() }]);
+    await fieldDb.delete();
   });
 });

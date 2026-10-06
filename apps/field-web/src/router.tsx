@@ -23,7 +23,7 @@ const receiptRoute = createRoute({ getParentRoute: () => rootRoute, path: "/rece
 
 const routeTree = rootRoute.addChildren([indexRoute, reportRoute, demoResetRoute, queueRoute, alertsRoute, routeRoute, helplinesRoute, receiptRoute]);
 
-export const router = createRouter({ routeTree, defaultPreload: "intent", scrollRestoration: true });
+export const router = createRouter({ basepath: import.meta.env.BASE_URL, routeTree, defaultPreload: "intent", scrollRestoration: true });
 
 // This safety screen must remain navigable after connectivity drops. Keep it
 // code-split for the initial parse, but prewarm the module while the shell is

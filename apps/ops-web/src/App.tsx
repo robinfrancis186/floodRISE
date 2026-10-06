@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
-import { AppShell } from "./components/app-shell";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { viewConfig, AppShell } from "./components/app-shell";
 import type { ViewId } from "./lib/models";
 import { OperationsProvider } from "./state/operations-context";
-import { AuditView } from "./views/audit-view";
-import { EvacuationView } from "./views/evacuation-view";
-import { FloodSignalView } from "./views/flood-signal-view";
-import { IncidentsView } from "./views/incidents-view";
+const AuditView = lazy(() => import("./views/audit-view").then((module) => ({ default: module.AuditView })));
+const EvacuationView = lazy(() => import("./views/evacuation-view").then((module) => ({ default: module.EvacuationView })));
+const FloodSignalView = lazy(() => import("./views/flood-signal-view").then((module) => ({ default: module.FloodSignalView })));
+const IncidentsView = lazy(() => import("./views/incidents-view").then((module) => ({ default: module.IncidentsView })));
 import { LiveMapView } from "./views/live-map-view";
-import { ResilienceView } from "./views/resilience-view";
-import { SheltersView } from "./views/shelters-view";
-import { SourceHealthView } from "./views/source-health-view";
+const ResilienceView = lazy(() => import("./views/resilience-view").then((module) => ({ default: module.ResilienceView })));
+const SheltersView = lazy(() => import("./views/shelters-view").then((module) => ({ default: module.SheltersView })));
+const SourceHealthView = lazy(() => import("./views/source-health-view").then((module) => ({ default: module.SourceHealthView })));
 
 const pathByView: Record<ViewId, string> = {
   live: "/",
@@ -35,21 +35,24 @@ function RoutedApp() {
     return () => window.removeEventListener("popstate", handler);
   }, []);
 
+  useEffect(() => { document.title = `floodRISE Operations · ${viewConfig[view].title}`; }, [view]);
+
   const navigate = (next: ViewId) => {
+    if (next === view) return;
     window.history.pushState({}, "", pathByView[next]);
     setView(next);
   };
 
   const content = view === "live" ? <LiveMapView onNavigate={navigate} />
     : view === "signals" ? <FloodSignalView />
-      : view === "incidents" ? <IncidentsView />
-        : view === "evacuation" ? <EvacuationView />
+      : view === "incidents" ? <IncidentsView onNavigate={navigate} />
+      : view === "evacuation" ? <EvacuationView onNavigate={navigate} />
           : view === "shelters" ? <SheltersView />
             : view === "resilience" ? <ResilienceView />
               : view === "sources" ? <SourceHealthView />
                 : <AuditView />;
 
-  return <AppShell view={view} onNavigate={navigate}>{content}</AppShell>;
+  return <AppShell view={view} onNavigate={navigate}><Suspense fallback={<div className="fr-recovery" role="status">Loading view…</div>}>{content}</Suspense></AppShell>;
 }
 
 export function App() {

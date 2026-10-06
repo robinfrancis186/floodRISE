@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import { I18nProvider } from "./lib/i18n";
 import { router } from "./router";
 import "./styles.css";
+import { ErrorBoundary, SessionGate } from "@floodrise/ui";
+import { configureFieldAccount } from "./lib/db";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -16,7 +18,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <RouterProvider router={router} />
+        <ErrorBoundary><SessionGate onAuthenticated={configureFieldAccount}><RouterProvider router={router} /></SessionGate></ErrorBoundary>
       </I18nProvider>
     </QueryClientProvider>
   </StrictMode>

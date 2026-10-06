@@ -352,7 +352,7 @@ function MarkerStatus({ state }: { state: LoadState }): ReactNode {
     <div className={`fr-map-load-state fr-map-load-state--${state}`} role={state === "error" ? "alert" : "status"}>
       {state === "error"
         ? "Interactive map unavailable. The synchronized feature summary remains available below."
-        : "Loading the offline Chennai map…"}
+        : "Loading the Chennai map…"}
     </div>
   );
 }
@@ -368,6 +368,8 @@ export function FloodMap({
   showSummary = true,
   showLegend = true,
   showHorizonControl = true,
+  showDemoLabel = true,
+  freshnessLabel,
   interactive = true,
   ariaLabel,
 }: FloodMapProps) {
@@ -382,6 +384,7 @@ export function FloodMap({
   const [internalSelection, setInternalSelection] = useState<FloodMapSelection | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [mapEpoch, setMapEpoch] = useState(0);
+  const [basemapActive, setBasemapActive] = useState(Boolean(configuredBasemapTileUrl()));
 
   const effectiveHorizon = horizon ?? internalHorizon;
   const activeFeatureId = selectedFeatureId !== undefined
@@ -416,6 +419,7 @@ export function FloodMap({
     let createdMap: MapLibreMap | null = null;
     setLoadState("loading");
     setMapEpoch(0);
+    setBasemapActive(Boolean(configuredBasemapTileUrl()));
 
     const initialize = async () => {
       try {
@@ -448,6 +452,7 @@ export function FloodMap({
 
         if (interactive) {
           map.addControl(new mapLibrary.NavigationControl({ showCompass: false }), "bottom-right");
+          map.addControl(new mapLibrary.FullscreenControl({ container: container.parentElement ?? container }), "bottom-right");
           map.addControl(new mapLibrary.ScaleControl({ maxWidth: 90, unit: "metric" }), "bottom-left");
         }
 
@@ -474,6 +479,20 @@ export function FloodMap({
         });
 
         map.on("error", (event) => {
+          if ("sourceId" in event && event.sourceId === "basemap") {
+            if (!map.getLayer("basemap")) return;
+            map.removeLayer("basemap");
+            map.removeSource("basemap");
+            // Keep the packaged map and operational overlays usable if street tiles fail.
+            for (const id of ["marsh-fill", "river-casing", "river-line", "road-casing", "road-line"]) {
+              map.setLayoutProperty(id, "visibility", "visible");
+            }
+            map.setPaintProperty("ward-fill", "fill-opacity", 0.9);
+            map.setPaintProperty("ward-line", "line-opacity", 0.82);
+            map.setPaintProperty("current-flood-fill", "fill-opacity", 0.55);
+            setBasemapActive(false);
+            return;
+          }
           if (!map.loaded() && event.error) setLoadState("error");
         });
       } catch {
@@ -524,7 +543,7 @@ export function FloodMap({
       nextMarkers.push(marker);
     }
 
-    if (variant !== "field") {
+    if (variant !== "field" && !basemapActive) {
       for (const feature of chennaiMapData.places.features) {
         const marker = new mapLibrary.Marker({ element: createPlaceLabel(feature), anchor: "center" })
           .setLngLat(feature.geometry.coordinates)
@@ -543,7 +562,7 @@ export function FloodMap({
       if (markersRef.current === nextMarkers) markersRef.current = [];
     };
     // mapEpoch signals that the current style is fully loaded and can receive DOM markers.
-  }, [activeFeatureId, loadState, mapEpoch, variant]);
+  }, [activeFeatureId, basemapActive, loadState, mapEpoch, variant]);
 
   useEffect(() => {
     const observer = typeof ResizeObserver === "undefined"
@@ -586,14 +605,16 @@ export function FloodMap({
 
         <MarkerStatus state={loadState} />
 
-        <div className="fr-map-demo-label" role="note">
-          DEMO DATA <span aria-hidden="true">•</span> NOT LIVE
-        </div>
+        {showDemoLabel ? (
+          <div className="fr-map-demo-label" role="note">
+            DEMO DATA <span aria-hidden="true">•</span> NOT LIVE
+          </div>
+        ) : null}
 
         {showLegend ? (
-          <aside className="fr-map-legend" aria-label="Map legend">
+          <aside className="fr-map-legend" id={`${descriptionId}-legend`} aria-label="Map key">
             <div className="fr-map-legend__title">
-              {variant === "resilience" ? "Audit layers" : "Map layers"}
+              {variant === "resilience" ? "Audit key" : "Map key"}
             </div>
             <ul>
               {items.map((item) => (
@@ -623,11 +644,11 @@ export function FloodMap({
         ) : null}
 
         <div className="fr-map-freshness">
-          {variant === "resilience" ? "Audit compiled 18 Jul 2026" : "Scenario time 19:40 IST"}
+          {freshnessLabel ?? (variant === "resilience" ? "Audit compiled 18 Jul 2026" : "Scenario time 19:40 IST")}
         </div>
 
         <div className="fr-map-attribution" role="note">
-          {configuredBasemapTileUrl() ? "Map data" : "Road data"} ©{" "}
+          {basemapActive ? "Street map" : "Offline map"} ©{" "}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>{" "}

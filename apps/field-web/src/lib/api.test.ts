@@ -327,3 +327,26 @@ describe("nearby OpenStreetMap hospitals", () => {
     expect(await fetchNearbyHospitals()).toBeNull();
   });
 });
+
+
+it("never forwards evidence or authentication headers to a foreign media grant origin", async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+    upload_id: "upload-unsafe", status: "AWAITING_UPLOAD",
+    upload_url: "https://untrusted.example/evidence",
+    completion_url: "https://untrusted.example/complete"
+  }, 201)).mockResolvedValueOnce(jsonResponse({ upload_id: "upload-unsafe", status: "AWAITING_UPLOAD" }));
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(submitReport(reportDraft())).rejects.toMatchObject({ retryable: false });
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls.every(([url]) => !String(url).startsWith("https://untrusted.example"))).toBe(true);
+});
+
+
+it("keeps evidence retryable when the deployment has no API gateway", async () => {
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("Not Found", { status: 404 })));
+  await expect(submitReport(reportDraft(false))).rejects.toMatchObject({ retryable: true });
+  await expect(submitReport(reportDraft(true))).rejects.toMatchObject({ retryable: true });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ detail: "Unknown incident" }, 404)));
+  await expect(submitReport(reportDraft(false))).rejects.toMatchObject({ retryable: false });
+});

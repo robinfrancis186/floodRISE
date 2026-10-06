@@ -1,0 +1,85 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm build:release",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/field",
+      "destination": "/field/index.html"
+    },
+    {
+      "source": "/field/:path*",
+      "destination": "/field/index.html"
+    },
+    {
+      "source": "/signals",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/incidents",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/evacuation",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/shelters",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/resilience",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/sources",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/audit",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(self)"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000; includeSubDomains"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        }
+      ]
+    },
+    {
+      "source": "/field/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ]
+}

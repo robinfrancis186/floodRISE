@@ -46,7 +46,7 @@ jobs:
         run: pnpm test:contracts
       - run: pnpm typecheck
       - run: pnpm test:web
-      - run: pnpm build
+      - run: pnpm build:release
 
   backend:
     name: Backend lint and tests

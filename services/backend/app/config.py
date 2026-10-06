@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     object_store_endpoint: str = "http://localhost:9000"
     object_store_bucket: str = "floodrise-demo"
     object_store_region: str = "ap-south-1"
+    media_store: Literal["memory", "s3"] = "memory"
 
     sse_replay_limit: int = Field(default=1_000, ge=10, le=10_000)
     report_queue_limit: int = Field(default=100, ge=1, le=1_000)
@@ -133,6 +134,23 @@ class Settings(BaseSettings):
                 raise ValueError("oidc_jwks_url must use HTTPS in staging and production")
             if self.session_secret.get_secret_value() == "demo-only-change-before-production":
                 raise ValueError("session_secret must be changed in staging and production")
+        if self.env == "production":
+            if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+                raise ValueError("production requires a durable PostgreSQL database")
+            if self.debug:
+                raise ValueError("debug must be false in production")
+            if not self.allowed_origins or any(
+                not origin.startswith("https://") for origin in self.allowed_origins
+            ):
+                raise ValueError("production requires explicit HTTPS browser origins")
+            if (
+                self.media_store != "s3"
+                or not self.object_store_endpoint.startswith("https://")
+                or self.object_store_bucket == "floodrise-demo"
+            ):
+                raise ValueError("production requires a private S3-compatible evidence store")
+            if not self.clamav_host:
+                raise ValueError("production requires an evidence malware scanner")
         if not self.oidc_algorithms or any(
             algorithm.lower() == "none" for algorithm in self.oidc_algorithms
         ):

@@ -9,6 +9,7 @@ import {
   CloudRain,
   FileCheck2,
   GitCompareArrows,
+  Layers3,
   MapPin,
   Navigation,
   Route,
@@ -22,12 +23,16 @@ import type { ViewId } from "../lib/models";
 import { useOperations } from "../state/operations-context";
 
 export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void }) {
-  const { snapshot, horizon, setHorizon, selectedSignalId, setSelectedSignalId, decideAction, role } = useOperations();
+  const { snapshot, connected, horizon, setHorizon, selectedSignalId, setSelectedSignalId, requestApproval, decideAction, role } = useOperations();
   const selected = snapshot.signals.find((signal) => signal.id === selectedSignalId) ?? snapshot.signals[0];
   const action = snapshot.actions[0];
   const reviewable = action.status === "PENDING_APPROVAL" && Boolean(action.approvalId && action.approvalVersion);
   const [decision, setDecision] = useState<"APPROVE" | "MODIFY" | "REJECT" | null>(null);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const canRequest = connected && action.status === "RECOMMENDED" && !action.approvalId && ["Incident commander", "Field responder", "Resilience engineer"].includes(role);
   const [listOpen, setListOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
+  const scenarioTime = new Date(snapshot.scenarioTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
   const confidenceReason = useMemo(() => [
     { icon: CloudRain, label: "Rainfall increase", value: "118 mm (3h)" },
     { icon: GitCompareArrows, label: "Rapid impact estimate", value: "Higher runoff" },
@@ -44,34 +49,38 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
     <div className="workspace live-workspace">
       <div className="change-alert" role="status">
         <AlertTriangle aria-hidden />
-        <strong>Flood extent increased near Velachery</strong>
-        <span>•</span><span>{selected.independentReports} independent reports</span><span>•</span><span>2 routes affected</span>
-        <Button size="sm" onClick={() => onNavigate("signals")}>Review evidence</Button>
+        <span className="change-alert-label">Replay update</span>
+        <strong>Velachery flood estimate updated</strong>
+        <span className="change-alert-detail">{selected.independentReports} independent reports · scenario {scenarioTime} IST</span>
+        <Button size="sm" onClick={() => onNavigate("signals")}>Review</Button>
       </div>
 
-      <section className="map-pane live-map-pane" aria-label="Flood impact map">
-        <div className="map-floating-heading">
-          <span><CircleDot aria-hidden />Current + predicted flooding</span>
-          <StatusPill tone="info">Rapid impact estimate</StatusPill>
+      <div className="map-toolbar" role="group" aria-label="Flood map controls">
+        <span className="map-toolbar-title"><CircleDot aria-hidden />Flood estimate</span>
+        <div className="map-horizon-inline" role="group" aria-label="Forecast horizon">
+          {(["now", "1h", "3h"] as const).map((value) => <button key={value} type="button" aria-pressed={horizon === value} onClick={() => setHorizon(value)}>{value === "now" ? "Now" : `+${value}`}</button>)}
         </div>
+        <Button className="map-key-toggle" variant="outline" size="sm" aria-expanded={legendOpen} onClick={() => setLegendOpen((open) => { if (!open) setListOpen(false); return !open; })}><Layers3 aria-hidden />Key</Button>
+        <Button className="map-list-toggle" variant="outline" size="sm" aria-expanded={listOpen} aria-label={`${listOpen ? "Hide" : "Show"} report cluster list`} onClick={() => setListOpen((open) => { if (!open) setLegendOpen(false); return !open; })}><FileCheck2 aria-hidden />{listOpen ? "Hide" : "Show"} clusters</Button>
+      </div>
+      <section className="map-pane live-map-pane" aria-label="Flood impact map">
         <FloodMap
           variant="operations"
           horizon={horizon}
           onHorizonChange={setHorizon}
           selectedFeatureId={mapFeatureId}
           onFeatureSelect={handleMapSelection}
+          showSummary={false}
+          showLegend={legendOpen}
           showHorizonControl={false}
+          showDemoLabel={false}
+          freshnessLabel={`Scenario time ${scenarioTime} IST`}
           className="shared-map"
           height="100%"
           ariaLabel="Chennai current flooding, predicted flooding, routes and shelters"
         />
-        <div className="map-horizon" role="group" aria-label="Forecast horizon">
-          {(["now", "1h", "3h"] as const).map((item) => <button key={item} type="button" data-active={horizon === item || undefined} onClick={() => setHorizon(item)}>{item === "now" ? "Now" : `+${item}`}</button>)}
-          <span><span style={{ width: horizon === "now" ? "12%" : horizon === "1h" ? "52%" : "100%" }} /></span>
-        </div>
-        <button className="map-list-toggle" type="button" onClick={() => setListOpen((open) => !open)} aria-expanded={listOpen}><FileCheck2 aria-hidden />{listOpen ? "Hide" : "Show"} accessible map list</button>
         {listOpen && <div className="map-list-alternative">
-          <h3>Map features</h3>
+          <h3>Report clusters</h3>
           <ul>
             {snapshot.signals.slice(0, 4).map((signal) => <li key={signal.id}><button onClick={() => setSelectedSignalId(signal.id)}><MapPin aria-hidden /><span><strong>{signal.name}</strong><small>{signal.status.replaceAll("_", " ")} · {signal.confidence}%</small></span><ChevronRight aria-hidden /></button></li>)}
           </ul>
@@ -81,13 +90,7 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
       <aside className="inspector live-inspector" aria-label="Selected cluster details">
         <div className="inspector-title-row">
           <div><h2>{selected.name} Cluster <span>{selected.id}</span></h2><div className="inline-status"><StatusPill tone="danger">Severe</StatusPill><Confidence value={selected.confidence} /><span>{selected.updatedMinutesAgo} min ago</span></div></div>
-          <button type="button" className="icon-quiet" aria-label="More cluster options">•••</button>
         </div>
-
-        <section className="inspector-section">
-          <h3>Why this changed</h3>
-          <div className="reason-list">{confidenceReason.map(({ icon: Icon, label, value }) => <button key={label} type="button"><Icon aria-hidden /><span>{label}</span><small>{value}</small><ChevronRight aria-hidden /></button>)}</div>
-        </section>
 
         <section className="inspector-section">
           <h3>Impact</h3>
@@ -98,22 +101,32 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
           </div>
         </section>
 
-        <section className="inspector-section inspector-grow">
-          <div className="section-heading-inline"><h3>Evidence</h3><Button variant="link" onClick={() => onNavigate("signals")}>View all {selected.receivedReports} reports</Button></div>
-          <ul className="evidence-summary-list">
-            {selected.evidence.slice(0, 5).map((report) => <li key={report.id}><FileCheck2 aria-hidden /><span>{report.note}</span><small>{report.source}</small><time>{report.observedAt}</time></li>)}
-          </ul>
+        <section className="inspector-section inspector-details-list">
+          <details>
+            <summary><span><strong>Why this estimate</strong><small>Rain, model, and field evidence</small></span></summary>
+            <div className="reason-list">{confidenceReason.map(({ icon: Icon, label, value }, index) => <button key={label} type="button" onClick={() => onNavigate(index === 0 ? "sources" : index === 1 ? "resilience" : "signals")}><Icon aria-hidden /><span>{label}</span><small>{value}</small><ChevronRight aria-hidden /></button>)}</div>
+          </details>
+        </section>
+
+        <section className="inspector-section inspector-details-list">
+          <details>
+            <summary><span><strong>Ground reports</strong><small>{selected.receivedReports} reports · {selected.independentReports} independent</small></span></summary>
+            <div className="section-heading-inline"><span>Evidence in this scenario</span><Button variant="link" onClick={() => onNavigate("signals")}>Review all</Button></div>
+            <ul className="evidence-summary-list">
+              {selected.evidence.slice(0, 5).map((report) => <li key={report.id}><FileCheck2 aria-hidden /><span>{report.note}</span><small>{report.source}</small><time>{report.observedAt}</time></li>)}
+            </ul>
+          </details>
         </section>
 
         <section className="recommended-action">
-          <div><ShieldAlert aria-hidden /><span><strong>Recommended action</strong><small>{action.detail}</small></span></div>
+          <div><ShieldAlert aria-hidden /><span><strong>Scenario recommendation</strong><small>{action.detail}</small></span></div>
           <div className="version-binding"><span>Evidence {action.evidenceVersion}</span><span>Model {action.modelVersion}</span></div>
-          <p><strong>Two-person approval</strong><span>{reviewable ? `${role} · request v${action.approvalVersion}` : "Authoritative request unavailable"}</span></p>
-          <div className="decision-buttons">
-            <Button disabled={!reviewable} onClick={() => setDecision("APPROVE")}>Approve action</Button>
-            <Button disabled={!reviewable} variant="outline" onClick={() => setDecision("MODIFY")}>Modify</Button>
-            <Button disabled={!reviewable} variant="destructive-outline" onClick={() => setDecision("REJECT")}>Reject</Button>
-          </div>
+          <p><strong>Two-person approval</strong><span>{reviewable ? `Request v${action.approvalVersion} · a different reviewer is required` : action.status === "RECOMMENDED" ? "No request yet · another reviewer is required" : "No active approval request"}</span></p>
+          {reviewable ? <div className="decision-buttons">
+            <Button onClick={() => setDecision("APPROVE")}>Approve action</Button>
+            <Button variant="outline" onClick={() => setDecision("MODIFY")}>Modify</Button>
+            <Button variant="destructive-outline" onClick={() => setDecision("REJECT")}>Reject</Button>
+          </div> : <Button className="request-approval-button" variant="outline" disabled={!canRequest} title={canRequest ? undefined : "Connect to the authorized API and use an allowed requester role"} onClick={() => setRequestOpen(true)}>Request second-person review</Button>}
         </section>
       </aside>
 
@@ -126,6 +139,15 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
         requireNote={decision !== "APPROVE"}
         onClose={() => setDecision(null)}
         onConfirm={(note) => decision ? decideAction(action.id, decision, note) : false}
+      />
+      <DecisionDialog
+        open={requestOpen}
+        title="Request second-person review"
+        description="This records an approval request for a different authorized reviewer. It does not publish or send an alert."
+        confirmLabel="Submit review request"
+        requireNote
+        onClose={() => setRequestOpen(false)}
+        onConfirm={(reason) => requestApproval(action.id, reason)}
       />
     </div>
   );

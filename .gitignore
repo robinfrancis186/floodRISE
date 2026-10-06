@@ -27,3 +27,4 @@ infra/osm-tiles/*
 artifacts/runtime/
 artifacts/playwright/
 artifacts/playwright-report/
+.vercel

@@ -11,7 +11,8 @@ import {
   FieldSet,
   Textarea,
   ToggleGroup,
-  ToggleGroupItem
+  ToggleGroupItem,
+  useSession
 } from "@floodrise/ui";
 import {
   Ban,
@@ -80,6 +81,7 @@ const demoLocation: FieldLocation = {
 };
 
 export function ReportFloodingPage() {
+  const session = useSession();
   const navigate = useNavigate();
   const { isOnline } = useNetworkStatus();
   const queue = useQueueSummary();
@@ -166,7 +168,7 @@ export function ReportFloodingPage() {
     const draft: OfflineReportDraft = {
       client_report_id: clientId,
       incident_id: DEMO_INCIDENT_ID,
-      reporter_id: getReporterId(),
+      reporter_id: session?.userId ?? getReporterId(),
       device_id: getDeviceId(),
       observed_at: import.meta.env.VITE_DEMO_MODE === "false" ? new Date().toISOString() : DEMO_SCENARIO_TIME,
       location: {

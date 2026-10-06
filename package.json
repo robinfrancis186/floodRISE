@@ -33,7 +33,8 @@
     "osm:import": "node scripts/import-osm-baseline.mjs",
     "osm:import:places": "node scripts/import-osm-places.mjs",
     "seed": "cd services/backend && uv run python -m app.seed",
-    "demo:reset": "ops/scripts/demo-reset.sh"
+    "demo:reset": "ops/scripts/demo-reset.sh",
+    "build:release": "node scripts/build-release.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

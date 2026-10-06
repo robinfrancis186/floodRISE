@@ -28,6 +28,8 @@ export function AlertsPage() {
         </Alert>
       ) : null}
 
+      {alerts.isError && <Alert variant="warning"><AlertTitle>Alerts cannot be verified</AlertTitle><AlertDescription>The alert service is unavailable. Retry when connected and follow authorized local instructions.</AlertDescription><button type="button" onClick={() => void alerts.refetch()}>Retry alerts</button></Alert>}
+      {!alerts.isLoading && !alerts.isError && !alerts.data?.length && <p role="status">No current alerts for this area.</p>}
       <div className="alert-list" aria-live="polite" aria-busy={alerts.isLoading}>
         {(alerts.data ?? []).map((item) => {
           const Icon = item.kind === "OFFICIAL" ? ShieldAlert : item.kind === "COMMUNITY_CAUTION" ? UsersRound : Info;

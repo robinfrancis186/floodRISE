@@ -336,11 +336,42 @@ describe("operations console", () => {
   it("navigates all primary workflows with a real URL route", async () => {
     const user = userEvent.setup();
     renderApp();
-    expect(screen.getByRole("heading", { name: "Live Operations" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Operations Map" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "FloodSignal" }));
     expect(window.location.pathname).toBe("/signals");
     expect(screen.getByRole("heading", { name: "FloodSignal Review" })).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: /Velachery evidence review/i })).toBeInTheDocument();
+    expect(await screen.findByRole("complementary", { name: /Velachery evidence review/i })).toBeInTheDocument();
+  });
+
+  it("records a second-person approval request against the connected API", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/incidents")) return jsonResponse({ items: [{ id: "inc-demo-michaung-2023" }] });
+      if (url.includes("/incidents/inc-demo-michaung-2023/bootstrap")) {
+        return jsonResponse({ scenario_clock: "2023-12-04T14:10:00Z", simulation: { model_version: "model-demo-001" }, approvals: [], signals: [], reports: [] });
+      }
+      if (url.endsWith("/events")) return new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+      if (url.endsWith("/approvals")) return jsonResponse({ id: "approval-new", status: "PENDING", version: 1, requested_by: "ops-incident-commander", requested_at: "2023-12-04T14:10:00Z", expires_at: "2023-12-04T14:25:00Z" });
+      throw new Error(`Unexpected test request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderApp();
+
+    const requestButton = await screen.findByRole("button", { name: "Request second-person review" });
+    await waitFor(() => expect(requestButton).toBeEnabled());
+    await user.click(requestButton);
+    const dialog = screen.getByRole("dialog", { name: "Request second-person review" });
+    await user.type(within(dialog).getByLabelText(/Decision note/), "Independent review requested.");
+    await user.click(within(dialog).getByRole("button", { name: "Submit review request" }));
+
+    expect(await screen.findByText(/Approval request recorded/)).toBeInTheDocument();
+    expect(screen.getByText(/Request v1 · a different reviewer is required/)).toBeInTheDocument();
+    const request = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/approvals"));
+    expect(request).toBeDefined();
+    const init = request?.[1];
+    expect(JSON.parse(String(init?.body))).toMatchObject({ incident_id: "inc-demo-michaung-2023", action_type: "AREA_CAUTION", reason: "Independent review requested." });
+    expect(new Headers(init?.headers).get("Idempotency-Key")).toBeTruthy();
   });
 
   it("records a community-corroboration decision with explicit safety wording", async () => {
@@ -388,7 +419,7 @@ describe("operations console", () => {
     const fetchMock = installApprovalApi();
     window.history.replaceState({}, "", "/evacuation");
     renderApp();
-    const review = screen.getByRole("button", { name: "Review guidance approval" });
+    const review = await screen.findByRole("button", { name: "Review guidance approval" });
     await waitFor(() => expect(review).toBeEnabled());
     await user.selectOptions(screen.getByLabelText("Active role"), "Verifier");
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => {
@@ -416,7 +447,7 @@ describe("operations console", () => {
     installApprovalApi(409);
     window.history.replaceState({}, "", "/evacuation");
     renderApp();
-    const review = screen.getByRole("button", { name: "Review guidance approval" });
+    const review = await screen.findByRole("button", { name: "Review guidance approval" });
     await waitFor(() => expect(review).toBeEnabled());
     await user.click(review);
     const dialog = screen.getByRole("dialog", { name: "Approve evacuation guidance" });
@@ -434,7 +465,7 @@ describe("operations console", () => {
     window.history.replaceState({}, "", "/shelters");
     renderApp();
     await user.selectOptions(screen.getByLabelText("Active role"), "Shelter manager");
-    const save = screen.getByRole("button", { name: "Save status" });
+    const save = await screen.findByRole("button", { name: "Save status" });
     await waitFor(() => expect(save).toBeDisabled());
     await user.selectOptions(screen.getByLabelText("Status"), "LIMITED");
     await user.clear(screen.getByLabelText("Current occupancy"));
@@ -464,7 +495,7 @@ describe("operations console", () => {
     await user.clear(screen.getByLabelText("Current occupancy"));
     await user.type(screen.getByLabelText("Current occupancy"), "150");
     await user.type(screen.getByLabelText("Update reason"), "Capacity checked by operator");
-    const save = screen.getByRole("button", { name: "Save status" });
+    const save = await screen.findByRole("button", { name: "Save status" });
     await waitFor(() => expect(save).toBeEnabled());
     await user.click(save);
 
@@ -499,7 +530,7 @@ describe("operations console", () => {
     installDemoControlApi();
     const user = userEvent.setup();
     renderApp();
-    const simulationStatus = screen.getByText("Simulation run").closest(".status-item");
+    const simulationStatus = document.querySelector(".status-rail-version");
     expect(simulationStatus).not.toBeNull();
     await waitFor(() => expect(simulationStatus).toHaveTextContent("model-demo-reset"));
     const initialVersion = "model-demo-reset";

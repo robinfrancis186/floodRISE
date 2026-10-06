@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { test } from "./fixtures";
+import { expect } from "@playwright/test";
 
 test("operations console renders and completes an evidence review", async ({ page }) => {
   await page.setViewportSize({ width: 1570, height: 1000 });
@@ -9,9 +10,9 @@ test("operations console renders and completes an evidence review", async ({ pag
   await expect(page).toHaveTitle(/floodRISE Operations/);
   await expect(page.getByText(/DEMO DATA.*NOT LIVE/).first()).toBeVisible();
   const impactMap = page.getByRole("region", { name: "Flood impact map" });
-  await expect(impactMap.getByText("Rapid impact estimate", { exact: true })).toBeVisible();
+  await expect(page.getByText("Flood estimate", { exact: true })).toBeVisible();
   await expect(impactMap).toBeVisible();
-  await expect(impactMap.getByText("Loading the offline Chennai map…")).toBeHidden();
+  await expect(impactMap.getByText("Loading the Chennai map…")).toBeHidden();
   await page.screenshot({ path: "artifacts/screenshots/ops-live.png", fullPage: true });
 
   await page.getByRole("button", { name: "FloodSignal" }).click();
@@ -30,7 +31,7 @@ test("operations console renders and completes an evidence review", async ({ pag
   await page.getByRole("button", { name: "Resilience Audit" }).click();
   await expect(page).toHaveURL(/\/resilience$/);
   await expect(page.getByRole("heading", { name: "Chennai resilience priorities" })).toBeVisible();
-  await expect(page.getByText("Loading the offline Chennai map…")).toBeHidden();
+  await expect(page.getByText("Loading the Chennai map…")).toBeHidden();
   await page.screenshot({ path: "artifacts/screenshots/ops-resilience.png", fullPage: true });
 
   expect(pageErrors).toEqual([]);
@@ -68,4 +69,29 @@ test("evacuation approval uses the seeded request and a distinct authorized revi
   await expect(page.getByRole("button", { name: "Guidance approved" })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath("evacuation-approval.png"), fullPage: false });
   expect(pageErrors).toEqual([]);
+});
+
+test("global search opens records, attention items are real, and refresh keeps scenario time", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 850 });
+  await page.goto("http://127.0.0.1:55173", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Search locations, assets, or identifiers" }).click();
+  const search = page.getByRole("dialog", { name: "Search floodRISE" });
+  await search.getByPlaceholder("Search views, clusters, shelters…").fill("Kendriya Vidyalaya");
+  await search.getByRole("option", { name: /Kendriya Vidyalaya Shelter/ }).click();
+  await expect(page).toHaveURL(/\/shelters$/);
+  await expect(page.getByRole("heading", { name: "Kendriya Vidyalaya Shelter" })).toBeVisible();
+
+  await page.getByRole("button", { name: /Needs attention/ }).click();
+  const attention = page.getByRole("region", { name: "Items needing attention" });
+  await expect(attention).toBeVisible();
+  await expect(attention.getByText(/actionable items|No outstanding reviews or approvals/)).toBeVisible();
+
+  await page.goto("http://127.0.0.1:55173", { waitUntil: "domcontentloaded" });
+  const sync = page.locator(".topbar-sync");
+  const scenarioTime = (await sync.innerText()).match(/Scenario [^\n]+/)?.[0];
+  expect(scenarioTime).toBeTruthy();
+  const refresh = page.getByRole("button", { name: "Refresh" });
+  await expect(refresh).toBeEnabled();
+  await refresh.click();
+  await expect(sync).toContainText(scenarioTime!);
 });

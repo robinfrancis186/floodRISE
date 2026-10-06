@@ -1,21 +1,16 @@
 import { FloodMap, type FloodMapSelection } from "@floodrise/map";
-import { Badge, Button, Select } from "@floodrise/ui";
+import { Badge, Button } from "@floodrise/ui";
 import {
   ArrowRight,
   Building2,
   Check,
   ChevronRight,
-  ClipboardCheck,
   Download,
-  FilePlus2,
   Hospital,
   MapPinned,
-  MoreVertical,
   Route,
-  ShieldCheck,
   Users,
   Waves,
-  X,
 } from "lucide-react";
 import { useState } from "react";
 import { Confidence, StatusPill } from "../components/status-pill";
@@ -25,7 +20,7 @@ export function ResilienceView() {
   const { snapshot, selectedPriorityId, setSelectedPriorityId } = useOperations();
   const selected = snapshot.priorities.find((priority) => priority.id === selectedPriorityId) ?? snapshot.priorities[0];
   const [compare, setCompare] = useState(false);
-  const [taskCreated, setTaskCreated] = useState(false);
+  const [taskExported, setTaskExported] = useState(false);
   const [exported, setExported] = useState(false);
   const handleMapSelection = (selection: FloodMapSelection) => {
     if (selection.kind !== "hotspot") return;
@@ -51,21 +46,27 @@ export function ResilienceView() {
     setExported(true);
   };
 
+  const exportInspectionTask = () => {
+    const body = ["floodRISE Inspection Task — DEMO DATA • NOT LIVE", `Priority: ${selected.location}`, `Recommended follow-up: ${selected.recommendation}`, `Evidence: ${selected.evidence}`, `Estimated impact: ${selected.impact}`, "Confirm current conditions and obtain authority approval before operational work."].join("\n");
+    const url = URL.createObjectURL(new Blob([body], { type: "text/plain" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "floodrise-inspection-task-demo.txt";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setTaskExported(true);
+  };
+
   return (
     <div className="workspace resilience-workspace">
       <section className="resilience-map" aria-label="Resilience priority map">
-        <div className="audit-controls">
-          <label>Event range<Select><option>2022–2026</option><option>2024–2026</option><option>2026 only</option></Select></label>
-          <label>Evidence quality<Select><option>Verified + official</option><option>All evidence</option></Select></label>
-          <fieldset><legend>Layers</legend><label><input type="checkbox" defaultChecked />Recurring flooding</label><label><input type="checkbox" defaultChecked />Drainage issues</label><label><input type="checkbox" defaultChecked />Road isolation</label><label><input type="checkbox" defaultChecked />Shelter gaps</label></fieldset>
-        </div>
         <FloodMap variant="resilience" selectedFeatureId={`hotspot-${selected.rank}`} onFeatureSelect={handleMapSelection} className="shared-map" height="100%" ariaLabel="Chennai recurring flood, road isolation and shelter access priorities" />
       </section>
 
       <section className="resilience-content">
         <header className="resilience-toolbar">
-          <div><h2>Chennai resilience priorities</h2><label>Ward<Select><option>All wards</option><option>Ward 110</option><option>Ward 121</option></Select></label><label>Asset type<Select><option>All</option><option>Drainage</option><option>Road</option><option>Shelter</option></Select></label><label>Confidence<Select><option>All</option><option>High</option></Select></label></div>
-          <div><Button variant="outline" onClick={() => setCompare((value) => !value)}>{compare ? "Hide comparison" : "Compare scenario"}</Button><Button onClick={exportBriefing}><Download />{exported ? "Briefing exported" : "Export briefing"}</Button><Button variant="ghost" size="icon" aria-label="More audit options"><MoreVertical /></Button></div>
+          <div><h2>Chennai resilience priorities</h2><Badge variant="secondary">Demo dataset · 2022–2026</Badge></div>
+          <div><Button variant="outline" onClick={() => setCompare((value) => !value)}>{compare ? "Hide comparison" : "Compare scenario"}</Button><Button onClick={exportBriefing}><Download />{exported ? "Briefing exported" : "Export briefing"}</Button></div>
         </header>
 
         <div className="resilience-metrics">
@@ -83,7 +84,7 @@ export function ResilienceView() {
         </div>
 
         <section className="priority-detail">
-          <header><h2>{selected.location} <StatusPill tone="success">Rank #{selected.rank}</StatusPill></h2><button className="icon-quiet" type="button" aria-label="Close details"><X /></button></header>
+          <header><h2>{selected.location} <StatusPill tone="success">Rank #{selected.rank}</StatusPill></h2></header>
           <div className="priority-analysis">
             <section className="why-priority"><h3>Why this ranks first</h3><div className="why-metrics"><span><small>Recurrence</small><strong>{selected.recurrence}</strong><em>events (2022–2026)</em></span><span><small>Isolation</small><strong>+{selected.accessDelay} min</strong><em>average access delay</em></span><span><small>Population exposure</small><strong>{selected.population.toLocaleString("en-IN")}</strong><em>people</em></span><span><small>Confidence</small><strong>{selected.confidence}%</strong><em>High</em></span></div>
               <ClosureChart />
@@ -99,7 +100,7 @@ export function ResilienceView() {
             <div><span>Drain capacity +25%</span><b>{Math.round(selected.population * 0.71).toLocaleString("en-IN")} people</b><b>+{Math.max(3, selected.accessDelay - 9)} min</b><b>2.1 km²</b></div>
           </div>}
 
-          <div className="human-workflow"><Button onClick={() => setTaskCreated(true)}><FilePlus2 />{taskCreated ? "Inspection task created" : "Create inspection task"}</Button><Button variant="outline"><ClipboardCheck />Add engineer note</Button><Button variant="outline"><ShieldCheck />Request authority review</Button></div>
+          <div className="human-workflow"><Button onClick={exportInspectionTask}><Download />{taskExported ? "Inspection task downloaded" : "Download inspection task"}</Button><p>Engineer notes and authority review are not connected in this local demo. Share the task with the authorized incident team.</p></div>
           <footer className="audit-provenance"><span>Audit ID <strong>AUD-CHN-2026-0718-001</strong></span><span>Model version <strong>floodRISE v2.3.1</strong></span><span>Evidence version <strong>EV-2026-07-15</strong></span><span>Compiled by <strong>Resilience engineer</strong></span></footer>
         </section>
       </section>

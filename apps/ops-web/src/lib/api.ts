@@ -1,3 +1,4 @@
+import { authenticationHeaders, authenticationRequired } from "@floodrise/ui";
 import { demoSnapshot } from "../data/demo";
 import type {
   AuditRecord,
@@ -9,7 +10,7 @@ import type {
   StaffRole,
 } from "./models";
 
-export const API_ROOT = import.meta.env.VITE_API_ROOT ?? "/api/v1";
+export const API_ROOT = (import.meta.env.VITE_API_ROOT ?? "/api/v1").replace(/\/$/, "");
 const BOOTSTRAP_TIMEOUT_MS = 5_000;
 
 export class ApiRequestError extends Error {
@@ -48,7 +49,7 @@ export function describeApiError(error: unknown): string {
 async function request<T>(
   path: string,
   init?: RequestInit,
-  timeoutMs = 1_200,
+  timeoutMs = 8_000,
   identity?: StaffApiIdentity,
 ): Promise<T> {
   const controller = new AbortController();
@@ -58,7 +59,9 @@ async function request<T>(
     const requestHeaders = new Headers(headers);
     if (!requestHeaders.has("Accept")) requestHeaders.set("Accept", "application/json");
     if (!requestHeaders.has("Content-Type")) requestHeaders.set("Content-Type", "application/json");
-    if (identity) {
+    if (authenticationRequired) {
+      Object.entries(await authenticationHeaders()).forEach(([key, value]) => requestHeaders.set(key, value));
+    } else if (identity) {
       requestHeaders.set("X-Demo-Role", identity.role);
       requestHeaders.set("X-Demo-User", identity.userId);
     }
@@ -299,7 +302,8 @@ export async function fetchOperationsSnapshot(identity?: StaffApiIdentity): Prom
     const incidentId = stringField(first, "id") ?? demoSnapshot.incidentId;
     const bootstrap = await request<unknown>(`/incidents/${encodeURIComponent(incidentId)}/bootstrap`, undefined, BOOTSTRAP_TIMEOUT_MS, identity);
     return { snapshot: normalizeBootstrap(bootstrap, incidentId), connected: true };
-  } catch {
+  } catch (error) {
+    if (authenticationRequired) throw error;
     return { snapshot: structuredClone(demoSnapshot), connected: false };
   }
 }
@@ -324,7 +328,7 @@ export async function submitSignalDecision(
     headers: {
       "Idempotency-Key": crypto.randomUUID(),
     },
-  }, 1_200, identity);
+  }, 8_000, identity);
 }
 
 export type ApprovalDecisionResponse = {
@@ -339,6 +343,36 @@ export type ApprovalDecisionResponse = {
   alert: Record<string, unknown> | null;
 };
 
+export type ApprovalRequestResponse = {
+  id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED";
+  version: number;
+  requested_by: string;
+  requested_at: string;
+  expires_at: string;
+};
+
+export async function submitApprovalRequest(
+  action: OperationalAction,
+  incidentId: string,
+  reason: string,
+  identity: StaffApiIdentity,
+) {
+  return request<ApprovalRequestResponse>("/approvals", {
+    method: "POST",
+    body: JSON.stringify({
+      incident_id: incidentId,
+      action_type: action.type,
+      action_payload: { presentation_id: action.id, title: action.title, body: action.detail },
+      audience: action.audience,
+      evidence_version: action.evidenceVersion,
+      model_version: action.modelVersion,
+      reason,
+    }),
+    headers: { "Idempotency-Key": crypto.randomUUID() },
+  }, 8_000, identity);
+}
+
 export async function submitApprovalDecision(
   approvalId: string,
   decision: "APPROVE" | "MODIFY" | "REJECT",
@@ -350,7 +384,7 @@ export async function submitApprovalDecision(
     method: "POST",
     body: JSON.stringify({ decision, reason, expected_version: expectedVersion }),
     headers: { "Idempotency-Key": crypto.randomUUID() },
-  }, 1_200, identity);
+  }, 8_000, identity);
 }
 
 export type ShelterUpdateResponse = {
@@ -384,7 +418,7 @@ export async function submitShelterUpdate(
       capacity_remaining: Math.max(0, shelter.capacity - occupancy),
       status_reason: reason,
     }),
-  }, 1_500, identity);
+  }, 8_000, identity);
 }
 
 export type AuditStatusResponse = {
@@ -393,7 +427,7 @@ export type AuditStatusResponse = {
 };
 
 export async function fetchAuditStatus(identity: StaffApiIdentity): Promise<AuditStatusResponse> {
-  const response = await request<{ items: unknown[]; chain_valid: boolean }>("/audit?limit=200", undefined, 2_000, identity);
+  const response = await request<{ items: unknown[]; chain_valid: boolean }>("/audit?limit=200", undefined, 8_000, identity);
   return {
     chainValid: response.chain_valid === true,
     records: readItems(response).map((event, index) => {
@@ -420,12 +454,12 @@ export async function advanceDemo(minutes = 10, identity?: StaffApiIdentity) {
     method: "POST",
     body: JSON.stringify({ minutes }),
     headers: { "Idempotency-Key": crypto.randomUUID() },
-  }, 2_000, identity);
+  }, 8_000, identity);
 }
 
 export async function resetDemo(identity: StaffApiIdentity) {
   return request("/demo/reset", {
     method: "POST",
     headers: { "Idempotency-Key": crypto.randomUUID() },
-  }, 2_000, identity);
+  }, 8_000, identity);
 }

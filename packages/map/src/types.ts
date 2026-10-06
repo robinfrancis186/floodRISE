@@ -90,6 +90,8 @@ export type FloodMapProps = {
   showSummary?: boolean;
   showLegend?: boolean;
   showHorizonControl?: boolean;
+  showDemoLabel?: boolean;
+  freshnessLabel?: string;
   interactive?: boolean;
   ariaLabel?: string;
 };

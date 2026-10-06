@@ -5,10 +5,10 @@ import { ViewHeader } from "../components/view-header";
 import { useOperations } from "../state/operations-context";
 
 export function SourceHealthView() {
-  const { snapshot, connected, advanceDemo } = useOperations();
+  const { snapshot, connected, refresh, loading } = useOperations();
   const scenario = new Date(snapshot.scenarioTime).getTime();
   return <div className="page-workspace sources-page">
-    <ViewHeader title="Source Health" description="Every operational layer exposes its provider, observation time, cadence, confidence, and demo status." actions={<Button variant="outline" onClick={advanceDemo}><RefreshCcw />Refresh source checks</Button>} />
+    <ViewHeader title="Source Health" description="Every operational layer exposes its provider, observation time, cadence, confidence, and demo status." actions={<Button variant="outline" onClick={refresh} disabled={loading}><RefreshCcw />{loading ? "Refreshing…" : "Refresh source checks"}</Button>} />
     <div className="source-overview">
       <div><DatabaseZap /><span><strong>{connected ? "Backend connected" : "Deterministic local fallback"}</strong><small>{connected ? "Authenticated API responses" : "No external provider dependency"}</small></span></div>
       <div><CheckCircle2 /><span><strong>{snapshot.sources.filter((source) => source.status === "HEALTHY").length} healthy</strong><small>Within declared cadence</small></span></div>

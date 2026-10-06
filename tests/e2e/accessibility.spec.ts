@@ -1,11 +1,14 @@
+import { test } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 const wcagTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 async function expectNoHighImpactViolations(page: Page, surface: string) {
   // Scanning mid fade-in measures blended colours and reports false contrast failures.
-  await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+    .map((animation) => animation.finished.catch(() => undefined))));
   const results = await new AxeBuilder({ page }).withTags(wcagTags).analyze();
   const violations = results.violations
     .filter(({ impact }) => impact === "critical" || impact === "serious")

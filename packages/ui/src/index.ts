@@ -11,3 +11,6 @@ export * from "./components/table";
 export * from "./components/textarea";
 export * from "./components/toggle-group";
 export * from "./lib/utils";
+export * from "./lib/session";
+export * from "./components/session-gate";
+export * from "./components/error-boundary";

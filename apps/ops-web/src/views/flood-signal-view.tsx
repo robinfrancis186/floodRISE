@@ -34,6 +34,7 @@ import { useOperations } from "../state/operations-context";
 export function FloodSignalView() {
   const { snapshot, selectedSignalId, setSelectedSignalId, decideSignal, horizon, setHorizon } = useOperations();
   const [status, setStatus] = useState("all");
+  const [ward, setWard] = useState("all");
   const [freshness, setFreshness] = useState("3h");
   const [confidence, setConfidence] = useState("all");
   const [decision, setDecision] = useState<SignalDecision | null>(null);
@@ -41,9 +42,12 @@ export function FloodSignalView() {
 
   const filteredSignals = useMemo(() => snapshot.signals.filter((signal) => {
     const statusMatch = status === "all" || (status === "review" && signal.decision === "UNREVIEWED") || (status === "verified" && signal.decision === "VERIFIED") || (status === "field" && signal.decision === "FIELD_CHECK");
+    const wardMatch = ward === "all" || signal.ward === ward;
+    const freshnessLimit = freshness === "1h" ? 60 : freshness === "3h" ? 180 : 1440;
+    const freshnessMatch = signal.updatedMinutesAgo <= freshnessLimit;
     const confidenceMatch = confidence === "all" || (confidence === "high" && signal.confidence >= 80) || (confidence === "medium" && signal.confidence >= 65 && signal.confidence < 80);
-    return statusMatch && confidenceMatch;
-  }), [snapshot.signals, status, confidence]);
+    return statusMatch && wardMatch && freshnessMatch && confidenceMatch;
+  }), [snapshot.signals, status, ward, freshness, confidence]);
 
   const verificationRows = [
     ["Spatial match (within 250 m)", `${selected.independentReports} / ${selected.receivedReports}`],
@@ -62,10 +66,10 @@ export function FloodSignalView() {
   return (
     <div className="workspace signal-workspace">
       <section className="cluster-queue" aria-label="Report cluster queue">
-        <div className="queue-heading"><h2>Report clusters</h2><Button variant="ghost" size="sm"><Filter />Filters</Button></div>
+        <div className="queue-heading"><h2>Report clusters</h2><span>{filteredSignals.length} in view</span></div>
         <div className="filter-grid">
           <label>Status<Select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option><option value="review">Needs review</option><option value="verified">Verified</option><option value="field">Field check</option></Select></label>
-          <label>Ward<Select><option>All wards</option><option>Ward 110</option><option>Ward 121</option></Select></label>
+          <label>Ward<Select value={ward} onChange={(event) => setWard(event.target.value)}><option value="all">All wards</option>{[...new Set(snapshot.signals.map((signal) => signal.ward))].map((item) => <option key={item}>{item}</option>)}</Select></label>
           <label>Freshness<Select value={freshness} onChange={(event) => setFreshness(event.target.value)}><option value="1h">Last hour</option><option value="3h">Last 3 hours</option><option value="day">Today</option></Select></label>
           <label>Confidence<Select value={confidence} onChange={(event) => setConfidence(event.target.value)}><option value="all">All</option><option value="high">High (80%+)</option><option value="medium">Medium</option></Select></label>
         </div>

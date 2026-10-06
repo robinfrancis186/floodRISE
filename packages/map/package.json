@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "sideEffects": [
-    "**/*.css"
+    "**/*.css",
+    "./src/index.ts",
+    "./src/FloodMap.tsx"
   ],
   "exports": {
     ".": "./src/index.ts",

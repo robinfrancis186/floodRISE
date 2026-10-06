@@ -1,3 +1,4 @@
+import { authenticationHeaders } from "@floodrise/ui";
 export type OperationsInvalidation = {
   id: string;
   type: string;
@@ -160,6 +161,7 @@ export function subscribeToOperationsEvents({
     if (cursor) headers.set("Last-Event-ID", cursor);
 
     try {
+      Object.entries(await authenticationHeaders()).forEach(([key, value]) => headers.set(key, value));
       const response = await window.fetch(`${apiRoot}/events`, {
         method: "GET",
         credentials: "include",

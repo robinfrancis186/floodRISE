@@ -49,3 +49,9 @@ body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--backgro
 button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
 button, input, select, textarea { font: inherit; }
 ::selection { background: color-mix(in srgb, var(--flood) 20%, transparent); }
+
+.fr-recovery { display: grid; align-content: center; justify-items: start; gap: 18px; max-width: 560px; min-height: 70dvh; margin: auto; padding: 32px 24px; color: #102039; }
+.fr-recovery h1 { font-size: 26px; line-height: 1.2; }
+.fr-recovery p { max-width: 52ch; color: #42516a; line-height: 1.6; }
+.fr-recovery button { border: 0; border-radius: 8px; padding: 12px 18px; background: #075ad6; color: #fff; font: inherit; font-weight: 650; cursor: pointer; }
+.fr-recovery button:focus-visible { outline: 3px solid #075ad6; outline-offset: 3px; }

@@ -1,4 +1,4 @@
-import { FloodRiseLogo } from "@floodrise/ui";
+import { FloodRiseLogo, SignOutButton, useSession } from "@floodrise/ui";
 import { Link } from "@tanstack/react-router";
 import { Cloud, CloudOff, Download, PhoneCall, UserRound } from "lucide-react";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
@@ -6,6 +6,7 @@ import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { LANGUAGES, useI18n, type Language } from "../lib/i18n";
 
 export function FieldHeader() {
+  const session = useSession();
   const { isOnline } = useNetworkStatus();
   const { canInstall, install } = useInstallPrompt();
   const { t } = useI18n();
@@ -33,7 +34,8 @@ export function FieldHeader() {
             {isOnline ? <Cloud aria-hidden /> : <CloudOff aria-hidden />}
             {isOnline ? t("net.online") : t("net.offline")}
           </span>
-          <span className="field-avatar" role="img" aria-label="Guest field reporter">
+          <SignOutButton />
+          <span className="field-avatar" role="img" aria-label={session ? "Signed-in field reporter" : "Guest field reporter"}>
             <UserRound aria-hidden />
           </span>
         </div>

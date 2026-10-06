@@ -54,8 +54,8 @@ class FieldDatabase extends Dexie {
   keys!: EntityTable<DeviceKeyRecord, "id">;
   receipts!: EntityTable<ReportReceipt, "id">;
 
-  constructor() {
-    super("floodrise-field-v1");
+  constructor(name = "floodrise-field-v1") {
+    super(name);
     this.version(1).stores({
       queue: "&id, createdAt, expiresAt, state",
       keys: "&id",
@@ -64,7 +64,17 @@ class FieldDatabase extends Dexie {
   }
 }
 
-export const fieldDb = new FieldDatabase();
+export let fieldDb = new FieldDatabase();
+
+export async function configureFieldAccount(userId: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId));
+  const suffix = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+  const name = `floodrise-field-v1-${suffix}`;
+  if (fieldDb.name === name) return;
+  fieldDb.close();
+  fieldDb = new FieldDatabase(name);
+  await fieldDb.open();
+}
 
 function announceQueueChange() {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(QUEUE_CHANGED_EVENT));

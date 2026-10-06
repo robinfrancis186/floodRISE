@@ -11,10 +11,10 @@ export const initialViews: Record<
   FloodMapVariant,
   { center: MapPosition; zoom: number; minZoom: number; maxZoom: number }
 > = {
-  operations: { center: [80.225, 12.982], zoom: 12.55, minZoom: 10.5, maxZoom: 17 },
-  signals: { center: [80.219, 12.981], zoom: 13.55, minZoom: 11, maxZoom: 18 },
-  resilience: { center: [80.226, 12.978], zoom: 12.55, minZoom: 10.5, maxZoom: 17 },
-  field: { center: [80.212, 12.985], zoom: 13.35, minZoom: 12, maxZoom: 18 },
+  operations: { center: [80.225, 12.982], zoom: 12.2, minZoom: 10.5, maxZoom: 19 },
+  signals: { center: [80.219, 12.981], zoom: 13.55, minZoom: 11, maxZoom: 19 },
+  resilience: { center: [80.226, 12.978], zoom: 12.55, minZoom: 10.5, maxZoom: 19 },
+  field: { center: [80.212, 12.985], zoom: 13.35, minZoom: 12, maxZoom: 19 },
 };
 
 export const interactiveLayerIds = [
@@ -43,7 +43,7 @@ export function createMapStyle(
 
   return {
     version: 8,
-    name: "floodRISE deterministic Chennai offline map",
+    name: "floodRISE Chennai flood map",
     sources: {
       ...(basemapTileUrl
         ? { basemap: { type: "raster" as const, tiles: [basemapTileUrl], tileSize: 256, maxzoom: 19 } }
@@ -67,7 +67,7 @@ export function createMapStyle(
         paint: { "background-color": "#f8fafc" },
       },
       ...(basemapTileUrl
-        ? [{ id: "basemap", type: "raster" as const, source: "basemap", paint: { "raster-opacity": 0.85 } }]
+        ? [{ id: "basemap", type: "raster" as const, source: "basemap", paint: { "raster-opacity": 1 } }]
         : []),
       {
         id: "ward-fill",
@@ -76,7 +76,7 @@ export function createMapStyle(
         paint: {
           "fill-color": ["match", ["get", "class"], "ward-a", "#f4f7fa", "#eef2f6"],
           // The packaged ward tint would hide a basemap, so let it show through.
-          "fill-opacity": basemapTileUrl ? 0.12 : 0.9,
+          "fill-opacity": basemapTileUrl ? 0 : 0.9,
         },
       },
       {
@@ -87,13 +87,14 @@ export function createMapStyle(
           "line-color": "#9aa8b9",
           "line-width": 1.2,
           "line-dasharray": [3, 2],
-          "line-opacity": 0.82,
+          "line-opacity": basemapTileUrl ? 0.35 : 0.82,
         },
       },
       {
         id: "marsh-fill",
         type: "fill",
         source: "water",
+        layout: { visibility: visibility(!basemapTileUrl) },
         filter: ["==", ["geometry-type"], "Polygon"],
         paint: { "fill-color": "#d9efe8", "fill-opacity": 0.86 },
       },
@@ -101,6 +102,7 @@ export function createMapStyle(
         id: "river-casing",
         type: "line",
         source: "water",
+        layout: { visibility: visibility(!basemapTileUrl) },
         filter: ["==", ["geometry-type"], "LineString"],
         paint: { "line-color": "#d5efff", "line-width": 13, "line-opacity": 0.95 },
       },
@@ -108,6 +110,7 @@ export function createMapStyle(
         id: "river-line",
         type: "line",
         source: "water",
+        layout: { visibility: visibility(!basemapTileUrl) },
         filter: ["==", ["geometry-type"], "LineString"],
         paint: { "line-color": "#72c6f3", "line-width": 8, "line-opacity": 0.9 },
       },
@@ -154,7 +157,7 @@ export function createMapStyle(
         type: "fill",
         source: "current-flood",
         layout: { visibility: visibility(operational) },
-        paint: { "fill-color": "#79c5fb", "fill-opacity": 0.55 },
+        paint: { "fill-color": "#79c5fb", "fill-opacity": basemapTileUrl ? 0.3 : 0.55 },
       },
       {
         id: "current-flood-outline",
@@ -184,6 +187,7 @@ export function createMapStyle(
         id: "road-casing",
         type: "line",
         source: "roads",
+        layout: { visibility: visibility(!basemapTileUrl) },
         paint: {
           "line-color": "#ffffff",
           "line-width": ["match", ["get", "class"], "trunk", 7, "primary", 6, "secondary", 4.5, 3.5],
@@ -194,6 +198,7 @@ export function createMapStyle(
         id: "road-line",
         type: "line",
         source: "roads",
+        layout: { visibility: visibility(!basemapTileUrl) },
         paint: {
           "line-color": ["match", ["get", "class"], "trunk", "#f1a66a", "primary", "#c8d0db", "#d5dce5"],
           "line-width": ["match", ["get", "class"], "trunk", 3, "primary", 2, "secondary", 1.5, 1],

@@ -35,6 +35,7 @@ from .media import (
     MediaService,
     UnavailableScanner,
 )
+from .object_storage import S3MediaBlobStore
 from .schemas import (
     ApprovalCreateInput,
     ApprovalDecisionInput,
@@ -141,6 +142,17 @@ def create_app(
     target_service = FloodRiseService(target_database)
     target_media_service = media_service or MediaService(
         target_database,
+        **(
+            {
+                "blob_store": S3MediaBlobStore(
+                    runtime.object_store_bucket,
+                    runtime.object_store_endpoint,
+                    runtime.object_store_region,
+                )
+            }
+            if runtime.media_store == "s3"
+            else {}
+        ),
         # A simulated clean result is permitted only inside the visibly
         # labelled deterministic demo. Any non-demo deployment without an
         # injected approved scanner fails closed and retains quarantine bytes.
@@ -151,7 +163,14 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         target_database.initialize()
-        seed_database(target_database)
+        if runtime.env == "production":
+            if target_database.is_empty() or target_database.get_state("demo_mode", True):
+                raise RuntimeError(
+                    "Production cannot start with empty or replay data. "
+                    "Import approved operational data first."
+                )
+        else:
+            seed_database(target_database)
         application.state.database = target_database
         application.state.service = target_service
         application.state.media_service = target_media_service
@@ -199,7 +218,7 @@ def create_app(
         request.state.trace_id = request.headers.get("X-Request-ID", str(uuid4()))
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.trace_id
-        if runtime.is_demo:
+        if runtime.is_demo or target_database.get_state("demo_mode", True):
             response.headers["X-floodRISE-Data-Label"] = "DEMO DATA"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -224,8 +243,10 @@ def create_app(
             "environment": runtime.environment,
             "database": "reachable" if not database_value.is_empty() else "empty",
             "audit_chain_valid": database_value.verify_audit_chain(),
-            "demo_mode": runtime.is_demo,
-            "data_label": "DEMO DATA" if runtime.is_demo else "LIVE",
+            "demo_mode": runtime.is_demo or database_value.get_state("demo_mode", True),
+            "data_label": "DEMO DATA"
+            if runtime.is_demo or database_value.get_state("demo_mode", True)
+            else "LIVE",
             "time": iso_utc(datetime.now(UTC)),
         }
 
@@ -798,7 +819,11 @@ def create_app(
             "name": "floodRISE API",
             "docs": "/docs",
             "health": "/health",
-            "data_label": "DEMO DATA" if runtime.is_demo else "LIVE",
+            "data_label": (
+                "DEMO DATA"
+                if runtime.is_demo or target_database.get_state("demo_mode", True)
+                else "LIVE"
+            ),
         }
 
     application.include_router(router)

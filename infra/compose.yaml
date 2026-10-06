@@ -100,6 +100,31 @@ services:
     restart: unless-stopped
     networks: [demo-internal]
 
+  backend:
+    profiles: [api]
+    build:
+      context: ..
+      dockerfile: services/backend/Dockerfile
+    environment:
+      <<: *demo-safety
+      FLOODRISE_DATABASE_URL: postgresql+psycopg://floodrise:floodrise_demo_only@postgis/floodrise
+      FLOODRISE_REDIS_URL: redis://valkey:6379/0
+      FLOODRISE_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:4173,http://127.0.0.1:4173
+    ports:
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      postgis:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+    restart: unless-stopped
+    networks: [demo-internal]
+
   # MockServer has no host port and is reachable only on the isolated demo
   # network. Application code may dispatch demo alerts here for inspection.
   demo-alert-sink:

@@ -4,13 +4,16 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+const fieldBase = process.env.VITE_FIELD_BASE_PATH ?? "/";
+
 export default defineConfig({
+  base: fieldBase,
   root: fileURLToPath(new URL(".", import.meta.url)),
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: ["floodrise-icon.svg"],
       manifest: {
         name: "floodRISE Field",
@@ -21,12 +24,12 @@ export default defineConfig({
         background_color: "#ffffff",
         display: "standalone",
         orientation: "portrait-primary",
-        start_url: "/",
-        scope: "/",
+        start_url: fieldBase,
+        scope: fieldBase,
         categories: ["utilities", "navigation", "government"],
         icons: [
           {
-            src: "/floodrise-icon.svg",
+            src: `${fieldBase}floodrise-icon.svg`,
             sizes: "any",
             type: "image/svg+xml",
             purpose: "any maskable"
@@ -34,9 +37,9 @@ export default defineConfig({
         ]
       },
       workbox: {
-        navigateFallback: "/index.html",
+        navigateFallback: `${fieldBase}index.html`,
         globPatterns: ["**/*.{js,css,html,svg,woff2}"],
-        runtimeCaching: [
+        runtimeCaching: process.env.VITE_DEMO_MODE === "false" ? [] : [
           {
             // Health must always be fetched from the network because the
             // per-profile demo reset uses it as a deletion safety proof.

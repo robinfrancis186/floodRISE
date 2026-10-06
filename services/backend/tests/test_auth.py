@@ -19,6 +19,8 @@ from app.auth import Principal, audit_actor_id
 from app.config import Settings
 from app.database import Database
 from app.main import create_app
+from app.media import MemoryMediaBlobStore
+from app.seed import seed_database
 
 API = "/api/v1"
 INCIDENT_ID = "inc-demo-michaung-2023"
@@ -267,3 +269,59 @@ def test_stale_step_up_is_not_accepted(
 
     assert denied.status_code == 403
     assert "recent step-up" in denied.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"database_url": "sqlite:///ephemeral.db"},
+        {"media_store": "memory"},
+        {"allowed_origins": ["http://example.in"]},
+        {"debug": True},
+        {"clamav_host": None},
+    ],
+)
+def test_production_requires_durable_secure_dependencies(override):
+    with pytest.raises(ValidationError):
+        _production_settings(override)
+
+
+def _production_settings(override=None):
+    settings = {
+        "env": "production",
+        "demo_mode": False,
+        "database_url": "postgresql+psycopg://user@db.example.in/floodrise",
+        "oidc_issuer": ISSUER,
+        "oidc_audience": AUDIENCE,
+        "session_secret": SecretStr("test-only-secret-not-for-deployment"),
+        "allowed_origins": ["https://floodrise.example.in"],
+        "media_store": "s3",
+        "object_store_endpoint": "https://s3.example.in",
+        "object_store_bucket": "private-evidence",
+        "clamav_host": "clamav.internal",
+    }
+    settings.update(override or {})
+    return Settings(**settings)
+
+
+def test_staging_replay_is_never_advertised_as_live(production_client):
+    response = production_client.get("/health")
+    assert response.json()["data_label"] == "DEMO DATA"
+    assert response.headers["X-floodRISE-Data-Label"] == "DEMO DATA"
+    assert production_client.get("/").json()["data_label"] == "DEMO DATA"
+
+
+@pytest.mark.parametrize("replay", [False, True])
+def test_production_refuses_empty_or_replay_database(replay):
+    database = Database("sqlite://")
+    database.initialize()
+    if replay:
+        seed_database(database)
+    with patch("app.main.S3MediaBlobStore", return_value=MemoryMediaBlobStore()):
+        application = create_app(_production_settings(), database=database)
+    try:
+        with pytest.raises(RuntimeError, match="empty or replay"), TestClient(application):
+            pass
+        assert database.is_empty() is (not replay)
+    finally:
+        database.engine.dispose()

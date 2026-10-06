@@ -28,6 +28,15 @@ pnpm dev
 - Field PWA: <http://localhost:5174>
 - API and OpenAPI: <http://127.0.0.1:8787/docs>
 
+For the containerized API instead of `pnpm dev:api`, start the demo PostGIS,
+Valkey, and API services, then run the two web apps in separate terminals:
+
+```bash
+docker compose -f infra/compose.yaml --profile api up -d --build backend
+pnpm dev:ops
+pnpm dev:field
+```
+
 India-specific reference data, CAP 1.2 alert export, and field-app languages are
 described in `docs/INDIA.md`; the open-source components and optional Keycloak and
 ClamAV services are in `docs/OPEN_SOURCE_STACK.md`.
@@ -67,3 +76,16 @@ target and does not install PostGIS/pgRouting or deploy a working application by
 itself. Browser artifacts are written under `artifacts/`.
 The full CI and security gate matrix, including explicitly manual checks, is in
 `docs/QUALITY_GATES.md`.
+
+
+## Published release
+
+- [Operations console](https://floodrise.vercel.app/)
+- [Field reporting PWA](https://floodrise.vercel.app/field/)
+
+`pnpm build:release` assembles both products in `dist/`; `vercel --prod`
+uses the checked-in deployment configuration. The public release is a demo
+until the API, identity provider, durable storage, and approved operational
+sources are connected. [Deployment setup](docs/DEPLOYMENT.md) explains those
+requirements; [latest verification](docs/RELEASE_VERIFICATION_2026-10-06.md)
+records the checked behavior and remaining boundaries.

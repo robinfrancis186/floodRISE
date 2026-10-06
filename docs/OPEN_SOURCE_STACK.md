@@ -43,12 +43,13 @@ docker compose -f infra/compose.yaml --profile identity --profile scanner up -d
   The backend refuses the file if it does not match the manifest checksum.
   These are community-mapped locations: some entries are mis-tagged, and none
   is confirmed open, reachable, or an activated shelter.
-- **Basemap:** the map is offline by default. To add a basemap, run your own
-  tile server (`--profile osm`, see `infra/osm-tiles/README.md`) and set
-  `VITE_OSM_TILE_URL`. Public `openstreetmap.org` tile servers are refused in
-  code. Rendering was checked against a stub tile server, not a real
-  TileServer GL archive, and a deployment CSP must allow the tile origin in
-  `img-src` and `connect-src`.
+- **Basemap:** detailed street tiles load directly from OpenStreetMap by default,
+  with attribution and browser caching; no tile prefetch or offline downloads.
+  The packaged road snapshot is the fallback when tiles fail. Set
+  `VITE_OSM_TILE_URL` to an empty string for offline mode, or to a self-hosted
+  tile server (`--profile osm`, see `infra/osm-tiles/README.md`). A deployment
+  CSP must allow the tile origin in `img-src` and `connect-src`, and browser
+  referrer headers must remain enabled. Community tiles have no SLA.
 - **Not yet OSM-backed:** lower-risk routing still uses the hand-built demo
   graph rather than the OSM road network, and there is no geocoder. Valhalla or
   OSRM (routing) and Photon or Nominatim (geocoding) are the open-source

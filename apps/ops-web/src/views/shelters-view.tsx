@@ -7,8 +7,7 @@ import { ViewHeader } from "../components/view-header";
 import { useOperations } from "../state/operations-context";
 
 export function SheltersView() {
-  const { snapshot, updateShelter, connected, role } = useOperations();
-  const [selectedId, setSelectedId] = useState(snapshot.shelters[0].id);
+  const { snapshot, updateShelter, connected, role, selectedShelterId: selectedId, setSelectedShelterId: setSelectedId } = useOperations();
   const selected = snapshot.shelters.find((shelter) => shelter.id === selectedId) ?? snapshot.shelters[0];
   const [status, setStatus] = useState(selected.status);
   const [occupancy, setOccupancy] = useState(String(selected.occupancy));

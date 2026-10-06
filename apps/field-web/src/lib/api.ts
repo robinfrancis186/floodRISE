@@ -1,3 +1,4 @@
+import { authenticationHeaders, authenticationRequired, sessionUserId } from "@floodrise/ui";
 import { ReportInput, type RouteRecommendation } from "@floodrise/contracts";
 import { z } from "zod";
 import { DEMO_INCIDENT_ID, DEMO_SCENARIO_TIME, demoAlerts, demoRoutes, type FieldAlert } from "../data/demo";
@@ -62,7 +63,11 @@ function isSimulatedOffline() {
   return isForcedOfflineMode() || !navigator.onLine;
 }
 
-function apiHeaders(user = "field-pwa") {
+async function apiHeaders(user = "field-pwa") {
+  if (authenticationRequired) {
+    try { return await authenticationHeaders(); }
+    catch { throw new RetryableApiError("Sign in again to sync your saved reports.", 30_000); }
+  }
   return {
     "X-Demo-Role": "reporter",
     "X-Demo-User": user
@@ -80,8 +85,11 @@ function retryDelay(response: Response, fallbackMs = 5_000) {
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : fallbackMs;
 }
 
-function isRetryableHttpStatus(status: number) {
-  return status === 408 || status === 429 || status >= 500;
+function isRetryableHttpStatus(response: Response) {
+  const { status } = response;
+  // A missing API gateway returns HTML/plain text, not a domain rejection.
+  return status === 401 || status === 408 || status === 429 || status >= 500
+    || (status === 404 && !response.headers.get("Content-Type")?.includes("json"));
 }
 
 async function fetchWithDeadline(
@@ -104,9 +112,12 @@ async function fetchWithDeadline(
 }
 
 function apiUrl(path: string) {
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!/^https?:\/\//i.test(API_BASE)) return path;
-  return new URL(path, new URL(API_BASE).origin).toString();
+  const base = new URL(API_BASE, window.location.origin);
+  const destination = new URL(path, base.origin);
+  if (destination.origin !== base.origin || !(destination.pathname === `${base.pathname.replace(/\/$/, "")}/media/uploads` || destination.pathname.startsWith(`${base.pathname.replace(/\/$/, "")}/media/uploads/`))) {
+    throw new NonRetryableApiError("The media service returned an unsafe upload destination.");
+  }
+  return destination.href;
 }
 
 async function problemMessage(response: Response, fallback: string) {
@@ -146,11 +157,11 @@ function completionAttemptId() {
 
 async function getMediaMetadata(uploadId: string, reporterId: string) {
   const response = await fetchWithDeadline(apiUrl(`${API_BASE}/media/uploads/${encodeURIComponent(uploadId)}`), {
-    headers: apiHeaders(reporterId)
+    headers: await apiHeaders(reporterId)
   });
   if (!response.ok) {
     const message = await problemMessage(response, "Private media status could not be read.");
-    if (isRetryableHttpStatus(response.status)) {
+    if (isRetryableHttpStatus(response)) {
       throw new RetryableApiError(`Private media service unavailable. ${message}`, retryDelay(response));
     }
     throw new NonRetryableApiError(message);
@@ -163,7 +174,7 @@ async function uploadPhotoEvidence(draft: OfflineReportDraft) {
   const bytes = decodePhotoDataUrl(draft.photo.dataUrl, draft.photo.type);
   const checksum = await sha256Hex(bytes);
   const mediaKey = `${draft.client_report_id}:media:0`;
-  const reporterHeaders = apiHeaders(draft.reporter_id);
+  const reporterHeaders = await apiHeaders(draft.reporter_id);
   const grantResponse = await fetchWithDeadline(apiUrl(`${API_BASE}/media/uploads`), {
     method: "POST",
     headers: {
@@ -181,7 +192,7 @@ async function uploadPhotoEvidence(draft: OfflineReportDraft) {
   });
   if (!grantResponse.ok) {
     const message = await problemMessage(grantResponse, "Private media upload could not be created.");
-    if (isRetryableHttpStatus(grantResponse.status)) {
+    if (isRetryableHttpStatus(grantResponse)) {
       throw new RetryableApiError(`Private media service unavailable. ${message}`, retryDelay(grantResponse));
     }
     throw new NonRetryableApiError(message);
@@ -203,7 +214,7 @@ async function uploadPhotoEvidence(draft: OfflineReportDraft) {
     }, 90_000);
     if (!contentResponse.ok) {
       const message = await problemMessage(contentResponse, "Evidence could not be placed in private quarantine.");
-      if (isRetryableHttpStatus(contentResponse.status)) {
+      if (isRetryableHttpStatus(contentResponse)) {
         throw new RetryableApiError(`Private media service unavailable. ${message}`, retryDelay(contentResponse));
       }
       throw new NonRetryableApiError(message);
@@ -235,7 +246,7 @@ async function uploadPhotoEvidence(draft: OfflineReportDraft) {
         ?? (failureCode
           ? `The evidence image was rejected (${failureCode}).`
           : "The evidence image could not be sanitized.");
-      if (isRetryableHttpStatus(completionResponse.status)) {
+      if (isRetryableHttpStatus(completionResponse)) {
         throw new RetryableApiError(`Private media service unavailable. ${message}`, retryDelay(completionResponse));
       }
       throw new NonRetryableApiError(message);
@@ -298,6 +309,9 @@ export async function submitReport(draft: OfflineReportDraft): Promise<ReportRec
   if (isSimulatedOffline()) {
     throw new RetryableApiError("Network unavailable. The report remains encrypted for retry.");
   }
+  if (authenticationRequired && draft.reporter_id !== await sessionUserId()) {
+    throw new NonRetryableApiError("This saved report belongs to another account. Sign in with its original account to send it.");
+  }
   // Media must reach a private, sanitized terminal state before its identifier
   // enters the authoritative report. Keeping this outside the demo fallback
   // prevents scanner or quarantine failures from becoming a synthetic receipt.
@@ -310,14 +324,14 @@ export async function submitReport(draft: OfflineReportDraft): Promise<ReportRec
       headers: {
         "Content-Type": "application/json",
         "Idempotency-Key": draft.client_report_id,
-        ...apiHeaders(draft.reporter_id)
+        ...await apiHeaders(draft.reporter_id)
       },
       body: JSON.stringify(validated)
-    }, 4_000);
+    }, 8_000);
     if (!response.ok) {
       const problem = (await response.json().catch(() => null)) as { detail?: string } | null;
       const message = problem?.detail ?? `Report was rejected (${response.status}).`;
-      if (isRetryableHttpStatus(response.status)) {
+      if (isRetryableHttpStatus(response)) {
         throw new RetryableApiError(`Field API unavailable. ${message}`, retryDelay(response));
       }
       throw new NonRetryableApiError(message);
@@ -358,7 +372,7 @@ export async function fetchNearbyHospitals(origin = DEMO_ORIGIN, limit = 5): Pro
     limit: String(limit)
   });
   try {
-    const response = await fetch(`${API_BASE}/osm/facilities?${query}`, { headers: apiHeaders() });
+    const response = await fetch(`${API_BASE}/osm/facilities?${query}`, { headers: await apiHeaders() });
     if (!response.ok) return null;
     return FacilityListResponse.parse(await response.json());
   } catch {
@@ -369,12 +383,13 @@ export async function fetchNearbyHospitals(origin = DEMO_ORIGIN, limit = 5): Pro
 export async function fetchAlerts(): Promise<FieldAlert[]> {
   try {
     const response = await fetch(`${API_BASE}/alerts?incident_id=${encodeURIComponent(DEMO_INCIDENT_ID)}`, {
-      headers: apiHeaders()
+      headers: await apiHeaders()
     });
     if (!response.ok) throw new Error("Alerts unavailable");
     const payload = AlertListResponse.parse(await response.json());
     return payload.items.map(normalizeFieldAlert);
   } catch {
+    if (authenticationRequired) throw new Error("The alert service is unavailable. No current alerts can be verified.");
     return demoAlerts.filter((alert) => isActiveAt(alert.issuedAt, alert.validUntil, DEMO_SCENARIO_TIME));
   }
 }
@@ -441,7 +456,7 @@ export async function fetchRoutes(origin = { latitude: 12.9791, longitude: 80.22
   try {
     const response = await fetch(`${API_BASE}/routes/recommend`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...apiHeaders() },
+      headers: { "Content-Type": "application/json", ...await apiHeaders() },
       body: JSON.stringify({
         incident_id: DEMO_INCIDENT_ID,
         origin: {

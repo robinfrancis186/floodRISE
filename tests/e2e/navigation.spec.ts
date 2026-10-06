@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { test } from "./fixtures";
+import { expect, type Page } from "@playwright/test";
 
 type RouteExpectation = {
   path: string;
@@ -6,7 +7,7 @@ type RouteExpectation = {
 };
 
 const operationsRoutes: RouteExpectation[] = [
-  { path: "/", text: "Live Operations" },
+  { path: "/", text: "Operations Map" },
   { path: "/signals", text: "Report clusters" },
   { path: "/incidents", text: "Incident Management" },
   { path: "/evacuation", text: "Evacuation Routing" },
