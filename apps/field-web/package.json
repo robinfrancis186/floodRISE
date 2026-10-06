@@ -16,7 +16,7 @@
     "@floodrise/map": "workspace:*",
     "@floodrise/ui": "workspace:*",
     "@hookform/resolvers": "^5.2.1",
-    "@tanstack/react-query": "^5.85.5",
+    "@tanstack/react-query": "^5.101.3",
     "@tanstack/react-router": "^1.131.35",
     "dexie": "^4.2.0",
     "lucide-react": "^0.542.0",

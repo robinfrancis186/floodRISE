@@ -15,7 +15,7 @@
     "@floodrise/contracts": "workspace:*",
     "@floodrise/map": "workspace:*",
     "@floodrise/ui": "workspace:*",
-    "@tanstack/react-query": "^5.87.1",
+    "@tanstack/react-query": "^5.101.3",
     "lucide-react": "^0.542.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
