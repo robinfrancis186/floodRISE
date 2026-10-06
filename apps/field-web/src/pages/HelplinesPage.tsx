@@ -1,10 +1,14 @@
+import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@floodrise/ui";
-import { Phone, PhoneCall } from "lucide-react";
+import { MapPin, Phone, PhoneCall } from "lucide-react";
 import { helplines } from "../data/helplines";
+import { fetchNearbyHospitals } from "../lib/api";
+import { formatDistance } from "../lib/format";
 import { useI18n } from "../lib/i18n";
 
 export function HelplinesPage() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const hospitals = useQuery({ queryKey: ["nearby-hospitals"], queryFn: () => fetchNearbyHospitals() });
 
   return (
     <div className="page page-content standard-page">
@@ -37,6 +41,36 @@ export function HelplinesPage() {
           </li>
         ))}
       </ul>
+
+      <section aria-labelledby="facilities-heading" aria-busy={hospitals.isLoading}>
+        <h2 id="facilities-heading" className="facility-heading">{t("facilities.title")}</h2>
+        <p className="page-footnote">{t("facilities.note")}</p>
+        {hospitals.data ? (
+          <>
+            <ul className="facility-list">
+              {hospitals.data.items.map((facility) => (
+                <li key={facility.id}>
+                  <span className="facility-text">
+                    <strong>{facility.names[language] ?? facility.name}</strong>
+                    {facility.distance_m === null ? null : <span>{formatDistance(facility.distance_m)}</span>}
+                  </span>
+                  <a
+                    className="facility-map-link"
+                    href={`geo:${facility.location.latitude},${facility.location.longitude}`}
+                    aria-label={`${t("facilities.map")}: ${facility.names[language] ?? facility.name}`}
+                  >
+                    <MapPin aria-hidden />
+                    {t("facilities.map")}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <p className="page-footnote">{hospitals.data.attribution}</p>
+          </>
+        ) : hospitals.isLoading ? null : (
+          <p className="page-footnote" role="status">{t("facilities.unavailable")}</p>
+        )}
+      </section>
     </div>
   );
 }

@@ -292,3 +292,38 @@ describe("deterministic field freshness", () => {
     }]);
   });
 });
+
+describe("nearby OpenStreetMap hospitals", () => {
+  it("requests hospitals nearest the origin and keeps the OSM attribution", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
+      items: [{
+        id: "osm-node-1", kind: "HOSPITAL", name: "Demo Hospital", names: { ta: "மருத்துவமனை" },
+        location: { latitude: 12.98, longitude: 80.22 }, distance_m: 420
+      }],
+      attribution: "© OpenStreetMap contributors",
+      notice: "Mapped locations only."
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { fetchNearbyHospitals } = await import("./api");
+    const result = await fetchNearbyHospitals({ latitude: 12.9791, longitude: 80.2209 }, 3);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), "http://localhost");
+    expect(url.pathname).toBe("/api/v1/osm/facilities");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      kind: "HOSPITAL", latitude: "12.9791", longitude: "80.2209", limit: "3"
+    });
+    expect(result?.items[0]?.names.ta).toBe("மருத்துவமனை");
+    expect(result?.attribution).toBe("© OpenStreetMap contributors");
+  });
+
+  it("returns null instead of throwing when the API is unreachable or malformed", async () => {
+    const { fetchNearbyHospitals } = await import("./api");
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("offline"); }));
+    expect(await fetchNearbyHospitals()).toBeNull();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
+    expect(await fetchNearbyHospitals()).toBeNull();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 503 })));
+    expect(await fetchNearbyHospitals()).toBeNull();
+  });
+});

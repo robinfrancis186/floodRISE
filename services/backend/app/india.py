@@ -109,6 +109,54 @@ _REGIONS: tuple[dict[str, Any], ...] = (
         "data_status": "REGISTERED_NO_DATA",
     },
     {
+        "id": "in-kl-thiruvananthapuram",
+        "name": "Thiruvananthapuram",
+        "state": "Kerala",
+        "state_code": "IN-KL",
+        "bounds": [76.85, 8.40, 77.02, 8.62],
+        "center": [76.9366, 8.5241],
+        "languages": ["ml", "en", "hi"],
+        "river_basins": ["Karamana", "Killi"],
+        "flood_drivers": ["southwest monsoon", "northeast monsoon", "urban drainage"],
+        "data_status": "REGISTERED_NO_DATA",
+    },
+    {
+        "id": "in-kl-alappuzha-kuttanad",
+        "name": "Alappuzha–Kuttanad",
+        "state": "Kerala",
+        "state_code": "IN-KL",
+        "bounds": [76.28, 9.25, 76.60, 9.60],
+        "center": [76.3388, 9.4981],
+        "languages": ["ml", "en", "hi"],
+        "river_basins": ["Pamba", "Achankovil", "Manimala", "Meenachil"],
+        "flood_drivers": ["southwest monsoon", "low-lying backwater", "reservoir release"],
+        "data_status": "REGISTERED_NO_DATA",
+    },
+    {
+        "id": "in-kl-thrissur",
+        "name": "Thrissur",
+        "state": "Kerala",
+        "state_code": "IN-KL",
+        "bounds": [76.15, 10.45, 76.30, 10.60],
+        "center": [76.2144, 10.5276],
+        "languages": ["ml", "en", "hi"],
+        "river_basins": ["Chalakudy", "Karuvannur"],
+        "flood_drivers": ["southwest monsoon", "reservoir release", "riverine flood"],
+        "data_status": "REGISTERED_NO_DATA",
+    },
+    {
+        "id": "in-kl-kozhikode",
+        "name": "Kozhikode",
+        "state": "Kerala",
+        "state_code": "IN-KL",
+        "bounds": [75.72, 11.18, 75.88, 11.34],
+        "center": [75.7804, 11.2588],
+        "languages": ["ml", "en", "hi"],
+        "river_basins": ["Chaliyar", "Kallai", "Korapuzha"],
+        "flood_drivers": ["southwest monsoon", "riverine flood", "landslide-linked flash flood"],
+        "data_status": "REGISTERED_NO_DATA",
+    },
+    {
         "id": "in-tg-hyderabad",
         "name": "Hyderabad",
         "state": "Telangana",
@@ -321,12 +369,19 @@ _SCALE_NOTICE = (
 )
 
 
+_FACILITY_BASELINES = {"in-tn-chennai": "in-tn-chennai", "IN-KL": "in-kl"}
+
+
 def _region_view(region: Mapping[str, Any]) -> dict[str, Any]:
     return {
         **region,
         "country": "IN",
         "timezone": INDIA_TIMEZONE,
         "bounds_kind": "APPROXIMATE_PLANNING_ENVELOPE",
+        # Which packaged OpenStreetMap facility snapshot covers this region, if
+        # any. Facility coverage is separate from flood data (``data_status``).
+        "facility_baseline": _FACILITY_BASELINES.get(region["id"])
+        or _FACILITY_BASELINES.get(region["state_code"]),
     }
 
 

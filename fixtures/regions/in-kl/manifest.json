@@ -1,0 +1,12 @@
+{
+  "region_id": "in-kl",
+  "title": "Kerala OpenStreetMap facility baseline",
+  "is_simulated": false,
+  "contains": "Community-mapped facility locations only. No flood model, scenario, shelter activation, or road data.",
+  "files": [
+    {
+      "path": "osm-places.geojson",
+      "sha256": "ccd82181d02ce4f1fb4d270668d83d8918bbc111476fa2081b6b36f20eaf5b3f"
+    }
+  ]
+}

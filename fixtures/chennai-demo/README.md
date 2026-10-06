@@ -12,4 +12,4 @@ model/version binding, validity window, confidence, input provenance, and
 explicit centimetre-to-metre scale. They are packaged rapid impact estimates;
 they are not COGs, live observations, or hydraulically certified flood depths.
 
-Regenerate the road baseline with `pnpm osm:import`. Runtime maps use the packaged snapshot and never depend on OpenStreetMap tile servers or upstream internet.
+Regenerate the road baseline with `pnpm osm:import` and the facility baseline (`osm-places.geojson`) with `pnpm osm:import:places`, then update the checksum in `manifest.json`. Facility entries are community-mapped locations with `is_simulated: false`; they are not confirmed open, reachable, or activated as shelters. Runtime maps use the packaged snapshot and never depend on OpenStreetMap tile servers or upstream internet.

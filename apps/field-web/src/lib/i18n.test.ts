@@ -9,6 +9,7 @@ describe("field language selection", () => {
     expect(resolveLanguage("klingon", ["TA-in"])).toBe("ta");
     expect(resolveLanguage(null, ["fr-FR"])).toBe("en");
     expect(resolveLanguage(null, [])).toBe("en");
+    expect(resolveLanguage(null, ["ml-IN", "en-IN"])).toBe("ml");
   });
 
   it("falls back to English for a key a language has not translated", () => {

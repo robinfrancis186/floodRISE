@@ -16,6 +16,7 @@
     { "path": "shelters.geojson", "sha256": "8edae932e9b50f1c5d089fee6c68dfbc66bff65640b3ce25968e1badfaa12fdb" },
     { "path": "roads.geojson", "sha256": "40f9d855d406dc0d88fb38901a3946a74e1ab6e891bb744778aa33dca484784a" },
     { "path": "osm-baseline.geojson", "sha256": "1e9d13177f48851e80c5a78926d9d6fe248cff2b99bfed02a3cfaf3d89a3f277" },
+    { "path": "osm-places.geojson", "sha256": "c2132be00e0cc17a3a0832b684f519313c890d7d2998ebe4cef372dcb3cd9a41" },
     { "path": "rasters/manifest.json", "sha256": "5a0e62d8916019b4e0bf34e77d2a3e9d6059a21b2dc4b99175f3c762b9019ac2" }
   ]
 }

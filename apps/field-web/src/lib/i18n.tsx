@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 // Field strings for the navigation shell, primary actions, and emergency
-// helplines. Hindi and Tamil are first-pass translations: a deploying authority
+// helplines. Hindi, Tamil, and Malayalam are first-pass translations: a deploying authority
 // must have them reviewed by native speakers before public use, and any key
 // missing from a language falls back to English rather than rendering blank.
 const en = {
@@ -32,6 +32,11 @@ const en = {
   "helplines.safety": "Do not enter floodwater. In an emergency call 112.",
   "helplines.verify":
     "Numbers can differ by state and district. Confirm local helplines with your district administration.",
+  "facilities.title": "Nearest mapped hospitals",
+  "facilities.note":
+    "Locations from OpenStreetMap. Not confirmed open, reachable, or equipped for emergencies. Call before travelling.",
+  "facilities.unavailable": "The hospital list needs a connection the first time it is opened.",
+  "facilities.map": "Map",
   "contact.erss-112": "Emergency: police, fire, ambulance",
   "contact.ndma-1078": "National disaster helpline",
   "contact.state-1070": "State disaster control room",
@@ -73,6 +78,11 @@ const hi: Partial<Record<MessageKey, string>> = {
   "helplines.safety": "बाढ़ के पानी में न जाएँ। आपात स्थिति में 112 पर कॉल करें।",
   "helplines.verify":
     "नंबर राज्य और ज़िले के अनुसार अलग हो सकते हैं। स्थानीय हेल्पलाइन की पुष्टि अपने ज़िला प्रशासन से करें।",
+  "facilities.title": "नज़दीकी अस्पताल (मानचित्र से)",
+  "facilities.note":
+    "स्थान OpenStreetMap से लिए गए हैं। इनके खुले होने, पहुँच योग्य होने या आपातकालीन सुविधा की पुष्टि नहीं है। जाने से पहले कॉल करें।",
+  "facilities.unavailable": "अस्पतालों की सूची पहली बार खोलने के लिए इंटरनेट चाहिए।",
+  "facilities.map": "मानचित्र",
   "contact.erss-112": "आपातकालीन सेवा: पुलिस, अग्निशमन, एम्बुलेंस",
   "contact.ndma-1078": "राष्ट्रीय आपदा हेल्पलाइन",
   "contact.state-1070": "राज्य आपदा नियंत्रण कक्ष",
@@ -112,6 +122,11 @@ const ta: Partial<Record<MessageKey, string>> = {
   "helplines.safety": "வெள்ள நீரில் இறங்க வேண்டாம். அவசர நிலையில் 112-ஐ அழைக்கவும்.",
   "helplines.verify":
     "எண்கள் மாநிலம் மற்றும் மாவட்டத்தைப் பொறுத்து மாறுபடலாம். உள்ளூர் உதவி எண்களை உங்கள் மாவட்ட நிர்வாகத்திடம் உறுதிப்படுத்தவும்.",
+  "facilities.title": "அருகிலுள்ள மருத்துவமனைகள் (வரைபடத்திலிருந்து)",
+  "facilities.note":
+    "இடங்கள் OpenStreetMap-இலிருந்து பெறப்பட்டவை. திறந்திருப்பது, செல்லக்கூடியது அல்லது அவசர வசதி உள்ளது என உறுதிப்படுத்தப்படவில்லை. செல்வதற்கு முன் அழைக்கவும்.",
+  "facilities.unavailable": "மருத்துவமனை பட்டியலை முதல் முறை திறக்க இணைய இணைப்பு தேவை.",
+  "facilities.map": "வரைபடம்",
   "contact.erss-112": "அவசர சேவை: காவல், தீயணைப்பு, ஆம்புலன்ஸ்",
   "contact.ndma-1078": "தேசிய பேரிடர் உதவி எண்",
   "contact.state-1070": "மாநில பேரிடர் கட்டுப்பாட்டு அறை",
@@ -124,15 +139,60 @@ const ta: Partial<Record<MessageKey, string>> = {
   "contact.gcc-1913": "பெருநகர சென்னை மாநகராட்சி உதவி எண்"
 };
 
+const ml: Partial<Record<MessageKey, string>> = {
+  "nav.conditions": "സ്ഥിതി",
+  "nav.report": "റിപ്പോർട്ട്",
+  "nav.queue": "ക്യൂ",
+  "nav.alerts": "മുന്നറിയിപ്പ്",
+  "nav.route": "വഴി",
+  "nav.label": "ഫീൽഡ് നാവിഗേഷൻ",
+  "net.online": "ഓൺലൈൻ",
+  "net.offline": "ഓഫ്‌ലൈൻ",
+  "net.connected": "കണക്റ്റ് ചെയ്തു",
+  "net.offlineReady": "ഓഫ്‌ലൈനിന് തയ്യാർ",
+  "net.lastSync": "അവസാന സിങ്ക് പൂർത്തിയായി",
+  "net.queueReady": "ഓഫ്‌ലൈൻ ക്യൂ തയ്യാർ",
+  "header.install": "ഇൻസ്റ്റാൾ ചെയ്യുക",
+  "header.installLabel": "floodRISE Field ഇൻസ്റ്റാൾ ചെയ്യുക",
+  "header.language": "ഭാഷ",
+  "header.helplines": "അടിയന്തര ഹെൽപ്‌ലൈനുകൾ",
+  "conditions.title": "നിലവിലെ സ്ഥിതി",
+  "conditions.report": "വെള്ളപ്പൊക്കം റിപ്പോർട്ട് ചെയ്യുക",
+  "conditions.route": "അപകടസാധ്യത കുറഞ്ഞ വഴി കണ്ടെത്തുക",
+  "alerts.title": "മുന്നറിയിപ്പുകൾ",
+  "helplines.title": "അടിയന്തര ഹെൽപ്‌ലൈനുകൾ",
+  "helplines.intro": "വിളിക്കാൻ നമ്പറിൽ ടാപ്പ് ചെയ്യുക. ഇന്റർനെറ്റ് ഇല്ലാതെയും വിളിക്കാം.",
+  "helplines.call": "വിളിക്കുക",
+  "helplines.safety": "വെള്ളക്കെട്ടിൽ ഇറങ്ങരുത്. അടിയന്തര സാഹചര്യത്തിൽ 112-ൽ വിളിക്കുക.",
+  "helplines.verify":
+    "നമ്പറുകൾ സംസ്ഥാനവും ജില്ലയും അനുസരിച്ച് വ്യത്യാസപ്പെടാം. പ്രാദേശിക ഹെൽപ്‌ലൈനുകൾ ജില്ലാ ഭരണകൂടത്തിൽ നിന്ന് സ്ഥിരീകരിക്കുക.",
+  "facilities.title": "അടുത്തുള്ള ആശുപത്രികൾ (മാപ്പിൽ നിന്ന്)",
+  "facilities.note":
+    "സ്ഥലങ്ങൾ OpenStreetMap-ൽ നിന്നുള്ളതാണ്. തുറന്നിട്ടുണ്ടെന്നോ എത്തിച്ചേരാനാകുമെന്നോ അടിയന്തര സൗകര്യമുണ്ടെന്നോ സ്ഥിരീകരിച്ചിട്ടില്ല. പോകുന്നതിന് മുമ്പ് വിളിക്കുക.",
+  "facilities.unavailable": "ആശുപത്രി പട്ടിക ആദ്യമായി തുറക്കാൻ ഇന്റർനെറ്റ് കണക്ഷൻ ആവശ്യമാണ്.",
+  "facilities.map": "മാപ്പ്",
+  "contact.erss-112": "അടിയന്തര സേവനം: പോലീസ്, അഗ്നിശമന സേന, ആംബുലൻസ്",
+  "contact.ndma-1078": "ദേശീയ ദുരന്ത ഹെൽപ്‌ലൈൻ",
+  "contact.state-1070": "സംസ്ഥാന ദുരന്ത കൺട്രോൾ റൂം",
+  "contact.district-1077": "ജില്ലാ ദുരന്ത കൺട്രോൾ റൂം",
+  "contact.ambulance-108": "ആംബുലൻസ്",
+  "contact.fire-101": "അഗ്നിശമനവും രക്ഷാപ്രവർത്തനവും",
+  "contact.police-100": "പോലീസ്",
+  "contact.women-1091": "വനിതാ ഹെൽപ്‌ലൈൻ",
+  "contact.child-1098": "ചൈൽഡ്‌ലൈൻ",
+  "contact.gcc-1913": "ഗ്രേറ്റർ ചെന്നൈ കോർപ്പറേഷൻ ഹെൽപ്‌ലൈൻ"
+};
+
 export const LANGUAGES = [
   { code: "en", name: "English", short: "EN", locale: "en-IN" },
   { code: "hi", name: "हिन्दी", short: "हिं", locale: "hi-IN" },
-  { code: "ta", name: "தமிழ்", short: "த", locale: "ta-IN" }
+  { code: "ta", name: "தமிழ்", short: "த", locale: "ta-IN" },
+  { code: "ml", name: "മലയാളം", short: "മ", locale: "ml-IN" }
 ] as const;
 
 export type Language = (typeof LANGUAGES)[number]["code"];
 
-const dictionaries: Record<Language, Partial<Record<MessageKey, string>>> = { en, hi, ta };
+const dictionaries: Record<Language, Partial<Record<MessageKey, string>>> = { en, hi, ta, ml };
 const STORAGE_KEY = "floodrise.field.language";
 
 function isLanguage(value: unknown): value is Language {

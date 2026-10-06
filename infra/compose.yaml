@@ -147,6 +147,19 @@ services:
     restart: unless-stopped
     networks: [demo-internal, signature-updates]
 
+  # Open-source OpenStreetMap tile server (BSD-2-Clause). It serves an archive
+  # the operator places in ./osm-tiles; the web apps use it only when
+  # VITE_OSM_TILE_URL is set, and otherwise stay on the packaged offline map.
+  osm-tiles:
+    image: maptiler/tileserver-gl:v5.3.1
+    profiles: [osm]
+    ports:
+      - "127.0.0.1:8082:8080"
+    volumes:
+      - ./osm-tiles:/data:ro
+    restart: unless-stopped
+    networks: [demo-internal]
+
   tile-api:
     build:
       context: ..

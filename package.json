@@ -31,6 +31,7 @@
     "api:check": "pnpm --filter @floodrise/api-client generate:check",
     "fixtures:validate": "node scripts/validate-fixtures.mjs",
     "osm:import": "node scripts/import-osm-baseline.mjs",
+    "osm:import:places": "node scripts/import-osm-places.mjs",
     "seed": "cd services/backend && uv run python -m app.seed",
     "demo:reset": "ops/scripts/demo-reset.sh"
   },

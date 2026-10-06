@@ -10,6 +10,7 @@ docker compose -f infra/compose.yaml --profile tiles up -d
 docker compose -f infra/compose.yaml --profile observability up -d
 docker compose -f infra/compose.yaml --profile identity up -d   # Keycloak
 docker compose -f infra/compose.yaml --profile scanner up -d    # ClamAV
+docker compose -f infra/compose.yaml --profile osm up -d        # self-hosted OSM tiles
 ```
 
 The credentials in the compose file are intentionally non-secret local demo

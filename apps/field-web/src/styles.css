@@ -97,6 +97,14 @@ svg { stroke-width: 2; }
 .helpline-text span { color: #46546a; font-size: 14px; line-height: 1.4; }
 .helpline-call { display: flex; min-height: 44px; flex: none; align-items: center; gap: 8px; padding: 0 16px; border-radius: 999px; background: var(--link); color: #fff; font-size: 14px; font-weight: 700; }
 .helpline-call svg { width: 18px; height: 18px; }
+.facility-heading { margin: 0 0 6px; font-size: 20px; line-height: 1.25; }
+.facility-list { display: flex; flex-direction: column; margin: 12px 0; padding: 0; border-top: 1px solid var(--border); list-style: none; }
+.facility-list li { display: flex; min-height: 60px; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.facility-text { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.facility-text strong { font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+.facility-text span { color: #46546a; font-size: 13px; }
+.facility-map-link { display: flex; min-height: 44px; flex: none; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--link); border-radius: 999px; color: var(--link); font-size: 13px; font-weight: 700; text-decoration: none; }
+.facility-map-link svg { width: 16px; height: 16px; }
 .sync-announcement { padding: 8px 18px; background: #eaf7ee; color: #0d6c31; text-align: center; font-size: 13px; font-weight: 700; }
 
 .field-main { min-height: calc(100dvh - 185px); padding-bottom: calc(76px + env(safe-area-inset-bottom)); }

@@ -16,6 +16,10 @@ export function formatRelativeTime(timestamp: number, now = Date.now()) {
   return `${Math.floor(absoluteMinutes / 60)} hr ago`;
 }
 
+export function formatDistance(metres: number) {
+  return metres < 1_000 ? `${Math.round(metres / 10) * 10} m` : `${(metres / 1_000).toFixed(1)} km`;
+}
+
 export function formatDateTime(value: string | number) {
   return new Intl.DateTimeFormat("en-IN", {
     day: "numeric",

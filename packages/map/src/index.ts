@@ -1,6 +1,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./map.css";
 
+export { parseBasemapTileUrl } from "./basemap";
 export { FloodMap } from "./FloodMap";
 export { chennaiMapData } from "./data/chennai";
 export type {

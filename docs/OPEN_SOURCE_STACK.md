@@ -13,7 +13,8 @@ you deploy.
 | Web | React, Vite, TanStack Router/Query, Tailwind CSS | MIT | Used by both web apps |
 | Offline storage | Dexie (IndexedDB) | Apache-2.0 | Field PWA encrypted queue |
 | Maps | MapLibre GL JS | BSD-3-Clause | `packages/map`, no hosted tile dependency |
-| Map data | OpenStreetMap | ODbL 1.0 | Packaged Chennai road baseline with attribution |
+| Map data | OpenStreetMap | ODbL 1.0 | Packaged Chennai road baseline, 637-place Chennai facility baseline, and 23,586-place Kerala facility baseline, all attributed and checksummed |
+| Basemap tiles | TileServer GL | BSD-2-Clause | Compose profile `osm`; optional, enabled in the web apps by `VITE_OSM_TILE_URL` |
 | Database | PostgreSQL + PostGIS + pgRouting | PostgreSQL / GPL-2.0-or-later | Compose service; the demo path uses SQLite |
 | Cache and fan-out | Valkey | BSD-3-Clause | Compose service, replaces Redis; not yet used by the request path |
 | Object storage | MinIO | AGPL-3.0 | Compose service; media adapter not yet wired |
@@ -30,6 +31,28 @@ Run the optional services with:
 ```bash
 docker compose -f infra/compose.yaml --profile identity --profile scanner up -d
 ```
+
+### OpenStreetMap
+
+- **Roads:** `pnpm osm:import` refreshes the packaged road baseline.
+- **Facilities:** `pnpm osm:import:places` (Chennai) or `pnpm osm:import:places kerala`
+  (statewide, under `fixtures/regions/in-kl`) refreshes `osm-places.geojson`, a
+  snapshot of named hospitals, schools, colleges, community centres, police
+  stations, and fire stations. `GET /api/v1/osm/facilities` serves it nearest
+  first (add `baseline=in-kl` for Kerala), and the field PWA lists the nearest hospitals on its helplines screen.
+  The backend refuses the file if it does not match the manifest checksum.
+  These are community-mapped locations: some entries are mis-tagged, and none
+  is confirmed open, reachable, or an activated shelter.
+- **Basemap:** the map is offline by default. To add a basemap, run your own
+  tile server (`--profile osm`, see `infra/osm-tiles/README.md`) and set
+  `VITE_OSM_TILE_URL`. Public `openstreetmap.org` tile servers are refused in
+  code. Rendering was checked against a stub tile server, not a real
+  TileServer GL archive, and a deployment CSP must allow the tile origin in
+  `img-src` and `connect-src`.
+- **Not yet OSM-backed:** lower-risk routing still uses the hand-built demo
+  graph rather than the OSM road network, and there is no geocoder. Valhalla or
+  OSRM (routing) and Photon or Nominatim (geocoding) are the open-source
+  candidates.
 
 ### Keycloak
 

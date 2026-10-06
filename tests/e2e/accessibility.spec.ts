@@ -53,6 +53,10 @@ test("field helplines switch language and stay accessible", async ({ page }) => 
   await page.getByRole("link", { name: "Emergency helplines" }).click();
   await expect(page.getByRole("heading", { name: "Emergency helplines" })).toBeVisible();
   await expect(page.getByRole("link", { name: /^112/ })).toHaveAttribute("href", "tel:112");
+  await expect(page.getByRole("heading", { name: "Nearest mapped hospitals" })).toBeVisible();
+  await expect(page.getByText("© OpenStreetMap contributors", { exact: true })).toBeVisible();
+  await expect(page.locator(".facility-list li")).toHaveCount(5);
+  await expect(page.locator(".facility-map-link").first()).toHaveAttribute("href", /^geo:12\.\d+,80\.\d+$/);
 
   await page.getByRole("combobox", { name: "Language" }).selectOption("ta");
   await expect(page.getByRole("heading", { name: "அவசர உதவி எண்கள்" })).toBeVisible();

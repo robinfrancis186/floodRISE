@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import india
+from . import india, osm
 from .auth import (
     OIDCVerifier,
     Principal,
@@ -622,6 +622,25 @@ def create_app(
                 area_description=str(incident.get("area") or incident.get("title") or "India"),
             ),
             media_type=india.CAP_MEDIA_TYPE,
+        )
+
+    @router.get("/osm/facilities", tags=["openstreetmap"])
+    async def osm_facilities(
+        kind: Annotated[list[str] | None, Query()] = None,
+        latitude: Annotated[float | None, Query(ge=-90, le=90)] = None,
+        longitude: Annotated[float | None, Query(ge=-180, le=180)] = None,
+        radius_m: Annotated[float | None, Query(gt=0, le=osm.MAX_RADIUS_M)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        baseline: Annotated[str, Query(max_length=40)] = osm.DEFAULT_BASELINE,
+    ) -> dict[str, Any]:
+        """Mapped facilities from a packaged OpenStreetMap snapshot, nearest first."""
+        return osm.find_facilities(
+            kinds=frozenset(kind) if kind else None,
+            latitude=latitude,
+            longitude=longitude,
+            radius_m=radius_m,
+            limit=limit,
+            baseline=baseline,
         )
 
     @router.get("/india/regions", tags=["india"])

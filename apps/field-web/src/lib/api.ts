@@ -332,6 +332,40 @@ export async function submitReport(draft: OfflineReportDraft): Promise<ReportRec
   }
 }
 
+export const DEMO_ORIGIN = { latitude: 12.9791, longitude: 80.2209 } as const;
+
+const FacilityListResponse = z.object({
+  items: z.array(z.object({
+    id: z.string().min(1),
+    kind: z.string().min(1),
+    name: z.string().min(1),
+    names: z.record(z.string(), z.string()).default({}),
+    location: z.object({ latitude: z.number(), longitude: z.number() }),
+    distance_m: z.number().nullable()
+  })),
+  attribution: z.string().min(1),
+  notice: z.string().nullable().optional()
+});
+
+export type NearbyFacilities = z.infer<typeof FacilityListResponse>;
+
+/** Nearest hospitals from the packaged OpenStreetMap snapshot; null when unreachable. */
+export async function fetchNearbyHospitals(origin = DEMO_ORIGIN, limit = 5): Promise<NearbyFacilities | null> {
+  const query = new URLSearchParams({
+    kind: "HOSPITAL",
+    latitude: String(origin.latitude),
+    longitude: String(origin.longitude),
+    limit: String(limit)
+  });
+  try {
+    const response = await fetch(`${API_BASE}/osm/facilities?${query}`, { headers: apiHeaders() });
+    if (!response.ok) return null;
+    return FacilityListResponse.parse(await response.json());
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchAlerts(): Promise<FieldAlert[]> {
   try {
     const response = await fetch(`${API_BASE}/alerts?incident_id=${encodeURIComponent(DEMO_INCIDENT_ID)}`, {

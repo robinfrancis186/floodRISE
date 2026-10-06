@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -90,6 +90,72 @@ if (
   throw new Error("Every OSM road feature must retain source identity and non-simulated status.");
 }
 
+const osmPlaces = JSON.parse(await readFile(join(fixtureRoot, "osm-places.geojson"), "utf8"));
+if (
+  osmPlaces.type !== "FeatureCollection" ||
+  osmPlaces.attribution !== "© OpenStreetMap contributors" ||
+  !String(osmPlaces.licence).includes("ODbL") ||
+  !String(osmPlaces.notice).includes("Not an activated shelter list")
+) {
+  throw new Error("OSM places must be an attributed ODbL snapshot carrying the shelter notice.");
+}
+if (osmPlaces.features.filter((feature) => feature.properties?.kind === "HOSPITAL").length < 3) {
+  throw new Error("OSM places must include mapped hospitals.");
+}
+// Region bundles carry facility locations only; each pins its own checksums.
+const regionsRoot = join(root, "fixtures", "regions");
+let regionPlaces = 0;
+for (const regionId of (await readdir(regionsRoot)).sort()) {
+  const regionRoot = join(regionsRoot, regionId);
+  const regionManifest = JSON.parse(await readFile(join(regionRoot, "manifest.json"), "utf8"));
+  if (regionManifest.region_id !== regionId || regionManifest.is_simulated !== false) {
+    throw new Error(`Region manifest ${regionId} must name its region and be non-simulated source data.`);
+  }
+  for (const entry of regionManifest.files) {
+    const digest = createHash("sha256").update(await readFile(join(regionRoot, entry.path))).digest("hex");
+    if (digest !== entry.sha256) {
+      throw new Error(`Checksum mismatch for regions/${regionId}/${entry.path}.`);
+    }
+  }
+  const places = JSON.parse(await readFile(join(regionRoot, "osm-places.geojson"), "utf8"));
+  const [west, south, east, north] = places.bbox;
+  if (
+    places.attribution !== "© OpenStreetMap contributors" ||
+    !String(places.licence).includes("ODbL") ||
+    !String(places.notice).includes("Not an activated shelter list") ||
+    places.features.some((feature) => {
+      const [longitude, latitude] = feature.geometry?.coordinates ?? [];
+      return (
+        !/^osm-(node|way)-\d+$/.test(feature.id) ||
+        !(longitude >= west && longitude <= east && latitude >= south && latitude <= north) ||
+        feature.properties?.is_simulated !== false ||
+        !feature.properties?.name ||
+        !feature.properties?.kind
+      );
+    })
+  ) {
+    throw new Error(`Region ${regionId} places must be attributed, named, in-area OSM points.`);
+  }
+  regionPlaces += places.features.length;
+}
+
+const [placeWest, placeSouth, placeEast, placeNorth] = osmPlaces.bbox;
+if (
+  osmPlaces.features.some((feature) => {
+    const [longitude, latitude] = feature.geometry?.coordinates ?? [];
+    return (
+      feature.geometry?.type !== "Point" ||
+      !(longitude >= placeWest && longitude <= placeEast) ||
+      !(latitude >= placeSouth && latitude <= placeNorth) ||
+      feature.properties?.is_simulated !== false ||
+      !feature.properties?.osm_id ||
+      !feature.properties?.name
+    );
+  })
+) {
+  throw new Error("Every OSM place must be a named, in-area point with source identity.");
+}
+
 console.log(
-  `Validated ${manifest.files.length} fixture files, ${rasterManifest.artifacts.length} raster artifacts, and ${osmBaseline.features.length} OSM road segments for ${manifest.scenario_id}.`,
+  `Validated ${manifest.files.length} fixture files, ${rasterManifest.artifacts.length} raster artifacts, ${osmPlaces.features.length} OSM places (plus ${regionPlaces} in region bundles), and ${osmBaseline.features.length} OSM road segments for ${manifest.scenario_id}.`,
 );

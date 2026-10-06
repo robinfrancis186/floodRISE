@@ -9,16 +9,17 @@ other provider, and nothing here is an official warning.
 
 | Capability | Where | Notes |
 | --- | --- | --- |
-| Region registry | `GET /api/v1/india/regions`, `services/backend/app/india.py` | Twelve flood-prone urban regions with state code (ISO 3166-2:IN), approximate planning envelope, river basins, flood drivers, and language order. Only Chennai has packaged data (`data_status: DEMO_FIXTURE`); the rest are `REGISTERED_NO_DATA`. |
+| Region registry | `GET /api/v1/india/regions`, `services/backend/app/india.py` | Sixteen flood-prone urban regions, five of them in Kerala, with state code (ISO 3166-2:IN), approximate planning envelope, river basins, flood drivers, and language order. Only Chennai has packaged data (`data_status: DEMO_FIXTURE`); the rest are `REGISTERED_NO_DATA`. `facility_baseline` names the OpenStreetMap facility snapshot covering a region, which is separate from flood data. |
+| Kerala facility baseline | `GET /api/v1/osm/facilities?baseline=in-kl`, `fixtures/regions/in-kl` | Statewide OpenStreetMap snapshot of 23,586 named places: 14,234 schools, 4,992 hospitals, 1,821 community centres, 1,560 colleges, 807 police stations, and 172 fire stations. Locations only; Kerala has no flood model, scenario, roads, or shelter data here. |
 | Emergency helplines | `GET /api/v1/india/emergency-contacts`, field PWA `/helplines` | 112 first, then NDMA 1078, state 1070, district 1077, and service lines. City lines are added per region. Every entry is flagged `requires_local_verification`. The PWA list is packaged, so it opens offline and dials with `tel:` links. |
 | IMD and CWC scales | `GET /api/v1/india/warning-scales`, `GET /api/v1/india/rainfall/classify` | IMD colour codes, IMD 24-hour rainfall intensity categories, and CWC flood-situation categories as reference scales. `classify_river_level` applies warning/danger/HFL thresholds supplied by the caller. |
 | CAP 1.2 alert export | `GET /api/v1/alerts/{alert_id}/cap` | Serializes any floodRISE alert as OASIS Common Alerting Protocol 1.2, the format used by NDMA's SACHET platform. Times carry the `+05:30` offset. Demo alerts are `status: Exercise` with an explicit note; community cautions are `certainty: Possible` and carry `floodrise:official=false`. |
-| Languages | Field PWA language selector | English, Hindi, and Tamil for the navigation shell, primary actions, and the helplines screen. The choice persists per device and sets the document language. |
+| Languages | Field PWA language selector | English, Hindi, Tamil, and Malayalam for the navigation shell, primary actions, and the helplines screen. The choice persists per device and sets the document language. |
 | Time and number formats | Both web apps | Times render in IST (`Asia/Kolkata`) and counts use `en-IN` digit grouping. |
 
 ## Known limits
 
-- **Translations need review.** Hindi and Tamil strings are first-pass
+- **Translations need review.** Hindi, Tamil, and Malayalam strings are first-pass
   translations and have not been reviewed by native speakers. The report form,
   queue, route, and alert body text are still English. Untranslated keys fall back
   to English rather than rendering blank.
@@ -31,6 +32,9 @@ other provider, and nothing here is an official warning.
   any aggregator. `FLOODRISE_CAP_SENDER` and `FLOODRISE_CAP_SENDER_NAME` default to
   an `.invalid` demo identity; an authority replaces them with its registered
   sender. Polygon alert areas are described by `areaDesc` only.
+- **Kerala is facilities only.** The field PWA is still located in the Chennai
+  demo and does not query the Kerala baseline; only 410 of the Kerala places carry
+  a Malayalam name in OpenStreetMap.
 - **No live Indian data feeds.** IMD, CWC, and state sources stay permission-gated
   as described in [DATA_SOURCES.md](DATA_SOURCES.md).
 

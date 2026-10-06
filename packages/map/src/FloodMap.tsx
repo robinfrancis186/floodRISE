@@ -13,6 +13,7 @@ import type {
   Marker as MapLibreMarker,
 } from "maplibre-gl";
 
+import { configuredBasemapTileUrl } from "./basemap";
 import { chennaiMapData } from "./data/chennai";
 import {
   createMapStyle,
@@ -425,7 +426,7 @@ export function FloodMap({
         const view = initialViews[variant];
         const map = new mapLibrary.Map({
           container,
-          style: createMapStyle(variant, effectiveHorizon),
+          style: createMapStyle(variant, effectiveHorizon, configuredBasemapTileUrl()),
           center: view.center,
           zoom: view.zoom,
           minZoom: view.minZoom,
@@ -626,7 +627,7 @@ export function FloodMap({
         </div>
 
         <div className="fr-map-attribution" role="note">
-          Road data ©{" "}
+          {configuredBasemapTileUrl() ? "Map data" : "Road data"} ©{" "}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>{" "}

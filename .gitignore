@@ -22,6 +22,8 @@ blob-report/
 graphify-out/
 .DS_Store
 ._*
+infra/osm-tiles/*
+!infra/osm-tiles/README.md
 artifacts/runtime/
 artifacts/playwright/
 artifacts/playwright-report/

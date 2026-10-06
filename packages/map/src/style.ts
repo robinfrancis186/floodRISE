@@ -33,6 +33,7 @@ export const interactiveLayerIds = [
 export function createMapStyle(
   variant: FloodMapVariant,
   horizon: MapHorizon,
+  basemapTileUrl: string | null = null,
 ): StyleSpecification {
   const operational = isOperationalVariant(variant);
   const showRoutes = variant === "operations" || variant === "field";
@@ -44,6 +45,9 @@ export function createMapStyle(
     version: 8,
     name: "floodRISE deterministic Chennai offline map",
     sources: {
+      ...(basemapTileUrl
+        ? { basemap: { type: "raster" as const, tiles: [basemapTileUrl], tileSize: 256, maxzoom: 19 } }
+        : {}),
       wards: { type: "geojson", data: chennaiMapData.wards },
       water: { type: "geojson", data: chennaiMapData.water },
       roads: { type: "geojson", data: chennaiMapData.roads },
@@ -62,13 +66,17 @@ export function createMapStyle(
         type: "background",
         paint: { "background-color": "#f8fafc" },
       },
+      ...(basemapTileUrl
+        ? [{ id: "basemap", type: "raster" as const, source: "basemap", paint: { "raster-opacity": 0.85 } }]
+        : []),
       {
         id: "ward-fill",
         type: "fill",
         source: "wards",
         paint: {
           "fill-color": ["match", ["get", "class"], "ward-a", "#f4f7fa", "#eef2f6"],
-          "fill-opacity": 0.9,
+          // The packaged ward tint would hide a basemap, so let it show through.
+          "fill-opacity": basemapTileUrl ? 0.12 : 0.9,
         },
       },
       {
