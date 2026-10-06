@@ -25,6 +25,9 @@ mkdirSync(output);
 cpSync("apps/ops-web/dist", output, { recursive: true });
 cpSync("apps/field-web/dist", resolve(output, "field"), { recursive: true });
 const fieldAssets = resolve(output, "field/assets");
+for (const assets of [resolve(output, "assets"), fieldAssets]) {
+  if (!readdirSync(assets).some((file) => /^maplibre-gl-worker-.+\.js$/.test(file))) throw new Error("Release is missing the bundled map worker.");
+}
 if (!readdirSync(fieldAssets).filter((file) => file.endsWith(".css"))
   .some((file) => readFileSync(resolve(fieldAssets, file), "utf8").includes(".fr-map-sr-only"))) {
   throw new Error("Field release is missing the shared map stylesheet.");

@@ -33,6 +33,7 @@ import type {
   MapHorizon,
   MapPosition,
 } from "./types";
+import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 
 type MapLibrary = typeof import("maplibre-gl");
 type PointFeature = MapFeature<{ type: "Point"; coordinates: MapPosition }>;
@@ -425,6 +426,7 @@ export function FloodMap({
       try {
         const mapLibrary = await import("maplibre-gl");
         if (disposed) return;
+        mapLibrary.setWorkerUrl(mapWorkerUrl);
 
         mapLibraryRef.current = mapLibrary;
         const view = initialViews[variant];

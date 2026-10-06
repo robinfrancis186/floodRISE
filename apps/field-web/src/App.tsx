@@ -11,7 +11,9 @@ export function AppShell() {
   const path = pathname.startsWith(import.meta.env.BASE_URL)
     ? `/${pathname.slice(import.meta.env.BASE_URL.length).replace(/^\//, "")}`
     : pathname;
-  const { needRefresh: [needsUpdate], updateServiceWorker } = useRegisterSW();
+  const { needRefresh: [needsUpdate], updateServiceWorker } = useRegisterSW({
+    onRegisteredSW: (_url, registration) => { void registration?.update().catch(() => {}); }
+  });
   const { isOnline, isSyncing, lastResult } = useAutoSync();
   const isFocusedPage = path === "/report" || path === "/demo-reset";
 

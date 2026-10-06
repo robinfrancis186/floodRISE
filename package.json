@@ -5,7 +5,7 @@
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "dev": "concurrently -n api,ops,field -c magenta,blue,green \"pnpm dev:api\" \"pnpm dev:ops\" \"pnpm dev:field\"",
-    "dev:api": "cd services/backend && uv run uvicorn app.main:app --reload --port 8787",
+    "dev:api": "cd services/backend && uv run uvicorn app.main:app --reload --port 8787 --timeout-graceful-shutdown 5",
     "dev:ops": "pnpm --filter @floodrise/ops-web dev",
     "dev:field": "pnpm --filter @floodrise/field-web dev",
     "build": "pnpm -r --if-present build",

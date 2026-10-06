@@ -17,4 +17,4 @@ USER floodrise
 WORKDIR /workspace/services/backend
 EXPOSE 8787
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787", "--timeout-graceful-shutdown", "30"]

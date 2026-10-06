@@ -17,6 +17,12 @@
 - Release build packages operations at `/` and the PWA at `/field/`; assembly
   checks ensure map CSS survives tree shaking and the manifest uses `/field/`.
 - A protected release without valid OIDC/API build configuration is rejected.
+- Published dependency fixes are locked: MapLibre 6.12.0, Seroval/its plugins
+  1.6.8, Cryptography 50.0.2, PyJWT 2.15.1, and Mako 1.4.3. MapLibre's module
+  worker is explicitly bundled for both products. Dependency security findings
+  triggered this follow-up patch; GitHub CI and security scans run on push.
+- Development and container API shutdown have explicit deadlines so an open
+  SSE stream cannot indefinitely stall a reload or deployment termination.
 
 ## Hosted verification
 
