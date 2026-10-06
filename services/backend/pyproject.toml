@@ -24,7 +24,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-  "hypothesis>=6.138.15,<7",
+  "hypothesis>=6.157.1,<7",
   "pytest>=8.4.1,<9",
   "pytest-asyncio>=1.1.0,<2",
   "pytest-cov>=6.2.1,<7",
