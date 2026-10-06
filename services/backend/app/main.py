@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import india
 from .auth import (
     OIDCVerifier,
     Principal,
@@ -26,7 +27,14 @@ from .config import Settings, get_settings
 from .database import Database, canonical_json
 from .domain import FloodRiseService, iso_utc
 from .errors import AppError, NotFoundError, install_exception_handlers, problem_openapi_response
-from .media import MAX_MEDIA_BYTES, DemoCleanScanner, MediaService, UnavailableScanner
+from .media import (
+    MAX_MEDIA_BYTES,
+    ClamAVScanner,
+    DemoCleanScanner,
+    MediaScanner,
+    MediaService,
+    UnavailableScanner,
+)
 from .schemas import (
     ApprovalCreateInput,
     ApprovalDecisionInput,
@@ -112,6 +120,16 @@ def _database_url_for_sync(url: str) -> str:
     )
 
 
+def _default_scanner(runtime: Settings) -> MediaScanner:
+    if runtime.is_demo:
+        return DemoCleanScanner()
+    if runtime.clamav_host:
+        return ClamAVScanner(
+            runtime.clamav_host, runtime.clamav_port, runtime.clamav_timeout_seconds
+        )
+    return UnavailableScanner()
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -126,7 +144,7 @@ def create_app(
         # A simulated clean result is permitted only inside the visibly
         # labelled deterministic demo. Any non-demo deployment without an
         # injected approved scanner fails closed and retains quarantine bytes.
-        scanner=DemoCleanScanner() if runtime.is_demo else UnavailableScanner(),
+        scanner=_default_scanner(runtime),
         clock=lambda: target_service.scenario_clock,
     )
 
@@ -143,8 +161,9 @@ def create_app(
         title="floodRISE API",
         summary="Human-verified flood intelligence and decision support",
         description=(
-            "Versioned Chennai flood-response API. The default profile is deterministic "
-            "DEMO DATA and never contacts a production notification destination."
+            "Versioned flood-response API for Indian cities, replaying a Chennai scenario. "
+            "The default profile is deterministic DEMO DATA and never contacts a production "
+            "notification destination."
         ),
         version="0.1.0",
         openapi_url=f"{runtime.api_prefix}/openapi.json",
@@ -584,6 +603,50 @@ def create_app(
         incident_id: Annotated[str, Query()],
     ) -> dict[str, Any]:
         return _page(service(request).alerts(incident_id))
+
+    @router.get(
+        "/alerts/{alert_id}/cap",
+        tags=["alerts"],
+        response_class=Response,
+        responses={200: {"content": {india.CAP_MEDIA_TYPE: {}}}},
+    )
+    async def alert_cap(alert_id: str, request: Request) -> Response:
+        """Export one alert as CAP 1.2, the open standard used by NDMA SACHET."""
+        alert = service(request).alert(alert_id)
+        incident = service(request).incident(alert["incident_id"])
+        return Response(
+            content=india.alert_to_cap(
+                alert,
+                sender=runtime.cap_sender,
+                sender_name=runtime.cap_sender_name,
+                area_description=str(incident.get("area") or incident.get("title") or "India"),
+            ),
+            media_type=india.CAP_MEDIA_TYPE,
+        )
+
+    @router.get("/india/regions", tags=["india"])
+    async def india_regions() -> dict[str, Any]:
+        return _page(india.list_regions())
+
+    @router.get("/india/regions/{region_id}", tags=["india"])
+    async def india_region(region_id: str) -> dict[str, Any]:
+        return india.get_region(region_id)
+
+    @router.get("/india/emergency-contacts", tags=["india"])
+    async def india_emergency_contacts(
+        region_id: Annotated[str | None, Query()] = None,
+    ) -> dict[str, Any]:
+        return _page(india.emergency_contacts(region_id))
+
+    @router.get("/india/warning-scales", tags=["india"])
+    async def india_warning_scales() -> dict[str, Any]:
+        return india.warning_scales()
+
+    @router.get("/india/rainfall/classify", tags=["india"])
+    async def india_classify_rainfall(
+        mm_24h: Annotated[float, Query(ge=0, le=3_000)],
+    ) -> dict[str, Any]:
+        return india.classify_rainfall(mm_24h)
 
     @router.get("/audit", tags=["audit"])
     async def list_audit(

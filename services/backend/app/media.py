@@ -10,6 +10,8 @@ route exists in v1.
 from __future__ import annotations
 
 import hashlib
+import socket
+import struct
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -118,6 +120,48 @@ class RejectingScanner:
     def scan(self, payload: bytes) -> ScannerResult:
         del payload
         return "MALICIOUS"
+
+
+@dataclass(frozen=True, slots=True)
+class ClamAVScanner:
+    """Scan evidence with the open-source ClamAV daemon over its INSTREAM protocol.
+
+    Any transport error, timeout, or unrecognized reply is ``UNAVAILABLE`` so the
+    upload stays quarantined; only an explicit ``OK`` from clamd is ``CLEAN``.
+    """
+
+    host: str
+    port: int = 3310
+    timeout_seconds: float = 10.0
+    chunk_bytes: int = 64 * 1024
+
+    def scan(self, payload: bytes) -> ScannerResult:
+        try:
+            with socket.create_connection(
+                (self.host, self.port), timeout=self.timeout_seconds
+            ) as connection:
+                connection.settimeout(self.timeout_seconds)
+                connection.sendall(b"zINSTREAM\0")
+                for offset in range(0, len(payload), self.chunk_bytes):
+                    chunk = payload[offset : offset + self.chunk_bytes]
+                    connection.sendall(struct.pack("!I", len(chunk)) + chunk)
+                connection.sendall(struct.pack("!I", 0))
+                reply = bytearray()
+                while len(reply) < 4_096:
+                    received = connection.recv(1_024)
+                    if not received:
+                        break
+                    reply.extend(received)
+                    if b"\0" in received:
+                        break
+        except OSError:
+            return "UNAVAILABLE"
+        verdict = bytes(reply).split(b"\0", 1)[0].decode("utf-8", errors="replace").strip()
+        if verdict == "stream: OK":
+            return "CLEAN"
+        if verdict.startswith("stream: ") and verdict.endswith(" FOUND"):
+            return "MALICIOUS"
+        return "UNAVAILABLE"
 
 
 def _image_error(code: str, detail: str) -> AppError:

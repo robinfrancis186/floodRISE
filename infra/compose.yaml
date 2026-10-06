@@ -34,15 +34,17 @@ services:
     restart: unless-stopped
     networks: [demo-internal]
 
-  redis:
-    image: redis:7.4-alpine
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+  # Valkey is the BSD-licensed, Linux Foundation fork of Redis and speaks the
+  # same protocol, so FLOODRISE_REDIS_URL keeps its redis:// scheme.
+  valkey:
+    image: valkey/valkey:8.0-alpine
+    command: ["valkey-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
-      - redis-data:/data
+      - valkey-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -107,6 +109,43 @@ services:
       MOCKSERVER_LOG_LEVEL: INFO
     restart: unless-stopped
     networks: [demo-internal]
+
+  # Open-source OIDC provider (Apache-2.0) for exercising bearer-token auth
+  # without a cloud identity service. The imported realm defines the floodRISE
+  # roles under realm_access.roles; it contains no users or secrets.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    profiles: [identity]
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: floodrise_demo
+      KC_BOOTSTRAP_ADMIN_PASSWORD: floodrise_demo_only
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    restart: unless-stopped
+    networks: [demo-internal]
+
+  # Open-source malware scanner (GPL-2.0) for FLOODRISE_CLAMAV_HOST. It joins a
+  # second, egress-capable network only so freshclam can fetch signatures; it
+  # holds no notification configuration.
+  clamav:
+    image: clamav/clamav:1.4
+    profiles: [scanner]
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+    networks: [demo-internal, signature-updates]
 
   tile-api:
     build:
@@ -184,7 +223,8 @@ services:
 
 volumes:
   postgis-data:
-  redis-data:
+  valkey-data:
+  clamav-data:
   minio-data:
   localstack-data:
   prometheus-data:
@@ -193,3 +233,5 @@ volumes:
 networks:
   demo-internal:
     internal: true
+  # Egress for ClamAV signature updates only; no demo service may join it.
+  signature-updates: {}

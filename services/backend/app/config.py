@@ -50,13 +50,18 @@ class Settings(BaseSettings):
     demo_alert_sink: str = "fake://notification-sink"
     scenario_clock_start: str = "2023-12-04T14:10:00Z"
 
+    # CAP 1.2 sender identity. A deploying authority replaces these with the
+    # identifier it registered with its alert aggregator (e.g. NDMA SACHET).
+    cap_sender: str = "demo@floodrise.invalid"
+    cap_sender_name: str = "floodRISE deterministic demo (not an alerting authority)"
+
     oidc_issuer: str | None = None
     oidc_audience: str = "floodrise-api"
     oidc_jwks_url: str | None = None
     oidc_jwks_json: SecretStr | None = None
     oidc_algorithms: StringList = Field(default_factory=lambda: ["RS256"])
     oidc_role_claims: StringList = Field(
-        default_factory=lambda: ["cognito:groups", "roles", "custom:roles"]
+        default_factory=lambda: ["cognito:groups", "roles", "custom:roles", "realm_access.roles"]
     )
     oidc_mfa_amr_values: StringList = Field(
         default_factory=lambda: ["mfa", "otp", "totp", "webauthn", "fido", "fido2", "hwk"]
@@ -75,6 +80,12 @@ class Settings(BaseSettings):
     oidc_http_timeout_seconds: float = Field(default=3.0, gt=0, le=15)
     session_secret: SecretStr = SecretStr("demo-only-change-before-production")
     secure_cookies: bool = False
+
+    # Optional open-source ClamAV daemon. When unset, non-demo media stays
+    # quarantined (fail closed) until a scanner is configured or injected.
+    clamav_host: str | None = None
+    clamav_port: int = Field(default=3310, ge=1, le=65_535)
+    clamav_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
 
     object_store_endpoint: str = "http://localhost:9000"
     object_store_bucket: str = "floodrise-demo"

@@ -1524,6 +1524,12 @@ class FloodRiseService:
     def alerts(self, incident_id: str) -> list[dict[str, Any]]:
         return self._for_incident(self.database.list("alert"), incident_id)
 
+    def alert(self, alert_id: str) -> dict[str, Any]:
+        alert = self.database.get("alert", alert_id)
+        if not alert:
+            raise NotFoundError("alert", alert_id)
+        return alert
+
     def advance_demo(self, request: DemoAdvanceInput, principal: Principal) -> dict[str, Any]:
         previous = self.scenario_clock
         current = previous + timedelta(minutes=request.minutes)

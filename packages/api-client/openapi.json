@@ -1249,7 +1249,7 @@
     }
   },
   "info": {
-    "description": "Versioned Chennai flood-response API. The default profile is deterministic DEMO DATA and never contacts a production notification destination.",
+    "description": "Versioned flood-response API for Indian cities, replaying a Chennai scenario. The default profile is deterministic DEMO DATA and never contacts a production notification destination.",
     "summary": "Human-verified flood intelligence and decision support",
     "title": "floodRISE API",
     "version": "0.1.0"
@@ -1296,6 +1296,46 @@
           }
         },
         "summary": "List Alerts",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/{alert_id}/cap": {
+      "get": {
+        "description": "Export one alert as CAP 1.2, the open standard used by NDMA SACHET.",
+        "operationId": "alert_cap_api_v1_alerts__alert_id__cap_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/cap+xml": {}
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "RFC 9457 problem detail"
+          }
+        },
+        "summary": "Alert Cap",
         "tags": [
           "alerts"
         ]
@@ -2318,6 +2358,218 @@
         "summary": "Bootstrap",
         "tags": [
           "incidents"
+        ]
+      }
+    },
+    "/api/v1/india/emergency-contacts": {
+      "get": {
+        "operationId": "india_emergency_contacts_api_v1_india_emergency_contacts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "region_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response India Emergency Contacts Api V1 India Emergency Contacts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "RFC 9457 problem detail"
+          }
+        },
+        "summary": "India Emergency Contacts",
+        "tags": [
+          "india"
+        ]
+      }
+    },
+    "/api/v1/india/rainfall/classify": {
+      "get": {
+        "operationId": "india_classify_rainfall_api_v1_india_rainfall_classify_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "mm_24h",
+            "required": true,
+            "schema": {
+              "maximum": 3000,
+              "minimum": 0,
+              "title": "Mm 24H",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response India Classify Rainfall Api V1 India Rainfall Classify Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "RFC 9457 problem detail"
+          }
+        },
+        "summary": "India Classify Rainfall",
+        "tags": [
+          "india"
+        ]
+      }
+    },
+    "/api/v1/india/regions": {
+      "get": {
+        "operationId": "india_regions_api_v1_india_regions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response India Regions Api V1 India Regions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "RFC 9457 problem detail"
+          }
+        },
+        "summary": "India Regions",
+        "tags": [
+          "india"
+        ]
+      }
+    },
+    "/api/v1/india/regions/{region_id}": {
+      "get": {
+        "operationId": "india_region_api_v1_india_regions__region_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "region_id",
+            "required": true,
+            "schema": {
+              "title": "Region Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response India Region Api V1 India Regions  Region Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "RFC 9457 problem detail"
+          }
+        },
+        "summary": "India Region",
+        "tags": [
+          "india"
+        ]
+      }
+    },
+    "/api/v1/india/warning-scales": {
+      "get": {
+        "operationId": "india_warning_scales_api_v1_india_warning_scales_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response India Warning Scales Api V1 India Warning Scales Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "RFC 9457 problem detail"
+          }
+        },
+        "summary": "India Warning Scales",
+        "tags": [
+          "india"
         ]
       }
     },

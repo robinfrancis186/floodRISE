@@ -4,16 +4,18 @@ import { BellRing, Clock3, Info, ShieldAlert, UsersRound } from "lucide-react";
 import { fetchAlerts } from "../lib/api";
 import { formatDateTime } from "../lib/format";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { useI18n } from "../lib/i18n";
 
 export function AlertsPage() {
   const { isOnline } = useNetworkStatus();
+  const { t } = useI18n();
   const alerts = useQuery({ queryKey: ["field-alerts"], queryFn: fetchAlerts });
 
   return (
     <div className="page page-content standard-page">
       <div className="page-title-row">
         <div>
-          <h1>Alerts</h1>
+          <h1>{t("alerts.title")}</h1>
           <p>Cautions, authorized alerts, and system freshness updates for your selected area.</p>
         </div>
         <BellRing aria-hidden className="page-title-icon" />

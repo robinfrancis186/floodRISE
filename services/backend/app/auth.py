@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -99,6 +100,23 @@ def _claim_values(value: object) -> list[str]:
     if isinstance(value, (list, tuple, set)):
         return [str(item).strip() for item in value if str(item).strip()]
     return []
+
+
+def _claim_lookup(claims: Mapping[str, Any], name: str) -> object:
+    """Read a claim by exact name, then as a dotted path.
+
+    Keycloak nests roles under ``realm_access.roles``; Cognito and namespaced
+    URL claims are flat, so the exact name always wins.
+    """
+
+    if name in claims:
+        return claims[name]
+    value: object = claims
+    for part in name.split("."):
+        if not isinstance(value, Mapping) or part not in value:
+            return None
+        value = value[part]
+    return value
 
 
 def _claim_is_true(value: object) -> bool:
@@ -218,7 +236,7 @@ class OIDCVerifier:
         supplied: set[str] = set()
         for claim_name in self.settings.oidc_role_claims:
             supplied.update(
-                _normalize_role(value) for value in _claim_values(claims.get(claim_name))
+                _normalize_role(value) for value in _claim_values(_claim_lookup(claims, claim_name))
             )
         roles = frozenset(supplied & ROLES)
         if not roles:

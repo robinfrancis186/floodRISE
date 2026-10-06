@@ -5,6 +5,7 @@ import { OfflineQueuePage } from "./pages/OfflineQueuePage";
 const AlertsPage = lazyRouteComponent(() => import("./pages/AlertsPage"), "AlertsPage");
 const CurrentConditionsPage = lazyRouteComponent(() => import("./pages/CurrentConditionsPage"), "CurrentConditionsPage");
 const DemoResetPage = lazyRouteComponent(() => import("./pages/DemoResetPage"), "DemoResetPage");
+const HelplinesPage = lazyRouteComponent(() => import("./pages/HelplinesPage"), "HelplinesPage");
 const loadLowerRiskRoute = () => import("./pages/LowerRiskRoutePage");
 const LowerRiskRoutePage = lazyRouteComponent(loadLowerRiskRoute, "LowerRiskRoutePage");
 const ReceiptPage = lazyRouteComponent(() => import("./pages/ReceiptPage"), "ReceiptPage");
@@ -17,9 +18,10 @@ const demoResetRoute = createRoute({ getParentRoute: () => rootRoute, path: "/de
 const queueRoute = createRoute({ getParentRoute: () => rootRoute, path: "/queue", component: OfflineQueuePage });
 const alertsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/alerts", component: AlertsPage });
 const routeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/lower-risk-route", component: LowerRiskRoutePage });
+const helplinesRoute = createRoute({ getParentRoute: () => rootRoute, path: "/helplines", component: HelplinesPage });
 const receiptRoute = createRoute({ getParentRoute: () => rootRoute, path: "/receipt/$receiptId", component: ReceiptPage });
 
-const routeTree = rootRoute.addChildren([indexRoute, reportRoute, demoResetRoute, queueRoute, alertsRoute, routeRoute, receiptRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, reportRoute, demoResetRoute, queueRoute, alertsRoute, routeRoute, helplinesRoute, receiptRoute]);
 
 export const router = createRouter({ routeTree, defaultPreload: "intent", scrollRestoration: true });
 

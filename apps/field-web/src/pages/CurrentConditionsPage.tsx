@@ -4,10 +4,12 @@ import { Alert, AlertDescription, AlertTitle, Badge, Button } from "@floodrise/u
 import { ArrowRight, Clock3, LocateFixed, Navigation, Plus, ShieldCheck } from "lucide-react";
 import { fieldConditions } from "../data/demo";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { useI18n } from "../lib/i18n";
 import { StatusMark } from "../components/StatusMark";
 
 export function CurrentConditionsPage() {
   const { isOnline } = useNetworkStatus();
+  const { t } = useI18n();
 
   return (
     <div className="page current-conditions-page">
@@ -32,7 +34,7 @@ export function CurrentConditionsPage() {
       <div className="page-content conditions-content">
         <div className="page-title-row">
           <div>
-            <h1>Current conditions</h1>
+            <h1>{t("conditions.title")}</h1>
             <p>Observed information and rapid impact estimates are kept distinct.</p>
           </div>
           <Badge variant={isOnline ? "success" : "warning"}>{isOnline ? "Connected" : "Last known"}</Badge>
@@ -50,10 +52,10 @@ export function CurrentConditionsPage() {
 
         <div className="primary-actions">
           <Button asChild size="lg" className="primary-field-action">
-            <Link to="/report"><Plus aria-hidden />Report flooding</Link>
+            <Link to="/report"><Plus aria-hidden />{t("conditions.report")}</Link>
           </Button>
           <Button asChild size="lg" variant="outline">
-            <Link to="/lower-risk-route"><Navigation aria-hidden />Find a lower-risk route</Link>
+            <Link to="/lower-risk-route"><Navigation aria-hidden />{t("conditions.route")}</Link>
           </Button>
         </div>
 

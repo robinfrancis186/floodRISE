@@ -1,0 +1,77 @@
+{
+  "realm": "floodrise",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      {
+        "name": "incident_commander",
+        "description": "floodRISE incident commander role"
+      },
+      {
+        "name": "verifier",
+        "description": "floodRISE verifier role"
+      },
+      {
+        "name": "responder",
+        "description": "floodRISE responder role"
+      },
+      {
+        "name": "engineer",
+        "description": "floodRISE engineer role"
+      },
+      {
+        "name": "shelter_manager",
+        "description": "floodRISE shelter manager role"
+      },
+      {
+        "name": "auditor",
+        "description": "floodRISE auditor role"
+      },
+      {
+        "name": "identity_administrator",
+        "description": "floodRISE identity administrator role"
+      },
+      {
+        "name": "reporter",
+        "description": "floodRISE reporter role"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "floodrise-web",
+      "name": "floodRISE web clients",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:5174/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:5174"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "floodrise-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "floodrise-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

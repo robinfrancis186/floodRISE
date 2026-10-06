@@ -15,7 +15,8 @@ export default defineConfig({
       manifest: {
         name: "floodRISE Field",
         short_name: "floodRISE",
-        description: "Offline-ready, human-verified flood reporting for Chennai responders and communities.",
+        description: "Offline-ready, human-verified flood reporting for responders and communities across India.",
+        lang: "en-IN",
         theme_color: "#062d78",
         background_color: "#ffffff",
         display: "standalone",

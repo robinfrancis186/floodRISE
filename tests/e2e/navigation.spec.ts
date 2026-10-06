@@ -22,6 +22,7 @@ const fieldRoutes: RouteExpectation[] = [
   { path: "/queue", text: "Offline queue" },
   { path: "/alerts", text: "Alerts" },
   { path: "/lower-risk-route", text: "Lower-risk route" },
+  { path: "/helplines", text: "Emergency helplines" },
   { path: "/demo-reset", text: "Reset this demo device" },
 ];
 

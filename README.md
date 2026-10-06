@@ -1,6 +1,6 @@
 # floodRISE
 
-floodRISE is a human-verified flood intelligence and emergency decision-support MVP for Chennai. It combines deterministic flood-impact replay, community corroboration, lower-risk evacuation routing, human approval, and resilience auditing.
+floodRISE is a human-verified flood intelligence and emergency decision-support MVP for Indian cities, demonstrated with a Chennai scenario. It combines deterministic flood-impact replay, community corroboration, lower-risk evacuation routing, human approval, and resilience auditing.
 
 The pnpm/uv monorepo contains two React products, shared packages, and two
 FastAPI services:
@@ -27,6 +27,10 @@ pnpm dev
 - Operations console: <http://localhost:5173>
 - Field PWA: <http://localhost:5174>
 - API and OpenAPI: <http://127.0.0.1:8787/docs>
+
+India-specific reference data, CAP 1.2 alert export, and field-app languages are
+described in `docs/INDIA.md`; the open-source components and optional Keycloak and
+ClamAV services are in `docs/OPEN_SOURCE_STACK.md`.
 
 The default profile is a deterministic, clearly watermarked `DEMO DATA` replay and never contacts a real notification destination. See `docs/DEMO_RUNBOOK.md` for the judging flow and `docs/SAFETY.md` for operational boundaries.
 The exact boundary between locally verified MVP behavior and deployment-time

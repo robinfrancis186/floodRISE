@@ -19,6 +19,10 @@ and `is_simulated`.
 | [IMD API](https://api.imd.gov.in/public/api_reference.html) | Weather warnings, rainfall, and forecasts | Credentialed adapter only; obey current API terms and attribution. Never commit credentials or scrape a replacement endpoint. |
 | CWC/NWDP approved access | Gauge levels and flood forecasts | Activate only with written/contractual access, station metadata, datum/unit checks, freshness limits, and redistribution approval. |
 | Chennai Flood Monitor / GCC GIS | Local drainage, roads, shelters, and authority context | Permission-gated. Do not scrape, mirror, or redistribute without written authorization. |
+| [Open Government Data Platform India](https://www.data.gov.in/) | Administrative, rainfall, and infrastructure context | Candidate source. Check each dataset's licence (commonly the Government Open Data License – India), publisher, and update date before use. |
+| [India-WRIS](https://indiawris.gov.in/) | Basin, reservoir, and river context | Candidate source. Verify access terms, station metadata, datum, and redistribution rights; not a substitute for CWC forecast access. |
+| [ISRO Bhuvan / NRSC](https://bhuvan.nrsc.gov.in/) | Flood-inundation and land-use context | Candidate source. Verify product terms and attribution; keep acquisition time distinct from observation time. |
+| [NDMA SACHET](https://sachet.ndma.gov.in/) | Official CAP alerts | Candidate inbound source and the interchange format floodRISE exports. Consume only through an authorized channel; never restate a SACHET alert as a floodRISE determination. |
 | Community and responder reports | Rapid ground evidence | Purpose-limited, deduplicated, independence-checked, time-expiring, privacy-minimized, and never described as official confirmation. |
 
 Provider links and terms change. The data steward rechecks the primary source at
