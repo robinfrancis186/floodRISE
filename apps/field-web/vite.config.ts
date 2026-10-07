@@ -39,21 +39,27 @@ export default defineConfig({
       workbox: {
         navigateFallback: `${fieldBase}index.html`,
         globPatterns: ["**/*.{js,css,html,svg,woff2}"],
-        runtimeCaching: process.env.VITE_DEMO_MODE === "false" ? [] : [
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.origin === self.location.origin && /\/assets\/osm-places-[\w-]+\.geojson$/.test(url.pathname),
+            handler: "CacheFirst",
+            options: { cacheName: "field-public-osm-baselines", expiration: { maxEntries: 2, maxAgeSeconds: 30 * 86400 } }
+          },
+          ...(process.env.VITE_DEMO_MODE === "false" ? [] : [
           {
             // Health must always be fetched from the network because the
             // per-profile demo reset uses it as a deletion safety proof.
-            urlPattern: ({ url }) => url.pathname.startsWith("/api/v1/")
+            urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith("/api/v1/")
               && url.pathname !== "/api/v1/reports"
               && url.pathname !== "/api/v1/health",
-            handler: "NetworkFirst",
+            handler: "NetworkFirst" as const,
             options: {
               cacheName: "field-api-last-known",
               networkTimeoutSeconds: 3,
               expiration: { maxEntries: 40, maxAgeSeconds: 3600 }
             }
           }
-        ]
+        ])]
       }
     })
   ],

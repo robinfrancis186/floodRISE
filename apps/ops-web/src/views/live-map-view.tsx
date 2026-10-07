@@ -30,6 +30,7 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
   const [decision, setDecision] = useState<"APPROVE" | "MODIFY" | "REJECT" | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
   const canRequest = connected && action.status === "RECOMMENDED" && !action.approvalId && ["Incident commander", "Field responder", "Resilience engineer"].includes(role);
+  const [baseline, setBaseline] = useState<"chennai" | "kerala">("chennai");
   const [listOpen, setListOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
   const scenarioTime = new Date(snapshot.scenarioTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
@@ -47,25 +48,28 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
 
   return (
     <div className="workspace live-workspace">
-      <div className="change-alert" role="status">
+      {baseline === "chennai" && <div className="change-alert" role="status">
         <AlertTriangle aria-hidden />
         <span className="change-alert-label">Replay update</span>
         <strong>Velachery flood estimate updated</strong>
         <span className="change-alert-detail">{selected.independentReports} independent reports · scenario {scenarioTime} IST</span>
         <Button size="sm" onClick={() => onNavigate("signals")}>Review</Button>
-      </div>
+      </div>}
+      {baseline === "kerala" && <div className="change-alert" role="status"><MapPin aria-hidden /><strong>OpenStreetMap facility baseline</strong><span className="change-alert-detail">Geographic locations · availability unverified</span></div>}
 
       <div className="map-toolbar" role="group" aria-label="Flood map controls">
-        <span className="map-toolbar-title"><CircleDot aria-hidden />Flood estimate</span>
-        <div className="map-horizon-inline" role="group" aria-label="Forecast horizon">
+        <span className="map-toolbar-title"><CircleDot aria-hidden />{baseline === "kerala" ? "Kerala mapped facilities" : "Flood estimate"}</span>
+        {baseline === "chennai" && <div className="map-horizon-inline" role="group" aria-label="Forecast horizon">
           {(["now", "1h", "3h"] as const).map((value) => <button key={value} type="button" aria-pressed={horizon === value} onClick={() => setHorizon(value)}>{value === "now" ? "Now" : `+${value}`}</button>)}
-        </div>
-        <Button className="map-key-toggle" variant="outline" size="sm" aria-expanded={legendOpen} onClick={() => setLegendOpen((open) => { if (!open) setListOpen(false); return !open; })}><Layers3 aria-hidden />Key</Button>
-        <Button className="map-list-toggle" variant="outline" size="sm" aria-expanded={listOpen} aria-label={`${listOpen ? "Hide" : "Show"} report cluster list`} onClick={() => setListOpen((open) => { if (!open) setLegendOpen(false); return !open; })}><FileCheck2 aria-hidden />{listOpen ? "Hide" : "Show"} clusters</Button>
+        </div>}
+        {baseline === "chennai" && <Button className="map-key-toggle" variant="outline" size="sm" aria-expanded={legendOpen} onClick={() => setLegendOpen((open) => { if (!open) setListOpen(false); return !open; })}><Layers3 aria-hidden />Key</Button>}
+        {baseline === "chennai" && <Button className="map-list-toggle" variant="outline" size="sm" aria-expanded={listOpen} aria-label={`${listOpen ? "Hide" : "Show"} report cluster list`} onClick={() => setListOpen((open) => { if (!open) setLegendOpen(false); return !open; })}><FileCheck2 aria-hidden />{listOpen ? "Hide" : "Show"} clusters</Button>}
       </div>
       <section className="map-pane live-map-pane" aria-label="Flood impact map">
         <FloodMap
           variant="operations"
+          allowRegionSwitch
+          onBaselineChange={(region) => { setBaseline(region); setListOpen(false); setLegendOpen(false); }}
           horizon={horizon}
           onHorizonChange={setHorizon}
           selectedFeatureId={mapFeatureId}
@@ -87,7 +91,7 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
         </div>}
       </section>
 
-      <aside className="inspector live-inspector" aria-label="Selected cluster details">
+      {baseline === "chennai" ? <aside className="inspector live-inspector" aria-label="Selected cluster details">
         <div className="inspector-title-row">
           <div><h2>{selected.name} Cluster <span>{selected.id}</span></h2><div className="inline-status"><StatusPill tone="danger">Severe</StatusPill><Confidence value={selected.confidence} /><span>{selected.updatedMinutesAgo} min ago</span></div></div>
         </div>
@@ -128,7 +132,7 @@ export function LiveMapView({ onNavigate }: { onNavigate: (view: ViewId) => void
             <Button variant="destructive-outline" onClick={() => setDecision("REJECT")}>Reject</Button>
           </div> : <Button className="request-approval-button" variant="outline" disabled={!canRequest} title={canRequest ? undefined : "Connect to the authorized API and use an allowed requester role"} onClick={() => setRequestOpen(true)}>Request second-person review</Button>}
         </section>
-      </aside>
+      </aside> : <aside className="inspector live-inspector" aria-label="Kerala facility map information"><div className="inspector-title-row"><h2>Kerala location baseline</h2></div><section className="inspector-section"><p>Use Places to search and select hospitals, police, fire stations, schools, colleges, or community centres.</p><p>Locations are community-mapped. Opening status, access, capacity, and shelter activation are unverified. No Kerala flood estimate or evacuation guidance is available.</p></section></aside>}
 
       <DecisionDialog
         open={decision !== null}

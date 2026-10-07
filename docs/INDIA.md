@@ -32,8 +32,12 @@ other provider, and nothing here is an official warning.
   any aggregator. `FLOODRISE_CAP_SENDER` and `FLOODRISE_CAP_SENDER_NAME` default to
   an `.invalid` demo identity; an authority replaces them with its registered
   sender. Polygon alert areas are described by `areaDesc` only.
-- **Kerala is facilities only.** The field PWA is still located in the Chennai
-  demo and does not query the Kerala baseline; only 410 of the Kerala places carry
+- **Kerala is facilities only.** Both maps can switch to the Kerala facility
+  baseline through Places. Reports, hospital helplines, and operational workflows
+  still use the Chennai demo; no Kerala flood or routing data is activated.
+  The Kerala snapshot is downloaded on demand and cached in the field PWA after
+  the first successful load; street tiles are not downloaded for offline use.
+  Only 410 of the Kerala places carry
   a Malayalam name in OpenStreetMap.
 - **No live Indian data feeds.** IMD, CWC, and state sources stay permission-gated
   as described in [DATA_SOURCES.md](DATA_SOURCES.md).

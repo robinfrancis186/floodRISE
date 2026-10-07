@@ -459,3 +459,10 @@ svg { stroke-width: 2; }
   .bottom-navigation, .field-header-actions, .network-strip { display: none; }
   .field-app { max-width: none; box-shadow: none; }
 }
+
+.report-coordinate-editor { border: 1px solid var(--color-border, #dce2ea); border-radius: 8px; padding: 12px; }
+.report-coordinate-editor summary { cursor: pointer; min-height: 24px; font-weight: 600; }
+.report-coordinate-editor p { font-size: 13px; line-height: 1.5; }
+.report-coordinate-fields { display: flex; gap: 12px; }
+.report-coordinate-fields label { min-width: 0; flex: 1; font-size: 13px; }
+.report-coordinate-fields input { width: 100%; min-height: 44px; margin-top: 6px; padding: 8px; border: 1px solid #dce2ea; border-radius: 6px; font: inherit; }

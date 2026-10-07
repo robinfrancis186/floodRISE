@@ -84,6 +84,10 @@ export type FloodMapProps = {
   horizon?: MapHorizon;
   onHorizonChange?: (horizon: MapHorizon) => void;
   selectedFeatureId?: string | null;
+  selectedLocation?: MapPosition;
+  allowRegionSwitch?: boolean;
+  onBaselineChange?: (region: "chennai" | "kerala") => void;
+  onLocationSelect?: (coordinates: MapPosition) => void;
   onFeatureSelect?: (selection: FloodMapSelection) => void;
   className?: string;
   height?: CSSProperties["height"];

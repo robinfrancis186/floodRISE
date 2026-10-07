@@ -21,6 +21,12 @@ export default defineConfig({
   },
   webServer: [
     {
+      command: "VITE_FIELD_BASE_PATH=/field/ pnpm --filter @floodrise/field-web build && VITE_FIELD_BASE_PATH=/field/ pnpm --filter @floodrise/field-web exec vite preview --host 127.0.0.1 --port 55175 --strictPort",
+      url: "http://127.0.0.1:55175/field/",
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
       command: "FLOODRISE_DATABASE_URL=sqlite:///./services/backend/floodrise-e2e.db uv run --project services/backend uvicorn app.main:app --app-dir services/backend --host 127.0.0.1 --port 8787",
       url: `${apiUrl}/health`,
       reuseExistingServer: !process.env.CI,

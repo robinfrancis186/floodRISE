@@ -222,7 +222,7 @@ export function ReportFloodingPage() {
   return (
     <div className="page report-page">
       <section className="report-map" aria-label="Selected report location">
-        <FloodMap variant="field" horizon="3h" height={470} showSummary={false} ariaLabel="Flood conditions around selected report pin" />
+        <FloodMap variant="field" horizon="3h" height={470} showSummary={false} ariaLabel="Select report location on the map" selectedLocation={[location.longitude, location.latitude]} onLocationSelect={([longitude, latitude]) => setLocation({ longitude, latitude, accuracy: 100, label: "Manually selected map pin" })} />
       </section>
 
       <section className="report-sheet" aria-labelledby="report-heading">
@@ -245,9 +245,23 @@ export function ReportFloodingPage() {
               <span>±{Math.round(location.accuracy)} m accuracy</span>
             </div>
             <Button type="button" variant="link" onClick={() => void useCurrentLocation()} disabled={locating}>
-              {locating ? "Locating…" : "Adjust pin"}<ChevronRight aria-hidden />
+              {locating ? "Locating…" : "Use my location"}<ChevronRight aria-hidden />
             </Button>
           </div>
+
+          <details className="report-coordinate-editor">
+            <summary>Adjust report coordinates</summary>
+            <p>Tap the map or enter coordinates. Manual pins have an estimated 100 m uncertainty.</p>
+            <div className="report-coordinate-fields">
+              {(["latitude", "longitude"] as const).map((axis) => <label key={axis}>{axis === "latitude" ? "Latitude" : "Longitude"}
+                <input type="number" step="0.00001" min={axis === "latitude" ? -90 : -180} max={axis === "latitude" ? 90 : 180} value={location[axis]} onChange={(event) => {
+                  const value = event.target.valueAsNumber;
+                  const maximum = axis === "latitude" ? 90 : 180;
+                  if (Number.isFinite(value) && Math.abs(value) <= maximum) setLocation((current) => ({ ...current, [axis]: value, accuracy: 100, label: "Manually selected map pin" }));
+                }} />
+              </label>)}
+            </div>
+          </details>
 
           <Controller
             name="waterDepth"

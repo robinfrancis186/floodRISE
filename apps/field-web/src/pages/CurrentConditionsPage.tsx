@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { FloodMap } from "@floodrise/map";
 import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle, Badge, Button } from "@floodrise/ui";
@@ -10,28 +11,31 @@ import { StatusMark } from "../components/StatusMark";
 export function CurrentConditionsPage() {
   const { isOnline } = useNetworkStatus();
   const { t } = useI18n();
+  const [baseline, setBaseline] = useState<"chennai" | "kerala">("chennai");
 
   return (
     <div className="page current-conditions-page">
       <section className="map-region" aria-labelledby="map-heading">
-        <h1 id="map-heading" className="sr-only">Current flood conditions around Velachery</h1>
+        <h1 id="map-heading" className="sr-only">{baseline === "kerala" ? "Kerala facility locations" : "Current flood conditions around Velachery"}</h1>
         <FloodMap
           variant="field"
+          allowRegionSwitch
+          onBaselineChange={setBaseline}
           horizon="3h"
           height="clamp(320px, 47vh, 470px)"
           showSummary={false}
           ariaLabel="Current and estimated flood conditions near Velachery"
         />
-        <div className="map-place-overlay">
+        {baseline === "chennai" && <div className="map-place-overlay">
           <LocateFixed aria-hidden />
           <div>
             <strong>Velachery, Chennai</strong>
             <span>Demo location · ±12 m</span>
           </div>
-        </div>
+        </div>}
       </section>
 
-      <div className="page-content conditions-content">
+      {baseline === "chennai" ? <div className="page-content conditions-content">
         <div className="page-title-row">
           <div>
             <h1>{t("conditions.title")}</h1>
@@ -81,7 +85,7 @@ export function CurrentConditionsPage() {
         <Link className="text-link-row" to="/alerts">
           View all cautions and alerts <ArrowRight aria-hidden />
         </Link>
-      </div>
+      </div> : <div className="page-content conditions-content"><h1>Kerala mapped places</h1><p>Search hospitals, police, fire stations, and community facilities using Places on the map. Opening status and access are unverified.</p><Alert variant="warning"><AlertTitle>Geographic baseline only</AlertTitle><AlertDescription>No Kerala flood estimates, activated shelters, or verified routes are available. Reporting and alerts still use the Chennai demo incident.</AlertDescription></Alert></div>}
     </div>
   );
 }

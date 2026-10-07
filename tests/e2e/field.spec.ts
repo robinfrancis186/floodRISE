@@ -99,3 +99,24 @@ test("field photo evidence reaches a private sanitized state before report recei
   await expect(page.getByText("Received", { exact: true }).first()).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
+
+test("report coordinates update the map pin and submitted evidence", async ({ page }) => {
+  let submitted: { location: { latitude: number; longitude: number }; accuracy_m: number } | undefined;
+  await page.route("**/api/v1/reports", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Test outage" }) });
+  });
+  await page.goto("http://127.0.0.1:55174/report");
+  await expect(page.getByText("Loading the Chennai map…")).toBeHidden();
+  await page.getByText("Adjust report coordinates", { exact: true }).click();
+  await page.getByLabel("Latitude", { exact: true }).fill("12.9792");
+  await page.getByLabel("Longitude", { exact: true }).fill("80.2211");
+  await expect(page.getByText("Manually selected map pin", { exact: true })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Selected report location", exact: true })).toBeAttached();
+  await page.getByRole("radio", { name: /Knee/ }).click();
+  await page.getByRole("radio", { name: "Impassable" }).click();
+  await page.getByRole("button", { name: /Submit report/ }).click();
+  await expect(page).toHaveURL(/\/queue$/);
+  expect(submitted?.location).toMatchObject({ latitude: 12.9792, longitude: 80.2211 });
+});
