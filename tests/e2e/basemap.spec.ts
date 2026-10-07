@@ -40,6 +40,16 @@ test("real facilities can be searched, filtered, and switched to Kerala without 
   await page.getByRole("button", { name: /Velachery Police Station Police/ }).click();
   await expect(page.getByRole("link", { name: "View OpenStreetMap record ↗" }))
     .toHaveAttribute("href", "https://www.openstreetmap.org/node/8645780209");
+  const layout = await page.locator(".fr-map-canvas-shell").evaluate((shell) => {
+    const bounds = shell.getBoundingClientRect();
+    const canvas = shell.querySelector(".fr-map-canvas")!.getBoundingClientRect();
+    const panel = shell.querySelector(".fr-map-facilities-panel")!.getBoundingClientRect();
+    const attribution = shell.querySelector(".fr-map-attribution")!.getBoundingClientRect();
+    return { scroll: shell.scrollTop, canvasOffset: canvas.top - bounds.top, panelBottom: panel.bottom, attributionTop: attribution.top };
+  });
+  expect(layout.scroll).toBe(0);
+  expect(layout.canvasOffset).toBeLessThanOrEqual(1);
+  expect(layout.panelBottom).toBeLessThan(layout.attributionTop);
   await page.route("**/in-kl/osm-places.geojson", (route) => route.fulfill({ status: 503, body: "Test outage" }));
   await page.getByLabel("Region", { exact: true }).selectOption("kerala");
   await expect(page.getByText("Could not load this region.", { exact: false })).toBeVisible();
