@@ -35,7 +35,8 @@ const en = {
   "facilities.title": "Nearest mapped hospitals",
   "facilities.note":
     "Locations from OpenStreetMap. Not confirmed open, reachable, or equipped for emergencies. Call before travelling.",
-  "facilities.unavailable": "The hospital list needs a connection the first time it is opened.",
+  "facilities.distanceNote":
+    "Distances are straight lines from the Chennai demo pin, not your current location. No route or opening status is verified.",
   "facilities.map": "Map",
   "contact.erss-112": "Emergency: police, fire, ambulance",
   "contact.ndma-1078": "National disaster helpline",
@@ -81,7 +82,8 @@ const hi: Partial<Record<MessageKey, string>> = {
   "facilities.title": "नज़दीकी अस्पताल (मानचित्र से)",
   "facilities.note":
     "स्थान OpenStreetMap से लिए गए हैं। इनके खुले होने, पहुँच योग्य होने या आपातकालीन सुविधा की पुष्टि नहीं है। जाने से पहले कॉल करें।",
-  "facilities.unavailable": "अस्पतालों की सूची पहली बार खोलने के लिए इंटरनेट चाहिए।",
+  "facilities.distanceNote":
+    "दूरियाँ चेन्नई डेमो पिन से सीधी रेखा में हैं, आपके वर्तमान स्थान से नहीं। मार्ग या खुलने की स्थिति की पुष्टि नहीं है।",
   "facilities.map": "मानचित्र",
   "contact.erss-112": "आपातकालीन सेवा: पुलिस, अग्निशमन, एम्बुलेंस",
   "contact.ndma-1078": "राष्ट्रीय आपदा हेल्पलाइन",
@@ -125,7 +127,8 @@ const ta: Partial<Record<MessageKey, string>> = {
   "facilities.title": "அருகிலுள்ள மருத்துவமனைகள் (வரைபடத்திலிருந்து)",
   "facilities.note":
     "இடங்கள் OpenStreetMap-இலிருந்து பெறப்பட்டவை. திறந்திருப்பது, செல்லக்கூடியது அல்லது அவசர வசதி உள்ளது என உறுதிப்படுத்தப்படவில்லை. செல்வதற்கு முன் அழைக்கவும்.",
-  "facilities.unavailable": "மருத்துவமனை பட்டியலை முதல் முறை திறக்க இணைய இணைப்பு தேவை.",
+  "facilities.distanceNote":
+    "தூரங்கள் சென்னை டெமோ இடத்திலிருந்து நேர்கோட்டில் கணக்கிடப்பட்டவை, உங்கள் தற்போதைய இடத்திலிருந்து அல்ல. வழி அல்லது திறந்திருக்கும் நிலை உறுதிப்படுத்தப்படவில்லை.",
   "facilities.map": "வரைபடம்",
   "contact.erss-112": "அவசர சேவை: காவல், தீயணைப்பு, ஆம்புலன்ஸ்",
   "contact.ndma-1078": "தேசிய பேரிடர் உதவி எண்",
@@ -169,7 +172,8 @@ const ml: Partial<Record<MessageKey, string>> = {
   "facilities.title": "അടുത്തുള്ള ആശുപത്രികൾ (മാപ്പിൽ നിന്ന്)",
   "facilities.note":
     "സ്ഥലങ്ങൾ OpenStreetMap-ൽ നിന്നുള്ളതാണ്. തുറന്നിട്ടുണ്ടെന്നോ എത്തിച്ചേരാനാകുമെന്നോ അടിയന്തര സൗകര്യമുണ്ടെന്നോ സ്ഥിരീകരിച്ചിട്ടില്ല. പോകുന്നതിന് മുമ്പ് വിളിക്കുക.",
-  "facilities.unavailable": "ആശുപത്രി പട്ടിക ആദ്യമായി തുറക്കാൻ ഇന്റർനെറ്റ് കണക്ഷൻ ആവശ്യമാണ്.",
+  "facilities.distanceNote":
+    "ദൂരങ്ങൾ ചെന്നൈ ഡെമോ പിന്നിൽ നിന്നുള്ള നേർരേഖാ ദൂരമാണ്, നിങ്ങളുടെ നിലവിലെ സ്ഥാനത്തിൽ നിന്നല്ല. വഴിയോ തുറന്നിരിക്കുന്ന നിലയോ സ്ഥിരീകരിച്ചിട്ടില്ല.",
   "facilities.map": "മാപ്പ്",
   "contact.erss-112": "അടിയന്തര സേവനം: പോലീസ്, അഗ്നിശമന സേന, ആംബുലൻസ്",
   "contact.ndma-1078": "ദേശീയ ദുരന്ത ഹെൽപ്‌ലൈൻ",

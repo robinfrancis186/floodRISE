@@ -52,6 +52,11 @@ FLOODRISE_OBJECT_STORE_BUCKET=YOUR_PRIVATE_BUCKET
 FLOODRISE_CLAMAV_HOST=YOUR_INTERNAL_SCANNER
 ```
 
+`FLOODRISE_DATABASE_URL` may use any of `postgres://`, `postgresql://`,
+`postgresql+asyncpg://`, or `postgresql+psycopg://`; all are run on the bundled
+psycopg 3 driver. The image's Python version must match
+`services/backend/.python-version`.
+
 Block bucket public access and grant the backend identity only required object
 read/write/delete permissions for `media/`. The SDK uses platform IAM or standard
 AWS credentials from server secrets; every stored object requests AES256

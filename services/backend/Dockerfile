@@ -1,7 +1,11 @@
-FROM python:3.12-slim
+# Must match services/backend/.python-version: uv would otherwise download a
+# second interpreter into root's home, which the non-root runtime user cannot
+# execute.
+FROM python:3.13-slim
 COPY --from=ghcr.io/astral-sh/uv:0.8.13 /uv /bin/uv
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never \
     PYTHONUNBUFFERED=1 \
     PATH="/workspace/services/backend/.venv/bin:$PATH"
 

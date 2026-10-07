@@ -23,7 +23,7 @@ from .auth import (
     ensure_high_impact_auth,
     ensure_role,
 )
-from .config import Settings, get_settings
+from .config import Settings, get_settings, sync_database_url
 from .database import Database, canonical_json
 from .domain import FloodRiseService, iso_utc
 from .errors import AppError, NotFoundError, install_exception_handlers, problem_openapi_response
@@ -115,12 +115,6 @@ def _signal_view(signal: dict[str, Any], principal: Principal) -> dict[str, Any]
     return public
 
 
-def _database_url_for_sync(url: str) -> str:
-    return url.replace("postgresql+asyncpg://", "postgresql+psycopg://").replace(
-        "sqlite+aiosqlite://", "sqlite://"
-    )
-
-
 def _default_scanner(runtime: Settings) -> MediaScanner:
     if runtime.is_demo:
         return DemoCleanScanner()
@@ -138,7 +132,7 @@ def create_app(
     media_service: MediaService | None = None,
 ) -> FastAPI:
     runtime = settings or get_settings()
-    target_database = database or Database(_database_url_for_sync(runtime.database_url))
+    target_database = database or Database(sync_database_url(runtime.database_url))
     target_service = FloodRiseService(target_database)
     target_media_service = media_service or MediaService(
         target_database,
@@ -793,6 +787,15 @@ def create_app(
                 code="DEMO_DISABLED",
             )
         ensure_role(principal, "identity_administrator")
+        if runtime.media_store != "memory":
+            # Durable evidence is never bulk-deleted, so refuse before the
+            # database is reset rather than leave rows and objects out of step.
+            raise AppError(
+                status_code=409,
+                title="Demo reset unavailable",
+                detail="Demo reset requires the in-memory evidence store.",
+                code="DEMO_RESET_DURABLE_STORE",
+            )
         result = service(request).reset_demo(principal)
         media(request).reset_demo_store()
         return result

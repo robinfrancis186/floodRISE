@@ -57,7 +57,7 @@ export function HelplinesPage() {
       <section aria-labelledby="facilities-heading" aria-busy={false}>
         <h2 id="facilities-heading" className="facility-heading">{t("facilities.title")}</h2>
         <p className="page-footnote">{t("facilities.note")}</p>
-        <p className="page-footnote">Distances from the Chennai demo pin, not your current location. {hospitals.data ? "API baseline" : `Packaged OSM snapshot ${facilityBaseline.source_snapshot_at.slice(0, 10)}`}. Straight-line distance; no route or opening status verified.</p>
+        <p className="page-footnote">{t("facilities.distanceNote")} {hospitals.data ? "API baseline" : `Packaged OSM snapshot ${facilityBaseline.source_snapshot_at.slice(0, 10)}`}.</p>
         <>
             <ul className="facility-list">
               {facilities.items.map((facility) => (

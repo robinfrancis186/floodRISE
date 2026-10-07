@@ -325,3 +325,33 @@ def test_production_refuses_empty_or_replay_database(replay):
         assert database.is_empty() is (not replay)
     finally:
         database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgres://user@db.example.in/floodrise",
+        "postgresql://user@db.example.in/floodrise",
+        "postgresql+asyncpg://user@db.example.in/floodrise",
+        "postgresql+psycopg://user@db.example.in/floodrise",
+    ],
+)
+def test_every_accepted_postgres_url_resolves_to_the_installed_driver(url):
+    from sqlalchemy import create_engine
+
+    from app.config import sync_database_url
+
+    assert _production_settings({"database_url": url}).database_url == url
+    resolved = sync_database_url(url)
+    assert resolved == "postgresql+psycopg://user@db.example.in/floodrise"
+    # Creating the engine imports the driver; psycopg2 and asyncpg are not installed.
+    assert create_engine(resolved).dialect.driver == "psycopg"
+
+
+def test_sync_database_url_leaves_other_engines_usable():
+    from app.config import sync_database_url
+
+    assert sync_database_url("sqlite+aiosqlite:///./floodrise.db") == "sqlite:///./floodrise.db"
+    assert sync_database_url("sqlite://") == "sqlite://"
+    with pytest.raises(ValidationError):
+        _production_settings({"database_url": "mysql://user@db.example.in/floodrise"})

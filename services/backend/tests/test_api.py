@@ -666,3 +666,30 @@ def test_route_and_simulation_endpoints_publish_versioned_estimates(client: Test
         and item["label"] == "Rapid impact estimate"
         for item in impacts.json()["items"]
     )
+
+
+def test_demo_reset_refuses_durable_evidence_storage_before_touching_data() -> None:
+    from unittest.mock import patch
+
+    from app.media import MemoryMediaBlobStore
+
+    database = Database("sqlite://")
+    settings = Settings(env="test", demo_mode=True, database_url="sqlite://", media_store="s3")
+    with patch("app.main.S3MediaBlobStore", return_value=MemoryMediaBlobStore()):
+        application = create_app(settings, database=database)
+    try:
+        with TestClient(application, raise_server_exceptions=False) as test_client:
+            headers = _role_headers("commander-1", "incident_commander")
+            advanced = test_client.post(f"{API}/demo/advance", headers=headers)
+            assert advanced.status_code == 200
+            clock = advanced.json()
+            response = test_client.post(
+                f"{API}/demo/reset",
+                headers=_role_headers("identity-admin", "identity_administrator"),
+            )
+            assert response.status_code == 409
+            assert response.json()["code"] == "DEMO_RESET_DURABLE_STORE"
+            after = test_client.get(f"{API}/incidents/{INCIDENT_ID}").json()
+            assert after["scenario_time"] != "2023-12-04T14:10:00Z", clock
+    finally:
+        database.engine.dispose()

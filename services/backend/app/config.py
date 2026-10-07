@@ -6,6 +6,27 @@ from typing import Annotated, Literal, Self
 from pydantic import BeforeValidator, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+_POSTGRES_URL_PREFIXES = (
+    "postgres://",
+    "postgresql://",
+    "postgresql+asyncpg://",
+    "postgresql+psycopg://",
+)
+
+
+def sync_database_url(url: str) -> str:
+    """Return a URL for the synchronous drivers this service actually ships.
+
+    Hosted PostgreSQL providers hand out ``postgres://`` or ``postgresql://``
+    URLs, which SQLAlchemy would route to psycopg2. Only psycopg 3 is installed,
+    so every PostgreSQL spelling is pinned to it explicitly.
+    """
+
+    for prefix in _POSTGRES_URL_PREFIXES:
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix) :]
+    return url.replace("sqlite+aiosqlite://", "sqlite://")
+
 
 def _split_origins(value: object) -> object:
     """Accept either JSON arrays or the comma-separated value used in ``.env``."""
@@ -135,7 +156,7 @@ class Settings(BaseSettings):
             if self.session_secret.get_secret_value() == "demo-only-change-before-production":
                 raise ValueError("session_secret must be changed in staging and production")
         if self.env == "production":
-            if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+            if not self.database_url.startswith(_POSTGRES_URL_PREFIXES):
                 raise ValueError("production requires a durable PostgreSQL database")
             if self.debug:
                 raise ValueError("debug must be false in production")
@@ -181,4 +202,11 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 
-__all__ = ["OriginList", "Settings", "StringList", "get_settings", "settings"]
+__all__ = [
+    "OriginList",
+    "Settings",
+    "StringList",
+    "get_settings",
+    "settings",
+    "sync_database_url",
+]

@@ -7,18 +7,14 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.config import get_settings
+from app.config import get_settings, sync_database_url
 from app.database import Base
 
 config = context.config
 if config.config_file_name:
     fileConfig(config.config_file_name)
 
-database_url = (
-    get_settings()
-    .database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    .replace("sqlite+aiosqlite://", "sqlite://")
-)
+database_url = sync_database_url(get_settings().database_url)
 config.set_main_option("sqlalchemy.url", database_url)
 target_metadata = Base.metadata
 
