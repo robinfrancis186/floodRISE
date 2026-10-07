@@ -13,15 +13,19 @@ merge-blocking; repository files alone cannot enforce that setting.
 | `pnpm format:check` | Ruff formatting for both Python services | No |
 | `pnpm typecheck` | Every TypeScript workspace package | No |
 | `pnpm build` | Production builds for both React applications and shared packages | No |
+| `pnpm build:release` | Combined Vercel release with independent operations/field assets and PWA scope | No |
 | `pnpm test:e2e` | Deterministic API replay, all-route desktop/mobile sweep, operations journey, offline field journey, and axe smoke scans | Chromium |
 | `pnpm test:a11y` | axe smoke scans for the operations console and 360 px field workflow | Chromium |
 
-`pnpm test:e2e` starts isolated services on ports 8787, 55173, and 55174 and
-uses a disposable ignored SQLite database. It does not contact production alert
+`pnpm test:e2e` starts web servers on ports 55173/55174, a built field PWA
+preview on 55175, and an API on 8787 with an ignored test SQLite database. Local
+runs reuse existing servers at those URLs, including an existing API on 8787;
+stop an unrelated API first and use only a disposable demo environment. It does not contact production alert
 destinations or require upstream disaster-data providers.
 
 The dated local result and its environment limitations are recorded in
-`docs/RELEASE_VERIFICATION_2026-07-20.md`.
+[7 October 2026 verification](RELEASE_VERIFICATION_2026-10-07.md); older
+records remain available for their original release scope.
 
 ## CI workflow
 

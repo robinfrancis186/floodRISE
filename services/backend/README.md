@@ -41,11 +41,13 @@ only allow-listed roles from `cognito:groups`, `roles`, or `custom:roles`.
 Static JWKS JSON is supported for isolated tests; production should use the
 issuer's HTTPS JWKS endpoint.
 
-This is currently a bearer-token resource-server boundary. The web clients do
-not implement authorization-code/PKCE, token exchange/refresh, logout, or a
-secure HttpOnly session, and the API does not mint a session cookie. The
+The API is a bearer-token resource server. The browser clients implement
+OIDC authorization-code sign-in with PKCE, in-memory access tokens, expiration
+handling, and sign-out; reload requires sign-in again. No HttpOnly session cookie
+is minted and no refresh-token lifecycle is implemented. The
 `FLOODRISE_SESSION_SECRET` startup check prevents a demo default from reaching a
-deployed profile; it is not evidence that server-side sessions exist.
+deployed profile; it does not establish server-side sessions. A real identity
+provider/client and hosted sign-in rehearsal remain deployment work.
 
 ```bash
 FLOODRISE_ENV=production
@@ -102,9 +104,11 @@ only while the API is visibly in demo mode. Clean and quarantined bytes are
 process-local and disappear on restart; only upload metadata is persisted. A
 non-demo runtime without an injected approved scanner defaults to `UNAVAILABLE`,
 retains quarantine in the configured blob adapter, and blocks evidence
-attachment. The in-memory adapter must be replaced by private object storage,
-an approved scanner, and deployed retention/deletion jobs before non-demo media
-is enabled.
+attachment. The S3-compatible adapter and ClamAV protocol adapter are implemented and
+unit-tested. Non-demo activation requires a provisioned private bucket, server
+IAM credentials, a live scanner, and deployed retention/deletion jobs. Production
+settings require these services and reject demo/empty databases; protocol stubs
+do not prove hosted persistence or real antivirus scanning.
 
 ## Verify
 

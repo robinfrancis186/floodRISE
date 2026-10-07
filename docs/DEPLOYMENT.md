@@ -69,6 +69,9 @@ source ingestion, operational routing, and notification dispatch still require
 implementation and approved data; browser field workflows currently target the
 Chennai demo incident. Do not enable production against the replay database.
 Map OSM tiles show geographic detail, not validated flood or road conditions.
+Kerala facility data is a geographic baseline; it does not activate Kerala
+incidents, reporting, routing, or relief camps. The field PWA caches a downloaded
+facility snapshot after its first successful load, separately from street tiles.
 The public OSM tile service has usage limits; use a compliant hosted/self-hosted
 OSM renderer for sustained operational traffic. See `packages/map/README.md`.
 
